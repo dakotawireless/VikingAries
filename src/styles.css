@@ -896,3 +896,29 @@ body.resizing-preview * {
   text-transform: uppercase;
   letter-spacing: .08em;
 }
+
+.project-add-button,
+.contractor-add-button {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 5px;
+  border: 1px dashed #a9bfd1;
+  border-radius: 5px;
+  background: #f8fbfd;
+  color: #176fae;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 800;
+}
+.project-add-button:hover,
+.contractor-add-button:hover {
+  border-color: #78b8e8;
+  background: #edf7ff;
+}
+.project-add-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
