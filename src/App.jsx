@@ -11,6 +11,7 @@ import {
   Cloud,
   Code2,
   Database,
+  Eye,
   EyeOff,
   Github,
   KeyRound,
@@ -408,7 +409,7 @@ function Metric({ icon: Icon, value, label }) {
   );
 }
 
-function PreviewPane({ mode, onModeChange, expanded, onExpand, onHide }) {
+function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
   const widths = { Desktop: "100%", Tablet: "760px", Mobile: "390px" };
 
   return (
@@ -454,17 +455,25 @@ function PreviewPane({ mode, onModeChange, expanded, onExpand, onHide }) {
               <button type="button" title={expanded ? "Dock preview" : "Expand preview"} onClick={onExpand}>
                 {expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
               </button>
-              <button type="button" title="Hide preview" onClick={onHide}><EyeOff size={17} /></button>
+              <button
+                type="button"
+                title={visible ? "Hide preview" : "Show preview"}
+                onClick={onToggleVisibility}
+              >
+                {visible ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="preview-stage">
-        <div className="preview-device" style={{ maxWidth: widths[mode] }}>
-          <PreviewDashboard />
+      {visible && (
+        <div className="preview-stage">
+          <div className="preview-device" style={{ maxWidth: widths[mode] }}>
+            <PreviewDashboard />
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }
@@ -509,32 +518,22 @@ export default function App() {
           </div>
         </header>
 
-        {!previewVisible && (
-          <button
-            type="button"
-            className="desktop-restore-preview"
-            onClick={() => setPreviewVisible(true)}
-            title="Show preview"
-          >
-            <Monitor size={16} />
-            <span>Preview</span>
-          </button>
-        )}
-
         <div className="content-shell">
           {!previewExpanded && <ChatWorkspace project={project} />}
-          {previewVisible && (
-            <PreviewPane
-              mode={previewMode}
-              onModeChange={setPreviewMode}
-              expanded={previewExpanded}
-              onExpand={() => setPreviewExpanded((value) => !value)}
-              onHide={() => {
-                setPreviewExpanded(false);
-                setPreviewVisible(false);
-              }}
-            />
-          )}
+          <PreviewPane
+            mode={previewMode}
+            onModeChange={setPreviewMode}
+            expanded={previewExpanded}
+            visible={previewVisible}
+            onExpand={() => {
+              if (!previewVisible) setPreviewVisible(true);
+              setPreviewExpanded((value) => !value);
+            }}
+            onToggleVisibility={() => {
+              if (previewVisible) setPreviewExpanded(false);
+              setPreviewVisible((value) => !value);
+            }}
+          />
         </div>
       </div>
     </div>
