@@ -49,7 +49,7 @@ const personalProjects = [
   { id: "viking-aries", name: "Viking Aries", icon: Boxes },
 ];
 
-const contractors = [
+const defaultContractors = [
   {
     id: "example-contractor",
     name: "Example Contractor",
@@ -86,17 +86,33 @@ function ToolButton({ icon: Icon, label }) {
   );
 }
 
-function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChange }) {
+function ProjectSelector({
+  project,
+  workspace,
+  onWorkspaceChange,
+  onProjectChange,
+  personalProjectsState,
+  onAddPersonalProject,
+  contractorsState,
+  onAddContractor,
+  onAddContractorProject,
+}) {
   const [open, setOpen] = useState(false);
-  const [selectedContractorId, setSelectedContractorId] = useState(contractors[0]?.id || null);
+  const [selectedContractorId, setSelectedContractorId] = useState(contractorsState[0]?.id || null);
   const [contractorOpen, setContractorOpen] = useState(false);
 
+  useEffect(() => {
+    if (!contractorsState.some((contractor) => contractor.id === selectedContractorId)) {
+      setSelectedContractorId(contractorsState[0]?.id || null);
+    }
+  }, [contractorsState, selectedContractorId]);
+
   const selectedContractor =
-    contractors.find((contractor) => contractor.id === selectedContractorId) || contractors[0];
+    contractorsState.find((contractor) => contractor.id === selectedContractorId) || contractorsState[0];
 
   const projects =
     workspace === "Personal"
-      ? personalProjects
+      ? personalProjectsState
       : selectedContractor?.projects || [];
 
   const handleWorkspaceChange = (name) => {
@@ -159,7 +175,7 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
 
               {contractorOpen && (
                 <div className="contractor-list">
-                  {contractors.map((contractor) => (
+                  {contractorsState.map((contractor) => (
                     <button
                       key={contractor.id}
                       type="button"
@@ -178,6 +194,21 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
                       <small>{contractor.projects.length} project{contractor.projects.length === 1 ? "" : "s"}</small>
                     </button>
                   ))}
+
+                  <button
+                    type="button"
+                    className="contractor-add-button"
+                    onClick={() => {
+                      const created = onAddContractor();
+                      if (created?.id) {
+                        setSelectedContractorId(created.id);
+                        setContractorOpen(false);
+                      }
+                    }}
+                  >
+                    <Plus size={14} />
+                    Add New Contractor
+                  </button>
                 </div>
               )}
             </div>
@@ -187,6 +218,7 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
             <div className="project-menu-label">
               {workspace === "Personal" ? "Projects" : `${selectedContractor?.name || "Contractor"} projects`}
             </div>
+
             {projects.map((item) => {
               const Icon = item.icon;
               const selected = item.id === project.id;
@@ -206,6 +238,26 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
                 </button>
               );
             })}
+
+            <button
+              type="button"
+              className="project-add-button"
+              onClick={() => {
+                const created =
+                  workspace === "Personal"
+                    ? onAddPersonalProject()
+                    : onAddContractorProject(selectedContractor?.id);
+
+                if (created) {
+                  onProjectChange(created);
+                  setOpen(false);
+                }
+              }}
+              disabled={workspace === "Contractor" && !selectedContractor}
+            >
+              <Plus size={14} />
+              Add New Project
+            </button>
           </div>
         </div>
       )}
@@ -213,7 +265,19 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
   );
 }
 
-function Sidebar({ project, workspace, onWorkspaceChange, onProjectChange, activeView, onViewChange }) {
+function Sidebar({
+  project,
+  workspace,
+  onWorkspaceChange,
+  onProjectChange,
+  activeView,
+  onViewChange,
+  personalProjectsState,
+  onAddPersonalProject,
+  contractorsState,
+  onAddContractor,
+  onAddContractorProject,
+}) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -229,6 +293,11 @@ function Sidebar({ project, workspace, onWorkspaceChange, onProjectChange, activ
         workspace={workspace}
         onWorkspaceChange={onWorkspaceChange}
         onProjectChange={onProjectChange}
+        personalProjectsState={personalProjectsState}
+        onAddPersonalProject={onAddPersonalProject}
+        contractorsState={contractorsState}
+        onAddContractor={onAddContractor}
+        onAddContractorProject={onAddContractorProject}
       />
 
       <div className="sidebar-section">
@@ -754,6 +823,22 @@ function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggle
 
 export default function App() {
   const [workspace, setWorkspace] = useState("Personal");
+  const [personalProjectsState, setPersonalProjectsState] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("viking-aries:personal-projects");
+      return saved ? JSON.parse(saved) : personalProjects;
+    } catch {
+      return personalProjects;
+    }
+  });
+  const [contractorsState, setContractorsState] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("viking-aries:contractors");
+      return saved ? JSON.parse(saved) : defaultContractors;
+    } catch {
+      return defaultContractors;
+    }
+  });
   const [project, setProject] = useState(personalProjects[0]);
   const [activeView, setActiveView] = useState("Chats");
   const [previewMode, setPreviewMode] = useState("Desktop");
@@ -765,6 +850,14 @@ export default function App() {
   });
   const [resizingPreview, setResizingPreview] = useState(false);
 
+  useEffect(() => {
+    window.localStorage.setItem("viking-aries:personal-projects", JSON.stringify(personalProjectsState));
+  }, [personalProjectsState]);
+
+  useEffect(() => {
+    window.localStorage.setItem("viking-aries:contractors", JSON.stringify(contractorsState));
+  }, [contractorsState]);
+
   const layoutClass = useMemo(() => {
     if (previewExpanded) return "app-shell preview-expanded";
     if (!previewVisible) return "app-shell preview-hidden";
@@ -775,9 +868,60 @@ export default function App() {
     setWorkspace(next);
     setProject(
       next === "Personal"
-        ? personalProjects[0]
-        : contractors[0]?.projects?.[0] || personalProjects[0]
+        ? personalProjectsState[0] || personalProjects[0]
+        : contractorsState[0]?.projects?.[0] || personalProjectsState[0] || personalProjects[0]
     );
+  };
+
+  const addPersonalProject = () => {
+    const name = window.prompt("New personal project name");
+    if (!name?.trim()) return null;
+
+    const created = {
+      id: `personal-${Date.now()}`,
+      name: name.trim(),
+      icon: Boxes,
+    };
+
+    setPersonalProjectsState((current) => [...current, created]);
+    return created;
+  };
+
+  const addContractor = () => {
+    const name = window.prompt("New contractor / client name");
+    if (!name?.trim()) return null;
+
+    const created = {
+      id: `contractor-${Date.now()}`,
+      name: name.trim(),
+      projects: [],
+    };
+
+    setContractorsState((current) => [...current, created]);
+    return created;
+  };
+
+  const addContractorProject = (contractorId) => {
+    if (!contractorId) return null;
+
+    const name = window.prompt("New project name");
+    if (!name?.trim()) return null;
+
+    const created = {
+      id: `contractor-project-${Date.now()}`,
+      name: name.trim(),
+      icon: Archive,
+    };
+
+    setContractorsState((current) =>
+      current.map((contractor) =>
+        contractor.id === contractorId
+          ? { ...contractor, projects: [...contractor.projects, created] }
+          : contractor
+      )
+    );
+
+    return created;
   };
 
   const startPreviewResize = (event) => {
@@ -826,6 +970,11 @@ export default function App() {
         }}
         activeView={activeView}
         onViewChange={setActiveView}
+        personalProjectsState={personalProjectsState}
+        onAddPersonalProject={addPersonalProject}
+        contractorsState={contractorsState}
+        onAddContractor={addContractor}
+        onAddContractorProject={addContractorProject}
       />
 
       <div className="main-column">
