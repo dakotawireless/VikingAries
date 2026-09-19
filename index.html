@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Viking Aries</title>
+  <style>
+    :root {
+      --bg:#0b0f17;
+      --panel:#111827;
+      --panel2:#182233;
+      --border:#2a3548;
+      --text:#edf2f7;
+      --muted:#9aa7b8;
+      --accent:#7c3aed;
+      --accent2:#a78bfa;
+      --danger:#ef4444;
+      --success:#22c55e;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    button,input,textarea{font:inherit}
+    button{cursor:pointer}
+    .app{min-height:100vh;display:grid;grid-template-rows:auto 1fr}
+    .topbar{height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 16px;background:#0e1420;position:sticky;top:0;z-index:30}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.2px;white-space:nowrap}
+    .brand-mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#2563eb);display:grid;place-items:center;font-weight:900}
+    .workspace-switch{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:10px;padding:9px 12px}
+    .grow{flex:1}
+    .quick{display:flex;gap:8px;flex-wrap:wrap}
+    .pill,.iconbtn{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:10px;padding:8px 11px}
+    .iconbtn{width:38px;height:38px;padding:0;display:grid;place-items:center}
+    .layout{display:grid;grid-template-columns:235px minmax(0,1fr) 390px;min-height:calc(100vh - 64px)}
+    .sidebar{border-right:1px solid var(--border);background:#0e1420;padding:14px;overflow:auto}
+    .section-title{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:8px 8px 6px}
+    .navbtn{width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:10px 11px;border-radius:9px;margin:2px 0}
+    .navbtn:hover,.navbtn.active{background:var(--panel2)}
+    .navbtn.active{outline:1px solid #39465c}
+    .sep{height:1px;background:var(--border);margin:12px 0}
+    .main{min-width:0;padding:14px;overflow:auto}
+    .tabs{display:flex;gap:8px;overflow:auto;padding-bottom:8px}
+    .tab{border:1px solid var(--border);background:var(--panel);color:var(--muted);padding:9px 12px;border-radius:10px;white-space:nowrap}
+    .tab.active{color:var(--text);background:var(--panel2);border-color:#46556f}
+    .chat{border:1px solid var(--border);background:var(--panel);border-radius:14px;min-height:calc(100vh - 150px);display:flex;flex-direction:column;overflow:hidden}
+    .chat-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:12px;align-items:center}
+    .small{font-size:12px;color:var(--muted)}
+    .messages{padding:18px;display:flex;flex-direction:column;gap:12px;flex:1}
+    .msg{max-width:82%;padding:12px 14px;border-radius:13px;border:1px solid var(--border);line-height:1.45}
+    .msg.user{background:#151d2b}
+    .msg.ai{margin-left:auto;background:#161b2a}
+    .context{border:1px dashed #47536a;background:#111827;padding:12px 14px;border-radius:12px;color:var(--muted)}
+    .composer{padding:12px;border-top:1px solid var(--border)}
+    textarea{width:100%;resize:vertical;min-height:72px;background:#0e1420;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px}
+    .composer-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;flex-wrap:wrap}
+    .send{background:var(--accent);color:white;border:0;border-radius:10px;padding:9px 16px}
+    .preview{border-left:1px solid var(--border);background:#0e1420;padding:12px;min-width:0;overflow:auto;transition:.2s ease}
+    .preview.closed{display:none}
+    .layout.no-preview{grid-template-columns:235px minmax(0,1fr)}
+    .layout.preview-full{grid-template-columns:0 minmax(0,1fr)}
+    .layout.preview-full .sidebar,.layout.preview-full .main{display:none}
+    .layout.preview-full .preview{display:block;border-left:0}
+    .preview-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+    .preview-actions{display:flex;gap:6px}
+    .devicebar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+    .device-frame{margin:0 auto;border:1px solid var(--border);border-radius:14px;background:#f8fafc;color:#111827;overflow:hidden;transition:max-width .2s ease;max-width:100%}
+    .browserbar{background:#e5e7eb;padding:8px 10px;font-size:12px;color:#475569;display:flex;justify-content:space-between;gap:10px}
+    .fakeapp{padding:18px;min-height:560px}
+    .fakeapp h2{margin:0 0 4px}
+    .statgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:16px 0}
+    .stat{border:1px solid #cbd5e1;border-radius:12px;padding:13px}
+    .stat b{font-size:22px}
+    .card{border:1px solid #cbd5e1;border-radius:12px;padding:14px;margin:10px 0}
+    .status{display:inline-flex;align-items:center;gap:7px;color:#15803d;font-size:12px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#22c55e}
+    .mobilebar{display:none;position:fixed;bottom:0;left:0;right:0;background:#0e1420;border-top:1px solid var(--border);z-index:40;grid-template-columns:repeat(4,1fr)}
+    .mobilebar button{border:0;background:transparent;color:var(--muted);padding:12px 6px}
+    .mobilebar button.active{color:white;background:var(--panel2)}
+    .mobile-drawer{display:none;position:fixed;inset:64px 0 56px 0;background:#0e1420;z-index:35;padding:14px;overflow:auto}
+    .mobile-drawer.open{display:block}
+    @media(max-width:1100px){
+      .layout{grid-template-columns:210px minmax(0,1fr)}
+      .preview{display:none}
+      .layout.preview-open-mobile .preview{display:block;position:fixed;inset:64px 0 56px 0;z-index:34;border-left:0;padding:12px}
+      .quick .hide-sm{display:none}
+    }
+    @media(max-width:720px){
+      .topbar{height:auto;min-height:60px;padding:10px 12px;flex-wrap:wrap}
+      .quick{display:none}
+      .layout{display:block;min-height:calc(100vh - 60px)}
+      .sidebar{display:none}
+      .main{padding:10px 10px 70px}
+      .chat{min-height:calc(100vh - 150px)}
+      .mobilebar{display:grid}
+      .msg{max-width:92%}
+      .brand{font-size:15px}
+      .workspace-switch{padding:8px 10px}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">VA</div> Viking Aries</div>
+    <button class="workspace-switch" id="workspaceSwitch">Personal ▾</button>
+    <div class="grow"></div>
+    <div class="quick">
+      <button class="pill">GitHub</button>
+      <button class="pill">Supabase</button>
+      <button class="pill hide-sm">Cloudflare</button>
+      <button class="pill hide-sm">Convex</button>
+    </div>
+  </header>
+  <div class="layout" id="layout">
+    <aside class="sidebar">
+      <div class="section-title">Projects</div>
+      <button class="navbtn active">Timekeeper</button>
+      <button class="navbtn">Dakota Wireless POS</button>
+      <button class="navbtn">Smoke Signals POS</button>
+      <button class="navbtn">Dakota Wireless Website</button>
+      <button class="navbtn">Rez Lock & Key</button>
+      <div class="sep"></div>
+      <div class="section-title">Workspace</div>
+      <button class="navbtn">Architecture</button>
+      <button class="navbtn">Integrations</button>
+      <button class="navbtn">Database</button>
+      <button class="navbtn">Deployments</button>
+      <button class="navbtn">Logs</button>
+      <button class="navbtn">Secrets 🔒</button>
+      <button class="navbtn">Settings</button>
+    </aside>
+    <main class="main">
+      <div class="tabs">
+        <button class="tab active">Migration</button>
+        <button class="tab">Payroll</button>
+        <button class="tab">Commission Sync</button>
+        <button class="tab">+ New Chat</button>
+      </div>
+      <section class="chat">
+        <div class="chat-head">
+          <div>
+            <strong>Migration</strong>
+            <div class="small">Project: Timekeeper · Shared workspace context active</div>
+          </div>
+          <button class="pill" id="showPreviewTop">Preview</button>
+        </div>
+        <div class="messages" id="messages">
+          <div class="msg user">Move Timekeeper outside Hercules, but keep Dakota Wireless POS commission sync working.</div>
+          <div class="msg ai">I know Timekeeper reads commission information from Dakota Wireless POS through the existing server-side integration. We can migrate Timekeeper without moving the POS at the same time.</div>
+          <div class="context"><strong>Connected project context:</strong><br>Timekeeper → Commission API → Dakota Wireless POS</div>
+        </div>
+        <form class="composer" id="chatForm">
+          <textarea id="chatInput" placeholder="Tell Viking Aries what to build, fix, connect, or deploy…"></textarea>
+          <div class="composer-row">
+            <span class="small">Scope: Timekeeper only unless a cross-project change is approved.</span>
+            <button class="send" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <aside class="preview" id="previewPane">
+      <div class="preview-head">
+        <div>
+          <strong>Live Preview</strong>
+          <div class="small">Timekeeper · Development</div>
+        </div>
+        <div class="preview-actions">
+          <button class="iconbtn" id="refreshPreview" title="Refresh">↻</button>
+          <button class="iconbtn" id="expandPreview" title="Expand">⛶</button>
+          <button class="iconbtn" id="closePreview" title="Hide">✕</button>
+        </div>
+      </div>
+      <div class="devicebar">
+        <button class="pill device" data-width="100%">Desktop</button>
+        <button class="pill device" data-width="720px">Tablet</button>
+        <button class="pill device" data-width="390px">Mobile</button>
+        <span class="small" id="previewStatus">Healthy</span>
+      </div>
+      <div class="device-frame" id="deviceFrame">
+        <div class="browserbar"><span>employee-timekeeper</span><span>Preview</span></div>
+        <div class="fakeapp">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:start">
+            <div><div style="font-size:12px;color:#64748b">Admin</div><h2>Timekeeper</h2></div>
+            <div class="status"><span class="dot"></span> Connected</div>
+          </div>
+          <div class="statgrid">
+            <div class="stat"><div style="font-size:12px;color:#64748b">Employees</div><b>3</b></div>
+            <div class="stat"><div style="font-size:12px;color:#64748b">Payroll Week</div><b style="font-size:17px">Open</b></div>
+          </div>
+          <div class="card"><strong>Dakota Wireless POS</strong><div style="font-size:13px;color:#64748b;margin-top:4px">Commission sync connected</div></div>
+          <div class="card"><strong>Current View</strong><div style="font-size:13px;color:#64748b;margin-top:4px">Admin Dashboard</div></div>
+          <div class="card"><strong>Preview controls</strong><div style="font-size:13px;color:#64748b;margin-top:4px">Refresh · device sizes · expand · hide</div></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <nav class="mobilebar">
+    <button id="mobileProjects">Projects</button>
+    <button class="active">Chat</button>
+    <button id="mobilePreview">Preview</button>
+    <button id="mobileTools">Tools</button>
+  </nav>
+  <div class="mobile-drawer" id="mobileDrawer"></div>
+</div>
+<script>
+  const layout = document.getElementById('layout');
+  const preview = document.getElementById('previewPane');
+  const deviceFrame = document.getElementById('deviceFrame');
+  const workspaceSwitch = document.getElementById('workspaceSwitch');
+  const mobileDrawer = document.getElementById('mobileDrawer');
+  let fullPreview = false;
+  let workspace = 'Personal';
+  function showPreview(){
+    layout.classList.remove('no-preview');
+    if (window.innerWidth <= 1100) layout.classList.add('preview-open-mobile');
+    preview.classList.remove('closed');
+  }
+  function hidePreview(){
+    fullPreview = false;
+    layout.classList.remove('preview-full','preview-open-mobile');
+    layout.classList.add('no-preview');
+    preview.classList.add('closed');
+    document.getElementById('expandPreview').textContent='⛶';
+  }
+  document.getElementById('closePreview').addEventListener('click', hidePreview);
+  document.getElementById('showPreviewTop').addEventListener('click', showPreview);
+  document.getElementById('mobilePreview').addEventListener('click', showPreview);
+  document.getElementById('expandPreview').addEventListener('click', ()=>{
+    layout.classList.remove('no-preview','preview-open-mobile');
+    preview.classList.remove('closed');
+    fullPreview = !fullPreview;
+    layout.classList.toggle('preview-full', fullPreview);
+    document.getElementById('expandPreview').textContent = fullPreview ? '↙' : '⛶';
+  });
+  document.getElementById('refreshPreview').addEventListener('click', ()=>{
+    const s=document.getElementById('previewStatus');
+    s.textContent='Refreshing…';
+    setTimeout(()=>s.textContent='Healthy',700);
+  });
+  document.querySelectorAll('.device').forEach(btn=>{
+    btn.addEventListener('click', ()=> deviceFrame.style.maxWidth = btn.dataset.width);
+  });
+  workspaceSwitch.addEventListener('click', ()=>{
+    workspace = workspace === 'Personal' ? 'Contractor' : 'Personal';
+    workspaceSwitch.textContent = workspace + ' ▾';
+  });
+  document.getElementById('chatForm').addEventListener('submit', e=>{
+    e.preventDefault();
+    const input=document.getElementById('chatInput');
+    const value=input.value.trim();
+    if(!value) return;
+    const div=document.createElement('div');
+    div.className='msg user';
+    div.textContent=value;
+    document.getElementById('messages').appendChild(div);
+    input.value='';
+  });
+  function openDrawer(type){
+    mobileDrawer.innerHTML='';
+    const title=document.createElement('h3');
+    title.textContent=type;
+    mobileDrawer.appendChild(title);
+    const items = type==='Projects'
+      ? ['Timekeeper','Dakota Wireless POS','Smoke Signals POS','Dakota Wireless Website','Rez Lock & Key']
+      : ['Architecture','Integrations','Database','Deployments','Logs','Secrets 🔒','Settings'];
+    items.forEach(x=>{
+      const b=document.createElement('button');
+      b.className='navbtn';
+      b.textContent=x;
+      mobileDrawer.appendChild(b);
+    });
+    const close=document.createElement('button');
+    close.className='pill';
+    close.textContent='Close';
+    close.style.marginTop='14px';
+    close.addEventListener('click',()=>mobileDrawer.classList.remove('open'));
+    mobileDrawer.appendChild(close);
+    mobileDrawer.classList.add('open');
+  }
+  document.getElementById('mobileProjects').addEventListener('click',()=>openDrawer('Projects'));
+  document.getElementById('mobileTools').addEventListener('click',()=>openDrawer('Workspace Tools'));
+  window.addEventListener('resize', ()=>{
+    if(window.innerWidth>1100) layout.classList.remove('preview-open-mobile');
+  });
+</script>
+</body>
+</html>
