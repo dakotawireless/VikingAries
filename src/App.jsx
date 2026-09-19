@@ -49,8 +49,14 @@ const personalProjects = [
   { id: "viking-aries", name: "Viking Aries", icon: Boxes },
 ];
 
-const contractorProjects = [
-  { id: "client-demo", name: "Client Project Example", icon: Archive },
+const contractors = [
+  {
+    id: "example-contractor",
+    name: "Example Contractor",
+    projects: [
+      { id: "client-demo", name: "Client Project Example", icon: Archive },
+    ],
+  },
 ];
 
 const navItems = [
@@ -82,7 +88,21 @@ function ToolButton({ icon: Icon, label }) {
 
 function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChange }) {
   const [open, setOpen] = useState(false);
-  const projects = workspace === "Personal" ? personalProjects : contractorProjects;
+  const [selectedContractorId, setSelectedContractorId] = useState(contractors[0]?.id || null);
+  const [contractorOpen, setContractorOpen] = useState(false);
+
+  const selectedContractor =
+    contractors.find((contractor) => contractor.id === selectedContractorId) || contractors[0];
+
+  const projects =
+    workspace === "Personal"
+      ? personalProjects
+      : selectedContractor?.projects || [];
+
+  const handleWorkspaceChange = (name) => {
+    onWorkspaceChange(name);
+    setContractorOpen(name === "Contractor");
+  };
 
   return (
     <div className="project-block">
@@ -98,7 +118,11 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
         </span>
         <span className="project-trigger-copy">
           <strong>{project.name}</strong>
-          <small>{workspace}</small>
+          <small>
+            {workspace === "Contractor" && selectedContractor
+              ? `${workspace} · ${selectedContractor.name}`
+              : workspace}
+          </small>
         </span>
         <ChevronDown size={17} className={open ? "rotate-180" : ""} />
       </button>
@@ -111,13 +135,58 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
                 key={name}
                 type="button"
                 className={workspace === name ? "workspace-chip active" : "workspace-chip"}
-                onClick={() => onWorkspaceChange(name)}
+                onClick={() => handleWorkspaceChange(name)}
               >
                 {name}
               </button>
             ))}
           </div>
+
+          {workspace === "Contractor" && (
+            <div className="contractor-selector">
+              <button
+                type="button"
+                className="contractor-trigger"
+                onClick={() => setContractorOpen((value) => !value)}
+                aria-expanded={contractorOpen}
+              >
+                <span>
+                  <small>Contractor / Client</small>
+                  <strong>{selectedContractor?.name || "Select contractor"}</strong>
+                </span>
+                <ChevronDown size={16} className={contractorOpen ? "rotate-180" : ""} />
+              </button>
+
+              {contractorOpen && (
+                <div className="contractor-list">
+                  {contractors.map((contractor) => (
+                    <button
+                      key={contractor.id}
+                      type="button"
+                      className={
+                        contractor.id === selectedContractor?.id
+                          ? "contractor-option selected"
+                          : "contractor-option"
+                      }
+                      onClick={() => {
+                        setSelectedContractorId(contractor.id);
+                        setContractorOpen(false);
+                        if (contractor.projects[0]) onProjectChange(contractor.projects[0]);
+                      }}
+                    >
+                      <span>{contractor.name}</span>
+                      <small>{contractor.projects.length} project{contractor.projects.length === 1 ? "" : "s"}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="project-menu-list">
+            <div className="project-menu-label">
+              {workspace === "Personal" ? "Projects" : `${selectedContractor?.name || "Contractor"} projects`}
+            </div>
             {projects.map((item) => {
               const Icon = item.icon;
               const selected = item.id === project.id;
@@ -704,7 +773,11 @@ export default function App() {
 
   const changeWorkspace = (next) => {
     setWorkspace(next);
-    setProject(next === "Personal" ? personalProjects[0] : contractorProjects[0]);
+    setProject(
+      next === "Personal"
+        ? personalProjects[0]
+        : contractors[0]?.projects?.[0] || personalProjects[0]
+    );
   };
 
   const startPreviewResize = (event) => {
