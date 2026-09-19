@@ -827,3 +827,72 @@ body.resizing-preview * {
   .relationship-row { grid-template-columns: 1fr; text-align: left; }
   .relationship-row > span { text-align: left; }
 }
+
+.contractor-selector {
+  border-bottom: 1px solid #e0e7ee;
+  background: #f8fafc;
+}
+.contractor-trigger {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  text-align: left;
+  color: #243d50;
+}
+.contractor-trigger span {
+  display: flex;
+  flex-direction: column;
+}
+.contractor-trigger small {
+  color: #8193a3;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.contractor-trigger strong {
+  margin-top: 2px;
+  font-size: 11px;
+}
+.contractor-list {
+  padding: 0 6px 6px;
+  display: grid;
+  gap: 3px;
+}
+.contractor-option {
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: white;
+  color: #314a5e;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+}
+.contractor-option span {
+  font-size: 10px;
+  font-weight: 700;
+}
+.contractor-option small {
+  color: #8293a2;
+  font-size: 8px;
+}
+.contractor-option:hover,
+.contractor-option.selected {
+  border-color: #cfe5f7;
+  background: #edf6ff;
+  color: #0878df;
+}
+.project-menu-label {
+  padding: 5px 8px 4px;
+  color: #8a9aa8;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
