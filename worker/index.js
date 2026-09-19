@@ -39,11 +39,30 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
-      const apiKey = await resolveSecret(env.OPENAI_API_KEY);
+      const binding = env.OPENAI_API_KEY;
+      const diagnostics = {
+        bindingPresent: Boolean(binding),
+        bindingType: typeof binding,
+        hasGetMethod: Boolean(binding && typeof binding.get === "function"),
+        getSucceeded: false,
+        secretReadable: false,
+      };
+
+      try {
+        const apiKey = await resolveSecret(binding);
+        diagnostics.getSucceeded = true;
+        diagnostics.secretReadable =
+          typeof apiKey === "string" && apiKey.trim().length > 0;
+      } catch {
+        diagnostics.getSucceeded = false;
+        diagnostics.secretReadable = false;
+      }
+
       return json({
         ok: true,
-        aiConfigured: Boolean(apiKey),
+        aiConfigured: diagnostics.secretReadable,
         model: env.OPENAI_MODEL || "gpt-5.6-luna",
+        diagnostics,
       });
     }
 
