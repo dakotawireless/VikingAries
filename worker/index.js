@@ -1,5 +1,14 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
+async function resolveSecret(binding) {
+  if (!binding) return null;
+  if (typeof binding === "string") return binding;
+  if (typeof binding.get === "function") {
+    return await binding.get();
+  }
+  return null;
+}
+
 function extractResponseText(payload) {
   if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
     return payload.output_text.trim();
@@ -30,9 +39,10 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
+      const apiKey = await resolveSecret(env.OPENAI_API_KEY);
       return json({
         ok: true,
-        aiConfigured: Boolean(env.OPENAI_API_KEY),
+        aiConfigured: Boolean(apiKey),
         model: env.OPENAI_MODEL || "gpt-5.6-luna",
       });
     }
@@ -45,7 +55,9 @@ export default {
       return json({ error: "Method not allowed." }, { status: 405 });
     }
 
-    if (!env.OPENAI_API_KEY) {
+    const apiKey = await resolveSecret(env.OPENAI_API_KEY);
+
+    if (!apiKey) {
       return json(
         {
           error:
@@ -107,7 +119,7 @@ export default {
       upstream = await fetch(OPENAI_RESPONSES_URL, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
