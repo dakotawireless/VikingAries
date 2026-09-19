@@ -117,7 +117,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   padding: 7px 8px; font-size: 12px;
 }
 
-.main-column { min-width: 0; }
+.main-column { min-width: 0; position: relative; }
 .mobile-topbar { display: none; }
 .mobile-brand { display: none; align-items: center; gap: 8px; }
 .mobile-topbar-actions { display: flex; align-items: center; gap: 8px; }
@@ -334,4 +334,31 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 @media (max-width: 1280px) {
   .preview-title p { display: none; }
   .preview-toolbar { min-height: 54px; padding-top: 9px; padding-bottom: 9px; }
+}
+
+.desktop-restore-preview {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 40;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: white;
+  color: #294157;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+.desktop-restore-preview:hover {
+  background: #f7fafc;
+  color: #0878df;
+}
+
+@media (max-width: 900px) {
+  .desktop-restore-preview { display: none; }
 }
