@@ -1,3 +1,4 @@
+import WorkspaceView from "./WorkspaceViews.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -143,7 +144,7 @@ function ProjectSelector({ project, workspace, onWorkspaceChange, onProjectChang
   );
 }
 
-function Sidebar({ project, workspace, onWorkspaceChange, onProjectChange }) {
+function Sidebar({ project, workspace, onWorkspaceChange, onProjectChange, activeView, onViewChange }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -164,8 +165,13 @@ function Sidebar({ project, workspace, onWorkspaceChange, onProjectChange }) {
       <div className="sidebar-section">
         <div className="sidebar-kicker">Workspace</div>
         <nav className="sidebar-nav">
-          {navItems.map(({ label, icon: Icon, active }) => (
-            <button key={label} className={active ? "sidebar-link active" : "sidebar-link"} type="button">
+          {navItems.map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              className={activeView === label ? "sidebar-link active" : "sidebar-link"}
+              type="button"
+              onClick={() => onViewChange(label)}
+            >
               <Icon size={18} />
               <span>{label}</span>
             </button>
@@ -177,7 +183,12 @@ function Sidebar({ project, workspace, onWorkspaceChange, onProjectChange }) {
 
       <nav className="sidebar-nav compact">
         {lowerNav.map(({ label, icon: Icon }) => (
-          <button key={label} className="sidebar-link" type="button">
+          <button
+            key={label}
+            className={activeView === label ? "sidebar-link active" : "sidebar-link"}
+            type="button"
+            onClick={() => onViewChange(label)}
+          >
             <Icon size={18} />
             <span>{label}</span>
           </button>
@@ -675,6 +686,7 @@ function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggle
 export default function App() {
   const [workspace, setWorkspace] = useState("Personal");
   const [project, setProject] = useState(personalProjects[0]);
+  const [activeView, setActiveView] = useState("Chats");
   const [previewMode, setPreviewMode] = useState("Desktop");
   const [previewVisible, setPreviewVisible] = useState(true);
   const [previewExpanded, setPreviewExpanded] = useState(false);
@@ -735,7 +747,12 @@ export default function App() {
         project={project}
         workspace={workspace}
         onWorkspaceChange={changeWorkspace}
-        onProjectChange={setProject}
+        onProjectChange={(nextProject) => {
+          setProject(nextProject);
+          setActiveView("Chats");
+        }}
+        activeView={activeView}
+        onViewChange={setActiveView}
       />
 
       <div className="main-column">
@@ -755,7 +772,11 @@ export default function App() {
           className={resizingPreview ? "content-shell is-resizing" : "content-shell"}
           style={{ "--preview-width": `${previewWidth}%` }}
         >
-          {!previewExpanded && <ChatWorkspace key={project.id} project={project} />}
+          {!previewExpanded && (
+            activeView === "Chats"
+              ? <ChatWorkspace key={project.id} project={project} />
+              : <WorkspaceView key={`${project.id}-${activeView}`} view={activeView} project={project} />
+          )}
           {!previewExpanded && previewVisible && (
             <div
               className="preview-resize-handle"
