@@ -30,7 +30,6 @@ import {
   Settings,
   ShieldCheck,
   Smartphone,
-  Tablet,
   TerminalSquare,
   UserRound,
   Users,
@@ -411,7 +410,7 @@ function Metric({ icon: Icon, value, label }) {
 }
 
 function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
-  const widths = { Desktop: "100%", Tablet: "760px", Mobile: "390px" };
+  const widths = { Desktop: "100%", Mobile: "390px" };
 
   return (
     <aside className={expanded ? "preview-pane expanded" : "preview-pane"}>
@@ -433,7 +432,6 @@ function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggle
             <div className="device-icon-switcher" aria-label="Preview device">
               {[
                 ["Desktop", Laptop],
-                ["Tablet", Tablet],
                 ["Mobile", Smartphone],
               ].map(([label, Icon]) => (
                 <button
