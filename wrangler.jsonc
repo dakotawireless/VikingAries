@@ -6,5 +6,12 @@
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
-  }
+  },
+  "secrets_store_secrets": [
+    {
+      "binding": "OPENAI_API_KEY",
+      "store_id": "000ba1ca2bbb43d3a614963366c9b7f8",
+      "secret_name": "OPENAI_API_KEY"
+    }
+  ]
 }
