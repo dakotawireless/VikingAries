@@ -127,7 +127,11 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 .tool-button:hover, .restore-preview:hover { background: #f7fafc; }
 .topbar-avatar { margin-left: 0; }
-.content-shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 36%); min-height: 100vh; }
+.content-shell {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) 7px minmax(360px, var(--preview-width, 36%));
+  min-height: 100vh;
+}
 
 .workspace { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; background: #f7f9fb; border-right: 1px solid var(--line); }
 .project-heading { padding: 16px 20px 8px; background: white; }
@@ -204,6 +208,40 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .attach-button { width: 34px; border: 1px solid #cbd8e3; background: white; color: #60778a; }
 .send-button { border: 0; padding: 0 15px; background: #0878df; color: white; display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; }
 .composer-hint { grid-column: 2 / 4; justify-self: end; color: #77899a; font-size: 9px; }
+
+.preview-resize-handle {
+  position: relative;
+  z-index: 18;
+  width: 7px;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8ca0b1;
+  background: #edf2f6;
+  border-left: 1px solid #d8e2ea;
+  border-right: 1px solid #d8e2ea;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  transition: background .12s ease, color .12s ease;
+}
+.preview-resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+}
+.preview-resize-handle:hover,
+.content-shell.is-resizing .preview-resize-handle {
+  color: #0878df;
+  background: #dceeff;
+  border-color: #9ed1f8;
+}
+body.resizing-preview,
+body.resizing-preview * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 
 .preview-pane { min-width: 0; background: #f5f8fa; display: flex; flex-direction: column; }
 .preview-toolbar {
@@ -310,7 +348,9 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 
 @media (max-width: 1180px) {
-  .content-shell { grid-template-columns: minmax(0, 1fr) minmax(360px, 42%); }
+  .content-shell {
+    grid-template-columns: minmax(360px, 1fr) 7px minmax(340px, var(--preview-width, 42%));
+  }
   .preview-integrations .tool-button span { display: none; }
   .preview-integrations .tool-button { width: 30px; padding: 0; justify-content: center; }
   .message-stack { max-width: 90%; }
@@ -325,6 +365,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   }
   .mobile-brand { display: flex; }
   .content-shell { display: block; min-height: calc(100vh - 56px); }
+  .preview-resize-handle { display: none; }
   .workspace { min-height: calc(100vh - 56px); border-right: 0; }
   .preview-pane { display: none; min-height: calc(100vh - 56px); }
   .preview-expanded .preview-pane { display: flex; }
