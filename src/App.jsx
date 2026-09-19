@@ -509,6 +509,18 @@ export default function App() {
           </div>
         </header>
 
+        {!previewVisible && (
+          <button
+            type="button"
+            className="desktop-restore-preview"
+            onClick={() => setPreviewVisible(true)}
+            title="Show preview"
+          >
+            <Monitor size={16} />
+            <span>Preview</span>
+          </button>
+        )}
+
         <div className="content-shell">
           {!previewExpanded && <ChatWorkspace project={project} />}
           {previewVisible && (
