@@ -25,6 +25,7 @@ import {
   Minimize2,
   Monitor,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   Rocket,
   Send,
@@ -58,6 +59,23 @@ const defaultContractors = [
     ],
   },
 ];
+
+const projectIconMap = {
+  timekeeper: Clock3,
+  "dw-pos": Monitor,
+  "smoke-pos": TerminalSquare,
+  "dw-site": Cloud,
+  "rez-lock": KeyRound,
+  "viking-aries": Boxes,
+  "client-demo": Archive,
+};
+
+function getProjectIcon(project, fallback = Boxes) {
+  if (typeof project?.icon === "function") return project.icon;
+  if (project?.iconKey === "archive") return Archive;
+  if (project?.iconKey === "boxes") return Boxes;
+  return projectIconMap[project?.id] || fallback;
+}
 
 const navItems = [
   { label: "Chats", icon: MessageSquare, active: true },
@@ -109,6 +127,7 @@ function ProjectSelector({
 
   const selectedContractor =
     contractorsState.find((contractor) => contractor.id === selectedContractorId) || contractorsState[0];
+  const CurrentProjectIcon = getProjectIcon(project);
 
   const projects =
     workspace === "Personal"
@@ -130,7 +149,7 @@ function ProjectSelector({
         onClick={() => setOpen((value) => !value)}
       >
         <span className="project-trigger-icon">
-          <project.icon size={18} />
+          <CurrentProjectIcon size={18} />
         </span>
         <span className="project-trigger-copy">
           <strong>{project.name}</strong>
@@ -220,7 +239,7 @@ function ProjectSelector({
             </div>
 
             {projects.map((item) => {
-              const Icon = item.icon;
+              const Icon = getProjectIcon(item, workspace === "Contractor" ? Archive : Boxes);
               const selected = item.id === project.id;
               return (
                 <button
@@ -880,7 +899,7 @@ export default function App() {
     const created = {
       id: `personal-${Date.now()}`,
       name: name.trim(),
-      icon: Boxes,
+      iconKey: "boxes",
     };
 
     setPersonalProjectsState((current) => [...current, created]);
@@ -910,7 +929,7 @@ export default function App() {
     const created = {
       id: `contractor-project-${Date.now()}`,
       name: name.trim(),
-      icon: Archive,
+      iconKey: "archive",
     };
 
     setContractorsState((current) =>
