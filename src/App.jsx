@@ -414,35 +414,50 @@ function PreviewPane({ mode, onModeChange, expanded, onExpand, onHide }) {
   return (
     <aside className={expanded ? "preview-pane expanded" : "preview-pane"}>
       <div className="preview-toolbar">
-        <div>
+        <div className="preview-title">
           <h2>Preview</h2>
           <p>Live view of your application</p>
         </div>
-        <div className="preview-toolbar-actions">
-          <button type="button" title="Refresh"><RefreshCw size={17} /></button>
-          <button type="button" title={expanded ? "Dock preview" : "Expand preview"} onClick={onExpand}>
-            {expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-          </button>
-          <button type="button" title="Hide preview" onClick={onHide}><EyeOff size={17} /></button>
-        </div>
-      </div>
 
-      <div className="device-switcher">
-        {[
-          ["Desktop", Laptop],
-          ["Tablet", Tablet],
-          ["Mobile", Smartphone],
-        ].map(([label, Icon]) => (
-          <button
-            key={label}
-            type="button"
-            className={mode === label ? "active" : ""}
-            onClick={() => onModeChange(label)}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
-        ))}
+        <div className="preview-header-controls">
+          <div className="preview-integrations">
+            <ToolButton icon={Github} label="GitHub" />
+            <ToolButton icon={Cloud} label="Cloudflare" />
+            <ToolButton icon={Database} label="Supabase" />
+            <ToolButton icon={Boxes} label="Convex" />
+          </div>
+
+          <div className="preview-control-strip">
+            <div className="device-icon-switcher" aria-label="Preview device">
+              {[
+                ["Desktop", Laptop],
+                ["Tablet", Tablet],
+                ["Mobile", Smartphone],
+              ].map(([label, Icon]) => (
+                <button
+                  key={label}
+                  type="button"
+                  title={label}
+                  aria-label={label}
+                  className={mode === label ? "active" : ""}
+                  onClick={() => onModeChange(label)}
+                >
+                  <Icon size={16} />
+                </button>
+              ))}
+            </div>
+
+            <span className="toolbar-divider" />
+
+            <div className="preview-toolbar-actions">
+              <button type="button" title="Refresh"><RefreshCw size={17} /></button>
+              <button type="button" title={expanded ? "Dock preview" : "Expand preview"} onClick={onExpand}>
+                {expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+              </button>
+              <button type="button" title="Hide preview" onClick={onHide}><EyeOff size={17} /></button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="preview-stage">
@@ -482,21 +497,16 @@ export default function App() {
       />
 
       <div className="main-column">
-        <header className="topbar">
+        <header className="mobile-topbar">
           <div className="mobile-brand"><span className="brand-mark">VA</span><strong>Viking Aries</strong></div>
-          <div className="topbar-spacer" />
-          <div className="topbar-tools">
-            <ToolButton icon={Github} label="GitHub" />
-            <ToolButton icon={Cloud} label="Cloudflare" />
-            <ToolButton icon={Database} label="Supabase" />
-            <ToolButton icon={Boxes} label="Convex" />
+          <div className="mobile-topbar-actions">
+            {!previewVisible && (
+              <button type="button" className="restore-preview" onClick={() => setPreviewVisible(true)}>
+                <Monitor size={16} /> Preview
+              </button>
+            )}
+            <button className="topbar-avatar" type="button">EE</button>
           </div>
-          {!previewVisible && (
-            <button type="button" className="restore-preview" onClick={() => setPreviewVisible(true)}>
-              <Monitor size={16} /> Preview
-            </button>
-          )}
-          <button className="topbar-avatar" type="button">EE</button>
         </header>
 
         <div className="content-shell">
