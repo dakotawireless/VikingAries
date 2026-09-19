@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Archive,
@@ -239,85 +239,272 @@ function ProjectContext() {
   );
 }
 
+function createSeedThreads() {
+  return [
+    {
+      id: "migration",
+      title: "Migration",
+      messages: [
+        {
+          id: "seed-user-1",
+          role: "user",
+          content: "I need to set up commission sync between Timekeeper and Dakota Wireless POS. Use the existing API and map sales data to employees based on clerk ID.",
+          timestamp: "10:24 AM",
+        },
+        {
+          id: "seed-assistant-1",
+          role: "assistant",
+          content: "I’ll set up the commission sync integration. I’ll inspect the existing API, confirm the employee mapping, preserve server-side secret handling, and keep the current cross-project relationship intact.",
+          timestamp: "10:24 AM",
+        },
+        {
+          id: "seed-user-2",
+          role: "user",
+          content: "Great. Also include a manual sync control in the Timekeeper admin panel.",
+          timestamp: "10:26 AM",
+        },
+      ],
+    },
+    { id: "payroll", title: "Payroll", messages: [] },
+    { id: "commission-sync", title: "Commission Sync", messages: [] },
+  ];
+}
+
+function formatChatTime() {
+  return new Intl.DateTimeFormat([], {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date());
+}
+
+function loadProjectThreads(projectId) {
+  try {
+    const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch {
+    // Fall back to starter threads if browser storage is unavailable.
+  }
+  return createSeedThreads();
+}
+
 function ChatWorkspace({ project }) {
-  const [activeTab, setActiveTab] = useState("Migration");
+  const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
+  const [activeThreadId, setActiveThreadId] = useState(() => loadProjectThreads(project.id)[0]?.id || "migration");
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [statusText, setStatusText] = useState("Ready");
+  const scrollRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
+
+  useEffect(() => {
+    window.localStorage.setItem(`viking-aries-chats:${project.id}`, JSON.stringify(threads));
+  }, [project.id, threads]);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [activeThreadId, activeThread?.messages?.length, sending]);
+
+  const updateThread = (threadId, updater) => {
+    setThreads((current) =>
+      current.map((thread) => (thread.id === threadId ? updater(thread) : thread))
+    );
+  };
+
+  const createNewChat = () => {
+    const id = `chat-${Date.now()}`;
+    setThreads((current) => [
+      ...current,
+      { id, title: "New Chat", messages: [] },
+    ]);
+    setActiveThreadId(id);
+    setDraft("");
+    setStatusText("New chat");
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const sendMessage = async () => {
+    const content = draft.trim();
+    if (!content || sending || !activeThread) return;
+
+    const threadId = activeThread.id;
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content,
+      timestamp: formatChatTime(),
+    };
+
+    const requestMessages = [...activeThread.messages, userMessage].map(({ role, content: text }) => ({
+      role,
+      content: text,
+    }));
+
+    updateThread(threadId, (thread) => ({
+      ...thread,
+      title:
+        thread.title === "New Chat"
+          ? content.length > 28
+            ? `${content.slice(0, 28)}…`
+            : content
+          : thread.title,
+      messages: [...thread.messages, userMessage],
+    }));
+
+    setDraft("");
+    setSending(true);
+    setStatusText("Viking Aries is thinking…");
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: {
+            id: project.id,
+            name: project.name,
+          },
+          thread: {
+            id: threadId,
+            title: activeThread.title,
+          },
+          messages: requestMessages,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "The AI service did not return a response.");
+      }
+
+      const assistantMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: payload.text || "I’m connected, but I didn’t receive any text back.",
+        timestamp: formatChatTime(),
+      };
+
+      updateThread(threadId, (thread) => ({
+        ...thread,
+        messages: [...thread.messages, assistantMessage],
+      }));
+      setStatusText(payload.model ? `Connected · ${payload.model}` : "Connected");
+    } catch (error) {
+      const errorMessage = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `I couldn’t complete that request. ${error.message}`,
+        timestamp: formatChatTime(),
+        error: true,
+      };
+
+      updateThread(threadId, (thread) => ({
+        ...thread,
+        messages: [...thread.messages, errorMessage],
+      }));
+      setStatusText("Connection needs attention");
+    } finally {
+      setSending(false);
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+    }
+  };
+
+  const handleComposerKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  };
 
   return (
     <main className="workspace">
       <div className="project-heading">
-        <div>
-          <div className="project-title-row">
-            <h1>{project.name}</h1>
-            <span className="active-project"><span /> Active Project</span>
-          </div>
+        <div className="project-title-row">
+          <h1>{project.name}</h1>
+          <span className="active-project"><span /> Active Project</span>
+          <span className="chat-connection-status">{statusText}</span>
         </div>
       </div>
 
       <div className="chat-tab-row">
-        {chatTabs.map((tab) => (
+        {threads.map((thread) => (
           <button
             type="button"
-            key={tab}
-            className={activeTab === tab ? "chat-tab active" : "chat-tab"}
-            onClick={() => setActiveTab(tab)}
+            key={thread.id}
+            className={activeThreadId === thread.id ? "chat-tab active" : "chat-tab"}
+            onClick={() => {
+              setActiveThreadId(thread.id);
+              setStatusText("Ready");
+            }}
+            title={thread.title}
           >
-            {tab}
+            {thread.title}
           </button>
         ))}
-        <button className="chat-tab new-chat" type="button"><span>+</span> New Chat</button>
+        <button className="chat-tab new-chat" type="button" onClick={createNewChat}>
+          <span>+</span> New Chat
+        </button>
       </div>
 
-      <div className="workspace-scroll">
+      <div className="workspace-scroll" ref={scrollRef}>
         <ProjectContext />
 
-        <section className="conversation">
-          <article className="message-row">
-            <div className="avatar">EE</div>
-            <div className="message-stack">
-              <div className="message-meta"><strong>Erik</strong><span>10:24 AM</span></div>
-              <div className="user-message">
-                I need to set up commission sync between Timekeeper and Dakota Wireless POS.
-                <br />Use the existing API and map sales data to employees based on clerk ID.
-              </div>
+        <section className="conversation live-conversation">
+          {activeThread?.messages.length === 0 && (
+            <div className="empty-chat-state">
+              <div className="empty-chat-icon"><Bot size={22} /></div>
+              <h3>Start a conversation</h3>
+              <p>
+                Ask Viking Aries to build, fix, inspect, connect, or deploy something in {project.name}.
+              </p>
             </div>
-          </article>
+          )}
 
-          <article className="message-row">
-            <div className="assistant-avatar"><WandSparkles size={18} /></div>
-            <div className="message-stack">
-              <div className="message-meta"><strong>Viking Aries</strong><span>10:24 AM</span></div>
-              <div className="assistant-message">
-                <p>I’ll set up the commission sync integration. Here’s the plan:</p>
-                <ol>
-                  <li><span>1</span>Connect to Dakota Wireless POS API</li>
-                  <li><span>2</span>Map clerk IDs to Timekeeper employees</li>
-                  <li><span>3</span>Create commission calculation logic</li>
-                  <li><span>4</span>Preserve the existing server-side secret handling</li>
-                </ol>
-                <p>I’ll start by inspecting the current integration points and shared project context.</p>
+          {activeThread?.messages.map((message) => (
+            <article className="message-row" key={message.id}>
+              {message.role === "user" ? (
+                <div className="avatar">EE</div>
+              ) : (
+                <div className="assistant-avatar"><WandSparkles size={18} /></div>
+              )}
 
-                <div className="task-status success">
-                  <ShieldCheck size={18} />
-                  <div><strong>Connected project located</strong><small>Dakota Wireless POS relationship is registered.</small></div>
-                  <time>10:25 AM</time>
+              <div className="message-stack">
+                <div className="message-meta">
+                  <strong>{message.role === "user" ? "Erik" : "Viking Aries"}</strong>
+                  <span>{message.timestamp}</span>
                 </div>
-                <div className="task-status working">
-                  <RefreshCw size={18} />
-                  <div><strong>Analyzing integration...</strong><small>Checking employee mapping and API contract.</small></div>
-                  <time>10:25 AM</time>
+                <div
+                  className={
+                    message.role === "user"
+                      ? "user-message"
+                      : message.error
+                        ? "assistant-message error-message"
+                        : "assistant-message"
+                  }
+                >
+                  {message.content}
                 </div>
               </div>
-            </div>
-          </article>
+            </article>
+          ))}
 
-          <article className="message-row">
-            <div className="avatar">EE</div>
-            <div className="message-stack">
-              <div className="message-meta"><strong>Erik</strong><span>10:26 AM</span></div>
-              <div className="user-message">Great. Also include a manual sync control in the Timekeeper admin panel.</div>
-            </div>
-          </article>
+          {sending && (
+            <article className="message-row">
+              <div className="assistant-avatar"><WandSparkles size={18} /></div>
+              <div className="message-stack">
+                <div className="message-meta"><strong>Viking Aries</strong><span>now</span></div>
+                <div className="assistant-message typing-message" aria-label="Viking Aries is typing">
+                  <span /><span /><span />
+                </div>
+              </div>
+            </article>
+          )}
         </section>
       </div>
 
@@ -325,17 +512,25 @@ function ChatWorkspace({ project }) {
         className="composer"
         onSubmit={(event) => {
           event.preventDefault();
-          setDraft("");
+          sendMessage();
         }}
       >
-        <button className="attach-button" type="button"><Archive size={18} /></button>
+        <button className="attach-button" type="button" title="Attachments coming next">
+          <Archive size={18} />
+        </button>
         <textarea
+          ref={textareaRef}
           value={draft}
+          disabled={sending}
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleComposerKeyDown}
           placeholder="Tell Viking Aries what to build, fix, connect, or deploy..."
+          rows={1}
         />
-        <button className="send-button" type="submit"><Send size={17} /> Send</button>
-        <span className="composer-hint">Shift + Enter for new line</span>
+        <button className="send-button" type="submit" disabled={sending || !draft.trim()}>
+          <Send size={17} /> {sending ? "Working" : "Send"}
+        </button>
+        <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
       </form>
     </main>
   );
@@ -560,7 +755,7 @@ export default function App() {
           className={resizingPreview ? "content-shell is-resizing" : "content-shell"}
           style={{ "--preview-width": `${previewWidth}%` }}
         >
-          {!previewExpanded && <ChatWorkspace project={project} />}
+          {!previewExpanded && <ChatWorkspace key={project.id} project={project} />}
           {!previewExpanded && previewVisible && (
             <div
               className="preview-resize-handle"
