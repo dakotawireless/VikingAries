@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   Github,
+  GripVertical,
   KeyRound,
   Laptop,
   Link2,
@@ -484,6 +485,11 @@ export default function App() {
   const [previewMode, setPreviewMode] = useState("Desktop");
   const [previewVisible, setPreviewVisible] = useState(true);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(() => {
+    const saved = Number(window.localStorage.getItem("viking-aries-preview-width"));
+    return Number.isFinite(saved) && saved >= 26 && saved <= 65 ? saved : 36;
+  });
+  const [resizingPreview, setResizingPreview] = useState(false);
 
   const layoutClass = useMemo(() => {
     if (previewExpanded) return "app-shell preview-expanded";
@@ -494,6 +500,40 @@ export default function App() {
   const changeWorkspace = (next) => {
     setWorkspace(next);
     setProject(next === "Personal" ? personalProjects[0] : contractorProjects[0]);
+  };
+
+  const startPreviewResize = (event) => {
+    if (!previewVisible || previewExpanded) return;
+
+    event.preventDefault();
+    const shell = event.currentTarget.parentElement;
+    const rect = shell.getBoundingClientRect();
+    let latestWidth = previewWidth;
+
+    setResizingPreview(true);
+    document.body.classList.add("resizing-preview");
+
+    const onPointerMove = (moveEvent) => {
+      const rawPercent = ((rect.right - moveEvent.clientX) / rect.width) * 100;
+      latestWidth = Math.min(65, Math.max(26, rawPercent));
+      setPreviewWidth(latestWidth);
+    };
+
+    const stopResize = () => {
+      setResizingPreview(false);
+      document.body.classList.remove("resizing-preview");
+      window.localStorage.setItem("viking-aries-preview-width", String(latestWidth));
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopResize);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopResize);
+  };
+
+  const resetPreviewWidth = () => {
+    setPreviewWidth(36);
+    window.localStorage.setItem("viking-aries-preview-width", "36");
   };
 
   return (
@@ -518,8 +558,24 @@ export default function App() {
           </div>
         </header>
 
-        <div className="content-shell">
+        <div
+          className={resizingPreview ? "content-shell is-resizing" : "content-shell"}
+          style={{ "--preview-width": `${previewWidth}%` }}
+        >
           {!previewExpanded && <ChatWorkspace project={project} />}
+          {!previewExpanded && previewVisible && (
+            <div
+              className="preview-resize-handle"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize preview pane"
+              title="Drag to resize preview · Double-click to reset"
+              onPointerDown={startPreviewResize}
+              onDoubleClick={resetPreviewWidth}
+            >
+              <GripVertical size={14} />
+            </div>
+          )}
           <PreviewPane
             mode={previewMode}
             onModeChange={setPreviewMode}
