@@ -25,6 +25,7 @@ import {
   Logs,
   Maximize2,
   MessageSquare,
+  Mic,
   Minimize2,
   Monitor,
   MoreHorizontal,
@@ -462,9 +463,11 @@ function ChatWorkspace({ project }) {
   const [activeThreadId, setActiveThreadId] = useState(() => loadProjectThreads(project.id)[0]?.id || "migration");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [listening, setListening] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
 
@@ -476,6 +479,12 @@ function ChatWorkspace({ project }) {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [activeThreadId, activeThread?.messages?.length, sending]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop?.();
+    };
+  }, []);
 
   const updateThread = (threadId, updater) => {
     setThreads((current) =>
@@ -588,6 +597,64 @@ function ChatWorkspace({ project }) {
     }
   };
 
+  const toggleVoiceInput = () => {
+    if (listening) {
+      recognitionRef.current?.stop?.();
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setStatusText("Voice input is not supported in this browser");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+
+    let baseDraft = draft;
+    let finalTranscript = "";
+
+    recognition.onstart = () => {
+      recognitionRef.current = recognition;
+      setListening(true);
+      setStatusText("Listening…");
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript || "";
+        if (event.results[index].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      const spokenText = `${finalTranscript}${interimTranscript}`.trim();
+      const separator = baseDraft.trim() && spokenText ? " " : "";
+      setDraft(`${baseDraft}${separator}${spokenText}`);
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error !== "aborted") {
+        setStatusText(`Voice input error: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setListening(false);
+      setStatusText("Ready");
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+    };
+
+    recognition.start();
+  };
+
   const handleComposerKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -688,6 +755,17 @@ function ChatWorkspace({ project }) {
       >
         <button className="attach-button" type="button" title="Attachments coming next">
           <Archive size={18} />
+        </button>
+        <button
+          className={listening ? "voice-button active" : "voice-button"}
+          type="button"
+          title={listening ? "Stop voice input" : "Start voice input"}
+          aria-label={listening ? "Stop voice input" : "Start voice input"}
+          aria-pressed={listening}
+          onClick={toggleVoiceInput}
+          disabled={sending}
+        >
+          <Mic size={18} />
         </button>
         <textarea
           ref={textareaRef}
