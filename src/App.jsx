@@ -523,7 +523,7 @@ function formatChatTimestamp(value) {
   }).format(new Date(Number(value) || Date.now()));
 }
 
-function renderChatContent(content) {
+function renderChatContent(content, onImageOpen) {
   const text = String(content || "");
   // Match any markdown image backed by an inline image data URL. Keeping this
   // generic also fixes thumbnails for images saved by older paste versions.
