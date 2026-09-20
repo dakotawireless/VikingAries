@@ -1282,6 +1282,10 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   }, [contractorsState]);
 
   useEffect(() => {
+    window.localStorage.setItem("viking-aries:preview-visible", String(previewVisible));
+  }, [previewVisible]);
+
+  useEffect(() => {
     window.localStorage.setItem("viking-aries:active-workspace", workspace);
   }, [workspace]);
 
