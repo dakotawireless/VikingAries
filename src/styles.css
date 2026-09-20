@@ -1520,3 +1520,27 @@ body.resizing-preview * {
   opacity: .65;
   cursor: default;
 }
+
+
+.integration-runtime-state {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #e5ebf0;
+  color: #62788b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.integration-runtime-state strong {
+  color: #334b5f;
+}
+.integration-feedback {
+  margin-bottom: 14px;
+  padding: 9px 11px;
+  border: 1px solid #cfe2f1;
+  border-radius: 5px;
+  color: #315b78;
+  background: #f1f8fd;
+  font-size: 12px;
+}
