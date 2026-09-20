@@ -1015,6 +1015,7 @@ function ChatWorkspace({ project, active = true }) {
       jobId,
       role: "user",
       content,
+      fullSizeImage: attachment?.fullDataUrl || "",
       timestamp: formatChatTime(),
       queueStatus: "queued",
     };
