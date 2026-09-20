@@ -1805,3 +1805,59 @@ body.resizing-preview * {
 
   .mobile-view-button span { display: inline; }
 }
+
+
+/* Give the mobile preview nearly the entire screen instead of shrinking it behind desktop-style controls. */
+@media (max-width: 900px) {
+  .preview-expanded .preview-toolbar {
+    min-height: 46px;
+    padding: 6px 8px;
+  }
+
+  .preview-expanded .preview-title p,
+  .preview-expanded .preview-integrations,
+  .preview-expanded .device-icon-switcher,
+  .preview-expanded .toolbar-divider {
+    display: none;
+  }
+
+  .preview-expanded .preview-header-controls {
+    margin-left: auto;
+  }
+
+  .preview-expanded .preview-control-strip {
+    margin-left: auto;
+  }
+
+  .preview-expanded .preview-stage {
+    height: calc(100dvh - 100px);
+  }
+
+  .preview-expanded .preview-device,
+  .preview-expanded .preview-device iframe {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: calc(100dvh - 100px) !important;
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .preview-expanded .preview-toolbar {
+    min-height: 42px;
+    padding: 4px 6px;
+  }
+
+  .preview-expanded .preview-title h2 {
+    font-size: 14px;
+  }
+
+  .preview-expanded .preview-stage {
+    height: calc(100dvh - 96px);
+  }
+
+  .preview-expanded .preview-device,
+  .preview-expanded .preview-device iframe {
+    min-height: calc(100dvh - 96px) !important;
+  }
+}
