@@ -389,40 +389,26 @@ function Sidebar({
   );
 }
 
-function ProjectContext() {
-  const steps = [
-    { title: "Timekeeper", subtitle: "Employee Management", icon: Clock3 },
-    { title: "Commission API", subtitle: "Sync & Calculate", icon: Code2 },
-    { title: "Dakota Wireless POS", subtitle: "Sales Data Source", icon: Monitor },
-  ];
+function ProjectSnapshot({ project }) {
+  const items = [
+    project?.repository ? { icon: Github, label: "Repo", value: project.repository } : null,
+    project?.backend ? { icon: Database, label: "Backend", value: project.backend } : null,
+    project?.deploymentUrl ? { icon: Cloud, label: "Live", value: "Production" } : null,
+  ].filter(Boolean);
+
+  if (!items.length) return null;
 
   return (
-    <section className="context-panel">
-      <div className="section-heading-row">
-        <div className="section-heading">
-          <Database size={17} />
-          <span>Project Context</span>
+    <div className="project-snapshot" aria-label="Project snapshot">
+      {items.map(({ icon: Icon, label, value }) => (
+        <div className="project-snapshot-item" key={label} title={value}>
+          <Icon size={13} />
+          <span>{label}</span>
+          <strong>{value}</strong>
         </div>
-        <div className="context-status">
-          <span><CircleDot size={13} /> Connected</span>
-          <button type="button">View Architecture <ChevronRight size={14} /></button>
-        </div>
-      </div>
-      <div className="context-flow">
-        {steps.map(({ title, subtitle, icon: Icon }, index) => (
-          <div className="context-flow-fragment" key={title}>
-            <div className="context-node">
-              <div className="context-icon"><Icon size={18} /></div>
-              <div>
-                <strong>{title}</strong>
-                <small>{subtitle}</small>
-              </div>
-            </div>
-            {index < steps.length - 1 && <ChevronRight className="context-arrow" size={20} />}
-          </div>
-        ))}
-      </div>
-    </section>
+      ))}
+      {project?.status && <span className="project-snapshot-status">{project.status}</span>}
+    </div>
   );
 }
 
@@ -646,7 +632,7 @@ function ChatWorkspace({ project }) {
       </div>
 
       <div className="workspace-scroll" ref={scrollRef}>
-        <ProjectContext />
+        <ProjectSnapshot project={project} />
 
         <section className="conversation live-conversation">
           {activeThread?.messages.length === 0 && (
