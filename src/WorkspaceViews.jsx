@@ -1,3 +1,4 @@
+import { formatUsd, useApiUsage } from "./api-usage.jsx";
 import { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -1256,41 +1257,13 @@ function SecretsView({ project }) {
 }
 
 
-function formatUsd(value) {
-  const amount = Number(value || 0);
-  if (amount < 0.01 && amount > 0) return `${amount.toFixed(4)}`;
-  return `${amount.toFixed(2)}`;
-}
-
 function formatTokenCount(value) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
 }
 
 function ApiUsageView({ project }) {
   const [rangeDays, setRangeDays] = useState(30);
-  const [usage, setUsage] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const loadUsage = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/usage?days=${rangeDays}`, { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Could not load API usage.");
-      setUsage(payload);
-    } catch (err) {
-      setError(err.message || "Could not load API usage.");
-      setUsage(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadUsage();
-  }, [rangeDays]);
+  const { usage, loading, error, refresh: loadUsage } = useApiUsage(rangeDays);
 
   const totals = usage?.totals || {};
   const today = usage?.today || {};
@@ -1302,11 +1275,12 @@ function ApiUsageView({ project }) {
       <PageHeader
         icon={ChartNoAxesCombined}
         title="API Usage"
-        description="Exact OpenAI token usage recorded by Viking Aries, with estimated model cost."
+        description="Recorded OpenAI usage across all Viking Aries projects. Updates every 15 seconds."
         action={
           <div className="usage-header-actions">
             <select value={rangeDays} onChange={(e) => setRangeDays(Number(e.target.value))}>
-              <option value={1}>Today</option>
+              <option value={0}>All time</option>
+              <option value={1}>24 hours</option>
               <option value={7}>7 days</option>
               <option value={30}>30 days</option>
               <option value={90}>90 days</option>
@@ -1318,11 +1292,11 @@ function ApiUsageView({ project }) {
         }
       />
 
-      <InfoBanner text="Cost is estimated from the model/token usage returned by OpenAI. Provider account credits and invoices remain the source of truth for billing." />
+      <InfoBanner text="All projects. USD estimates for OpenAI model calls made through Viking Aries. Provider invoices determine actual charges. Other services and calls made outside VA are not included." />
 
       {error && (
         <section className="workspace-card usage-error-card">
-          <strong>API Counter needs setup</strong>
+          <strong>API usage could not be refreshed</strong>
           <p>{error}</p>
         </section>
       )}
@@ -1330,10 +1304,10 @@ function ApiUsageView({ project }) {
       {!error && (
         <>
           <section className="usage-metric-grid">
-            <div className="usage-metric-card"><span>Today</span><strong>{formatUsd(today.estimatedCostUsd)}</strong><small>{formatTokenCount(today.requests)} requests</small></div>
-            <div className="usage-metric-card"><span>{rangeDays === 1 ? "Selected period" : `Last ${rangeDays} days`}</span><strong>{formatUsd(totals.estimatedCostUsd)}</strong><small>{formatTokenCount(totals.requests)} requests</small></div>
-            <div className="usage-metric-card"><span>Input tokens</span><strong>{formatTokenCount(totals.inputTokens)}</strong><small>{formatTokenCount(totals.cachedTokens)} cached</small></div>
-            <div className="usage-metric-card"><span>Output tokens</span><strong>{formatTokenCount(totals.outputTokens)}</strong><small>{formatTokenCount(totals.reasoningTokens)} reasoning</small></div>
+            <div className="usage-metric-card"><span>Today (UTC)</span><strong>{usage ? formatUsd(today.estimatedCostUsd) : "..."}</strong><small>{formatTokenCount(today.requests)} requests</small></div>
+            <div className="usage-metric-card"><span>{rangeDays === 0 ? "All time" : rangeDays === 1 ? "Last 24 hours" : `Last ${rangeDays} days`}</span><strong>{usage ? formatUsd(totals.estimatedCostUsd) : "..."}</strong><small>{formatTokenCount(totals.requests)} requests</small></div>
+            <div className="usage-metric-card"><span>Input tokens</span><strong>{usage ? formatTokenCount(totals.inputTokens) : "..."}</strong><small>{formatTokenCount(totals.cachedTokens)} cached</small></div>
+            <div className="usage-metric-card"><span>Output tokens</span><strong>{usage ? formatTokenCount(totals.outputTokens) : "..."}</strong><small>{formatTokenCount(totals.reasoningTokens)} reasoning</small></div>
           </section>
 
           <section className="workspace-card">
@@ -1358,10 +1332,22 @@ function ApiUsageView({ project }) {
                 ))}
               </div>
             ) : (
-              <EmptyState text="No recorded API usage yet. New Viking Aries chat requests will appear here after the backend is deployed." />
+              <EmptyState text="No recorded API usage in this period. New model calls will appear here automatically." />
             )}
           </section>
 
+          <section className="workspace-card">
+            <div className="card-heading-row"><div><h2>By project</h2><p>Recorded usage in the selected period.</p></div></div>
+            <div className="usage-recent-list">
+              {(usage?.byProject || []).map((row) => (
+                <div className="usage-recent-row" key={row.projectId}>
+                  <div><strong>{row.projectName || row.projectId}</strong><small>{formatTokenCount(row.requests)} model calls</small></div>
+                  <span>{formatTokenCount(row.totalTokens)} tokens</span>
+                  <strong>{formatUsd(row.estimatedCostUsd)}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
           <section className="workspace-card">
             <div className="card-heading-row">
               <div><h2>Recent requests</h2><p>Most recent recorded model calls across Viking Aries projects.</p></div>

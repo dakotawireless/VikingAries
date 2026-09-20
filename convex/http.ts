@@ -41,7 +41,7 @@ http.route({
 
     const url = new URL(request.url);
     const requestedDays = Number(url.searchParams.get("days") || 30);
-    const days = Number.isFinite(requestedDays)
+    const days = requestedDays === 0 ? 0 : Number.isFinite(requestedDays)
       ? Math.min(365, Math.max(1, Math.floor(requestedDays)))
       : 30;
     const summary = await ctx.runQuery(internal.usage.usageSummary, { days });

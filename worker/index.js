@@ -1,3 +1,4 @@
+import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 const CONVEX_MANAGEMENT_API_BASE = "https://api.convex.dev/v1";
@@ -943,54 +944,6 @@ function extractResponseText(payload) {
 
 const VA_CONVEX_SITE_URL = "https://flippant-mandrill-487.convex.site";
 
-const OPENAI_PRICING = {
-  "gpt-5.6-luna": { input: 0.20, cached: 0.02, cacheWrite: 0.25, output: 1.20 },
-  "gpt-5.6-terra": { input: 2.00, cached: 0.20, cacheWrite: 2.50, output: 12.00 },
-  "gpt-5.6-sol": { input: 4.00, cached: 0.40, cacheWrite: 5.00, output: 20.00 },
-};
-
-function openAIUsageForResponse(model, payload) {
-  const usage = payload?.usage || {};
-  const inputTokens = Number(usage.input_tokens || 0);
-  const cachedTokens = Number(usage.input_tokens_details?.cached_tokens || 0);
-  const cacheWriteTokens = Number(usage.input_tokens_details?.cache_write_tokens || 0);
-  const outputTokens = Number(usage.output_tokens || 0);
-  const reasoningTokens = Number(usage.output_tokens_details?.reasoning_tokens || 0);
-  const ordinaryInputTokens = Math.max(0, inputTokens - cachedTokens - cacheWriteTokens);
-  const rates = OPENAI_PRICING[model] || OPENAI_PRICING["gpt-5.6-luna"];
-  const largePromptMultiplier = inputTokens > 272000 ? 2 : 1;
-  const largeOutputMultiplier = inputTokens > 272000 ? 1.5 : 1;
-  const estimatedCostUsd =
-    ((ordinaryInputTokens * rates.input * largePromptMultiplier) +
-      (cachedTokens * rates.cached * largePromptMultiplier) +
-      (cacheWriteTokens * rates.cacheWrite * largePromptMultiplier) +
-      (outputTokens * rates.output * largeOutputMultiplier)) / 1000000;
-
-  return {
-    requests: 1,
-    inputTokens,
-    cachedTokens,
-    cacheWriteTokens,
-    outputTokens,
-    reasoningTokens,
-    totalTokens: Number(usage.total_tokens || inputTokens + outputTokens),
-    estimatedCostUsd,
-  };
-}
-
-function addUsageTotals(current, next) {
-  return {
-    requests: Number(current.requests || 0) + Number(next.requests || 0),
-    inputTokens: Number(current.inputTokens || 0) + Number(next.inputTokens || 0),
-    cachedTokens: Number(current.cachedTokens || 0) + Number(next.cachedTokens || 0),
-    cacheWriteTokens: Number(current.cacheWriteTokens || 0) + Number(next.cacheWriteTokens || 0),
-    outputTokens: Number(current.outputTokens || 0) + Number(next.outputTokens || 0),
-    reasoningTokens: Number(current.reasoningTokens || 0) + Number(next.reasoningTokens || 0),
-    totalTokens: Number(current.totalTokens || 0) + Number(next.totalTokens || 0),
-    estimatedCostUsd: Number(current.estimatedCostUsd || 0) + Number(next.estimatedCostUsd || 0),
-  };
-}
-
 async function recordVAUsage(env, record) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) return { recorded: false, reason: "VA_USAGE_INGEST_SECRET is not configured." };
@@ -1002,11 +955,12 @@ async function recordVAUsage(env, record) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(record),
+    signal: AbortSignal.timeout(5000),
   });
 
   const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `Usage store returned status ${response.status}`);
+  if (!response.ok || !payload?.ok || !payload?.id) {
+    throw new Error("API usage could not be saved.");
   }
   return { recorded: true, id: payload?.id || null };
 }
@@ -1393,7 +1347,9 @@ export default {
         return json({ error: "Owner login required." }, { status: 401 });
       }
 
-      const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days") || 30)));
+      const requestedDays = Number(url.searchParams.get("days") || 30);
+      const days = requestedDays === 0 ? 0 : Number.isFinite(requestedDays)
+        ? Math.min(365, Math.max(1, Math.floor(requestedDays))) : 30;
       try {
         return json(await readVAUsage(env, days));
       } catch (error) {
@@ -1777,6 +1733,33 @@ export default {
       totalTokens: 0,
       estimatedCostUsd: 0,
     };
+    let usageRecorded = true;
+    const usageWarning = () => usageRecorded ? "" : " API Counter warning: some usage could not be saved; totals may be incomplete.";
+    const captureUsage = async (response) => {
+      if (!response?.usage) {
+        usageRecorded = false;
+        return;
+      }
+      const usage = openAIUsageForResponse(model, response);
+      chatUsage = addUsageTotals(chatUsage, usage);
+      // Save each provider response before running tools or requesting another.
+      // Later failures must not erase calls that have already consumed tokens.
+      try {
+        const recorded = await recordVAUsage(env, {
+          projectId: projectId || "unknown",
+          projectName,
+          threadId: typeof body?.thread?.id === "string" ? body.thread.id.trim().slice(0, 180) : "",
+          provider: "OpenAI",
+          model,
+          responseId: response.id || "",
+          ...usage,
+          createdAt: Date.now(),
+        });
+        if (!recorded.recorded) usageRecorded = false;
+      } catch {
+        usageRecorded = false;
+      }
+    };
     try {
       payload = await callOpenAI({
         apiKey,
@@ -1785,7 +1768,7 @@ export default {
         input: messages,
         tools,
       });
-      chatUsage = addUsageTotals(chatUsage, openAIUsageForResponse(model, payload));
+      await captureUsage(payload);
 
       for (let step = 0; step < 40; step += 1) {
         const calls = extractFunctionCalls(payload);
@@ -1826,11 +1809,11 @@ export default {
           tools,
           previousResponseId: payload.id,
         });
-        chatUsage = addUsageTotals(chatUsage, openAIUsageForResponse(model, payload));
+        await captureUsage(payload);
       }
     } catch (error) {
       return json(
-        { error: error.message || "Could not reach the AI service." },
+        { error: (error.message || "Could not reach the AI service.") + usageWarning(), usage: chatUsage, usageRecorded },
         { status: error.status || 502 }
       );
     }
@@ -1846,7 +1829,8 @@ export default {
         return json(
           {
             error:
-              "The AI response ended while a tool action was still pending. Retry the request; no successful completion was returned.",
+              "The AI response ended while a tool action was still pending. Retry the request; no successful completion was returned." + usageWarning(),
+            usage: chatUsage, usageRecorded,
             responseStatus: incompleteReason,
             pendingTools: pendingCalls.map((call) => call.name),
           },
@@ -1855,37 +1839,18 @@ export default {
       }
       return json(
         {
-          error: incompleteReason
+          error: (incompleteReason
             ? `The AI response did not complete (${incompleteReason}). Please retry.`
-            : "The AI service returned no text.",
+            : "The AI service returned no text.") + usageWarning(),
+          usage: chatUsage, usageRecorded,
         },
         { status: 502 }
       );
     }
 
-    let usageRecorded = false;
-    try {
-      const recorded = await recordVAUsage(env, {
-        projectId: projectId || "unknown",
-        projectName,
-        threadId:
-          typeof body?.thread?.id === "string"
-            ? body.thread.id.trim().slice(0, 180)
-            : "",
-        provider: "OpenAI",
-        model,
-        responseId: payload?.id || "",
-        ...chatUsage,
-        createdAt: Date.now(),
-      });
-      usageRecorded = Boolean(recorded?.recorded);
-    } catch {
-      // Usage telemetry must never block the user's chat response.
-      usageRecorded = false;
-    }
 
     return json({
-      text,
+      text: text + usageWarning(),
       model,
       responseId: payload?.id || null,
       toolsAvailable: tools.map((tool) => tool.name),

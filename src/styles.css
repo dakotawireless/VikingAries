@@ -2240,3 +2240,12 @@ body.resizing-preview * {
    iframes are narrow too, and applying phone typography there made the
    preview visibly larger than the adjacent chat. Actual touch/mobile UI keeps
    its readable sizing through the scoped .app-shell.mobile-ui rules above. */
+
+/* Dollar-only ticker beside Log Out; API Usage opens the detail page. */
+.sidebar-footer-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sidebar-footer-actions .logout-link { min-width: 0; }
+.api-counter {
+  flex: 0 0 auto; padding: 5px 8px; border: 1px solid #24475b; border-radius: 5px;
+  color: #e9f2f8; background: #0a293d; font-size: 13px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}

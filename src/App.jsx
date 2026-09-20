@@ -1,3 +1,4 @@
+import { ApiCounter } from "./api-usage.jsx";
 import WorkspaceView from "./WorkspaceViews.jsx";
 import { startSharedStorageSync } from "./shared-storage.js";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -444,16 +445,19 @@ function Sidebar({
           </span>
           <ChevronRight size={16} />
         </button>
-        <button
-          className="logout-link"
-          type="button"
-          onClick={onLogout}
-          disabled={!authConfigured}
-          title={authConfigured ? "Log out of Viking Aries" : "Owner authentication is not configured yet"}
-        >
-          <X size={17} />
-          {authConfigured ? "Log Out" : "Security Setup Needed"}
-        </button>
+        <div className="sidebar-footer-actions">
+          <button
+            className="logout-link"
+            type="button"
+            onClick={onLogout}
+            disabled={!authConfigured}
+            title={authConfigured ? "Log out of Viking Aries" : "Owner authentication is not configured yet"}
+          >
+            <X size={17} />
+            {authConfigured ? "Log Out" : "Security Setup Needed"}
+          </button>
+          <ApiCounter />
+        </div>
       </div>
     </aside>
   );

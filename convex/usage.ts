@@ -28,8 +28,8 @@ export const usageSummary = internalQuery({
   args: { days: v.number() },
   handler: async (ctx, { days }) => {
     const now = Date.now();
-    const safeDays = Math.min(365, Math.max(1, Math.floor(days)));
-    const startAt = now - safeDays * 86400000;
+    const safeDays = days === 0 ? 0 : Math.min(365, Math.max(1, Math.floor(days)));
+    const startAt = safeDays === 0 ? 0 : now - safeDays * 86400000;
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
