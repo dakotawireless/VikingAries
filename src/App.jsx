@@ -11,6 +11,8 @@ import {
   Clock3,
   Cloud,
   Code2,
+  Copy,
+  Check,
   Database,
   Eye,
   EyeOff,
@@ -464,6 +466,7 @@ function ChatWorkspace({ project }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [statusText, setStatusText] = useState("Ready");
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -597,6 +600,31 @@ function ChatWorkspace({ project }) {
     }
   };
 
+  const copyMessageText = async (message) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(message.content);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = message.content;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? null : current));
+      }, 1600);
+    } catch {
+      setStatusText("Could not copy that response");
+    }
+  };
+
   const toggleVoiceInput = () => {
     if (listening) {
       recognitionRef.current?.stop?.();
@@ -716,6 +744,18 @@ function ChatWorkspace({ project }) {
                 <div className="message-meta">
                   <strong>{message.role === "user" ? "Erik" : "Viking Aries"}</strong>
                   <span>{message.timestamp}</span>
+                  {message.role === "assistant" && (
+                    <button
+                      className="copy-message-button"
+                      type="button"
+                      onClick={() => copyMessageText(message)}
+                      title={copiedMessageId === message.id ? "Copied" : "Copy response"}
+                      aria-label={copiedMessageId === message.id ? "Copied response" : "Copy response"}
+                    >
+                      {copiedMessageId === message.id ? <Check size={15} /> : <Copy size={15} />}
+                      <span>{copiedMessageId === message.id ? "Copied" : "Copy"}</span>
+                    </button>
+                  )}
                 </div>
                 <div
                   className={
