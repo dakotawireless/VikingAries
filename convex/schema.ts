@@ -9,6 +9,27 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
+  aiJobs: defineTable({
+    jobId: v.string(),
+    projectId: v.string(),
+    projectName: v.string(),
+    threadId: v.string(),
+    threadTitle: v.string(),
+    requestJson: v.string(),
+    status: v.string(),
+    resultText: v.optional(v.string()),
+    error: v.optional(v.string()),
+    model: v.optional(v.string()),
+    responseId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_project_updatedAt", ["projectId", "updatedAt"])
+    .index("by_thread_updatedAt", ["threadId", "updatedAt"]),
+
   apiUsage: defineTable({
     projectId: v.string(),
     projectName: v.string(),
