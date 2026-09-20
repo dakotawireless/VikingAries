@@ -462,7 +462,13 @@ function loadProjectThreads(projectId) {
 
 function ChatWorkspace({ project }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
-  const [activeThreadId, setActiveThreadId] = useState(() => loadProjectThreads(project.id)[0]?.id || "migration");
+  const [activeThreadId, setActiveThreadId] = useState(() => {
+    const availableThreads = loadProjectThreads(project.id);
+    const savedThreadId = window.localStorage.getItem(`viking-aries:active-chat:${project.id}`);
+    return availableThreads.some((thread) => thread.id === savedThreadId)
+      ? savedThreadId
+      : availableThreads[0]?.id || "migration";
+  });
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
@@ -479,9 +485,25 @@ function ChatWorkspace({ project }) {
   }, [project.id, threads]);
 
   useEffect(() => {
-    const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [activeThreadId, activeThread?.messages?.length, sending]);
+    window.localStorage.setItem(`viking-aries:active-chat:${project.id}`, activeThreadId);
+  }, [project.id, activeThreadId]);
+
+  useEffect(() => {
+    const scrollToBottom = () => {
+      const node = scrollRef.current;
+      if (!node) return;
+      node.scrollTop = node.scrollHeight;
+    };
+
+    // Run after layout and once more after embedded content/fonts finish settling.
+    const frame = window.requestAnimationFrame(scrollToBottom);
+    const timer = window.setTimeout(scrollToBottom, 80);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [project.id, activeThreadId, activeThread?.messages?.length, sending]);
 
   useEffect(() => {
     return () => {
@@ -953,7 +975,10 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
 }
 
 export default function App() {
-  const [workspace, setWorkspace] = useState("Personal");
+  const [workspace, setWorkspace] = useState(() => {
+    const saved = window.localStorage.getItem("viking-aries:active-workspace");
+    return saved === "Contractor" ? "Contractor" : "Personal";
+  });
   const [personalProjectsState, setPersonalProjectsState] = useState(() => {
     try {
       const saved = window.localStorage.getItem("viking-aries:personal-projects");
@@ -978,7 +1003,20 @@ export default function App() {
       return defaultContractors;
     }
   });
-  const [project, setProject] = useState(personalProjects[0]);
+  const [project, setProject] = useState(() => {
+    const savedWorkspace = window.localStorage.getItem("viking-aries:active-workspace");
+    const savedProjectId = window.localStorage.getItem("viking-aries:active-project");
+
+    const personalMatch = personalProjectsState.find((item) => item.id === savedProjectId);
+    const contractorMatch = contractorsState
+      .flatMap((contractor) => contractor.projects || [])
+      .find((item) => item.id === savedProjectId);
+
+    if (savedWorkspace === "Contractor" && contractorMatch) return contractorMatch;
+    if (personalMatch) return personalMatch;
+    if (contractorMatch) return contractorMatch;
+    return personalProjectsState[0] || personalProjects[0];
+  });
   const [activeView, setActiveView] = useState("AI Builder");
   const [previewMode, setPreviewMode] = useState("Desktop");
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -996,6 +1034,16 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem("viking-aries:contractors", JSON.stringify(contractorsState));
   }, [contractorsState]);
+
+  useEffect(() => {
+    window.localStorage.setItem("viking-aries:active-workspace", workspace);
+  }, [workspace]);
+
+  useEffect(() => {
+    if (project?.id) {
+      window.localStorage.setItem("viking-aries:active-project", project.id);
+    }
+  }, [project]);
 
   const layoutClass = useMemo(() => {
     if (previewExpanded) return "app-shell preview-expanded";
