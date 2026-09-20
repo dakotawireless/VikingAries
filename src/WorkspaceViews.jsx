@@ -470,7 +470,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
 
   const refreshRuntimeStatus = async () => {
     try {
-      const response = await fetch("/api/integrations/status", { cache: "no-store" });
+      const response = await fetch(`/api/integrations/status?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (response.ok) setRuntimeStatus(payload);
     } catch {
@@ -739,7 +739,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
       </section>
 
       {providerMessage && <div className="integration-feedback">{providerMessage}</div>}
-      <InfoBanner text="Project mappings are still browser-persisted during bootstrap. Provider credentials are never stored in localStorage or GitHub. GitHub runtime access now uses server-side secrets behind owner authentication; the remaining providers and durable VA vault are next." />
+      <InfoBanner text={
+        runtimeStatus?.project?.registered
+          ? `This project is server-registered for runtime tools. GitHub is locked to ${runtimeStatus.project.repository || "its registered repository"} on ${runtimeStatus.project.defaultBranch || "main"}.`
+          : "This project's editable mapping is saved in the browser, but write-capable runtime tools stay disabled until the project is registered server-side. Provider credentials are never stored in localStorage or GitHub."
+      } />
     </WorkspacePage>
   );
 }
