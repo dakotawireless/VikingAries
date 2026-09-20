@@ -1003,6 +1003,57 @@ async function readVAUsage(env, days) {
   return payload;
 }
 
+async function readVAState(env) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/state`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `State store returned status ${response.status}`);
+  }
+  return payload;
+}
+
+async function writeVAState(env, entry) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/state`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(entry),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `State store returned status ${response.status}`);
+  }
+  return payload;
+}
+
+async function deleteVAState(env, key, updatedAt) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(
+    `${VA_CONVEX_SITE_URL}/state?key=${encodeURIComponent(key)}&updatedAt=${encodeURIComponent(updatedAt)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${secret}` },
+    }
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `State store returned status ${response.status}`);
+  }
+  return payload;
+}
+
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -1237,6 +1288,43 @@ export default {
         return json(await readVAUsage(env, days));
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/state") {
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      try {
+        if (request.method === "GET") {
+          return json(await readVAState(env));
+        }
+
+        if (request.method === "PUT") {
+          const body = await request.json();
+          const key = typeof body?.key === "string" ? body.key.slice(0, 240) : "";
+          const value = typeof body?.value === "string" ? body.value : null;
+          const updatedAt = Number(body?.updatedAt || Date.now());
+          if (!key.startsWith("viking-aries") || value === null) {
+            return json({ error: "Invalid shared state update." }, { status: 400 });
+          }
+          return json(await writeVAState(env, { key, value, updatedAt }));
+        }
+
+        if (request.method === "DELETE") {
+          const key = (url.searchParams.get("key") || "").slice(0, 240);
+          const updatedAt = Number(url.searchParams.get("updatedAt") || Date.now());
+          if (!key.startsWith("viking-aries")) {
+            return json({ error: "Invalid shared state key." }, { status: 400 });
+          }
+          return json(await deleteVAState(env, key, updatedAt));
+        }
+
+        return json({ error: "Method not allowed." }, { status: 405 });
+      } catch (error) {
+        return json({ error: error.message || "Shared state request failed." }, { status: 502 });
       }
     }
 
