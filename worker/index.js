@@ -1,5 +1,6 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
+const CONVEX_MANAGEMENT_API_BASE = "https://api.convex.dev/v1";
 const CLOUDFLARE_ACCOUNT_ID = "f2ca2f43ab364db1c4391a015d6698fe";
 
 async function resolveSecret(binding) {
@@ -634,6 +635,91 @@ async function executeCloudflareTool(call, token, projectMetadata) {
   throw new Error(`Unsupported Cloudflare tool: ${call.name}`);
 }
 
+
+async function convexManagementRequest(token, path, init = {}) {
+  const response = await fetch(`${CONVEX_MANAGEMENT_API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload?.message ||
+      payload?.error ||
+      payload?.errors?.[0]?.message ||
+      `Convex request failed with status ${response.status}`;
+    throw new Error(String(message));
+  }
+  return payload;
+}
+
+async function convexVerifyToken(token) {
+  const payload = await convexManagementRequest(token, "/token_details");
+  return {
+    ok: true,
+    tokenType: payload?.tokenType || payload?.token_type || payload?.type || null,
+    teamId: payload?.teamId || payload?.team_id || null,
+    projectId: payload?.projectId || payload?.project_id || null,
+  };
+}
+
+async function convexGetDeployment(token, deploymentName) {
+  const safeName = String(deploymentName || "").trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(safeName)) {
+    throw new Error("No valid Convex deployment is registered for this project.");
+  }
+
+  const payload = await convexManagementRequest(
+    token,
+    `/deployments/${encodeURIComponent(safeName)}`
+  );
+
+  const result = payload?.result || payload;
+  return {
+    name: result?.name || result?.deploymentName || result?.deployment_name || safeName,
+    deploymentType: result?.deploymentType || result?.deployment_type || result?.type || null,
+    projectId: result?.projectId || result?.project_id || null,
+    projectSlug: result?.projectSlug || result?.project_slug || null,
+    teamId: result?.teamId || result?.team_id || null,
+    teamSlug: result?.teamSlug || result?.team_slug || null,
+    cloudUrl: result?.url || result?.cloudUrl || result?.cloud_url || null,
+    creationTime: result?.creationTime || result?.creation_time || result?.createdAt || null,
+    raw: result,
+  };
+}
+
+function convexToolsEnabled(authenticated, token, deploymentName) {
+  return Boolean(authenticated && token && deploymentName);
+}
+
+function buildConvexTools() {
+  return [
+    {
+      type: "function",
+      name: "convex_get_deployment_status",
+      description: "Inspect the selected project's server-registered Convex deployment using the shared PERSONAL Convex connection.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+  ];
+}
+
+async function executeConvexTool(call, token, projectMetadata) {
+  if (call.name !== "convex_get_deployment_status") {
+    throw new Error(`Unsupported Convex tool: ${call.name}`);
+  }
+  return convexGetDeployment(token, projectMetadata.backendDeployment);
+}
+
 function extractFunctionCalls(payload) {
   return (payload?.output || []).filter((item) => item?.type === "function_call");
 }
@@ -738,6 +824,7 @@ export default {
           ownerSessionSecretBinding: Boolean(env.OWNER_SESSION_SECRET),
           githubTokenBinding: Boolean(env.GITHUB_TOKEN),
           cloudflareApiTokenBinding: Boolean(env.CLOUDFLARE_API_TOKEN),
+          convexPersonalAccessTokenBinding: Boolean(env.CONVEX_PERSONAL_ACCESS_TOKEN),
         },
       });
     }
@@ -790,9 +877,10 @@ export default {
       const authenticated = auth.configured
         ? await verifyOwnerSession(request, auth.sessionSecret)
         : false;
-      const [githubToken, cloudflareToken] = await Promise.all([
+      const [githubToken, cloudflareToken, convexToken] = await Promise.all([
         resolveSecret(env.GITHUB_TOKEN),
         resolveSecret(env.CLOUDFLARE_API_TOKEN),
+        resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
       ]);
       const projectConfig = registeredProjectConfig(url.searchParams.get("projectId"));
 
@@ -830,7 +918,15 @@ export default {
               projectConfig?.cloudflareWorker
             ),
           },
-          convex: { configured: false, usable: false },
+          convex: {
+            configured: Boolean(convexToken),
+            usable: Boolean(
+              auth.configured &&
+              authenticated &&
+              convexToken &&
+              projectConfig?.backendDeployment
+            ),
+          },
           drive: { configured: false, usable: false },
           gmail: { configured: false, usable: false },
         },
@@ -887,6 +983,34 @@ export default {
           tokenId: verification.id,
           expiresOn: verification.expiresOn,
           accountId: CLOUDFLARE_ACCOUNT_ID,
+        });
+      } catch (error) {
+        return json({ error: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/convex/verify") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      const convexToken = await resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN);
+      if (!convexToken) {
+        return json({ error: "CONVEX_PERSONAL_ACCESS_TOKEN is not configured in Cloudflare runtime secrets." }, { status: 503 });
+      }
+
+      try {
+        const verification = await convexVerifyToken(convexToken);
+        return json({
+          ok: true,
+          tokenType: verification.tokenType,
+          teamId: verification.teamId,
+          projectId: verification.projectId,
         });
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
@@ -1085,9 +1209,10 @@ export default {
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
     ].filter(Boolean).join("\n");
 
-    const [githubToken, cloudflareToken] = await Promise.all([
+    const [githubToken, cloudflareToken, convexToken] = await Promise.all([
       resolveSecret(env.GITHUB_TOKEN),
       resolveSecret(env.CLOUDFLARE_API_TOKEN),
+      resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
     ]);
     const tools = [
       ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
@@ -1095,6 +1220,9 @@ export default {
         : []),
       ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
         ? buildCloudflareTools()
+        : []),
+      ...(convexToolsEnabled(ownerAuthenticated, convexToken, projectMetadata.backendDeployment)
+        ? buildConvexTools()
         : []),
     ];
 
@@ -1104,6 +1232,9 @@ export default {
     }
     if (cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)) {
       runtimeCapabilityNotes.push("Cloudflare status, build-log, and build-trigger tools are available for the selected project's server-registered Worker. Trigger builds only when the user explicitly asks to deploy or rebuild.");
+    }
+    if (convexToolsEnabled(ownerAuthenticated, convexToken, projectMetadata.backendDeployment)) {
+      runtimeCapabilityNotes.push("Convex deployment-status tools are available for the selected project's server-registered deployment. Use GitHub tools to inspect or edit convex/schema.ts and convex function source, and use the project's existing deployment pipeline for backend deploys unless a direct Convex deployment action is explicitly available.");
     }
 
     const runtimeInstructions = runtimeCapabilityNotes.length
@@ -1132,6 +1263,8 @@ export default {
               result = await executeGithubTool(call, githubToken, projectMetadata);
             } else if (call.name.startsWith("cloudflare_")) {
               result = await executeCloudflareTool(call, cloudflareToken, projectMetadata);
+            } else if (call.name.startsWith("convex_")) {
+              result = await executeConvexTool(call, convexToken, projectMetadata);
             } else {
               throw new Error(`Unsupported runtime tool: ${call.name}`);
             }
