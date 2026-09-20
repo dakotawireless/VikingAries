@@ -14,7 +14,10 @@ import {
   Database,
   Eye,
   EyeOff,
+  FileImage,
+  FlaskConical,
   Github,
+  Globe2,
   GripVertical,
   KeyRound,
   Laptop,
@@ -25,11 +28,14 @@ import {
   Minimize2,
   Monitor,
   MoreHorizontal,
+  PackageCheck,
   Plus,
   RefreshCw,
   Rocket,
   Send,
   Settings,
+  Shield,
+  SlidersHorizontal,
   ShieldCheck,
   Smartphone,
   TerminalSquare,
@@ -87,19 +93,23 @@ function getProjectIcon(project, fallback = Boxes) {
 }
 
 const navItems = [
-  { label: "Chats", icon: MessageSquare, active: true },
-  { label: "Architecture", icon: Workflow },
-  { label: "Integrations", icon: Link2 },
-  { label: "Backend", icon: Database },
-  { label: "Deployments", icon: Rocket },
-  { label: "Logs", icon: Logs },
-  { label: "Secrets", icon: KeyRound },
-  { label: "Settings", icon: Settings },
-];
+  { label: "AI Builder", icon: MessageSquare, group: "BUILD" },
+  { label: "Features", icon: PackageCheck, group: "BUILD" },
+  { label: "Users & Access", icon: Shield, group: "BUILD" },
+  { label: "Files & Media", icon: FileImage, group: "BUILD" },
+  { label: "Integrations", icon: Link2, group: "BUILD" },
 
-const lowerNav = [
-  { label: "Activity", icon: Activity },
-  { label: "Automations", icon: Zap },
+  { label: "Database", icon: Database, group: "DATA & LOGIC" },
+  { label: "Backend", icon: Code2, group: "DATA & LOGIC" },
+  { label: "Automations", icon: Zap, group: "DATA & LOGIC" },
+
+  { label: "Tests & Diagnostics", icon: FlaskConical, group: "TEST & RELEASE" },
+  { label: "Versions", icon: RefreshCw, group: "TEST & RELEASE" },
+  { label: "Deployments", icon: Rocket, group: "TEST & RELEASE" },
+  { label: "Domains", icon: Globe2, group: "TEST & RELEASE" },
+
+  { label: "Secrets", icon: KeyRound, group: "PROJECT" },
+  { label: "Settings", icon: SlidersHorizontal, group: "PROJECT" },
 ];
 
 const chatTabs = ["Migration", "Payroll", "Commission Sync"];
@@ -328,38 +338,28 @@ function Sidebar({
         onAddContractorProject={onAddContractorProject}
       />
 
-      <div className="sidebar-section">
-        <div className="sidebar-kicker">Workspace</div>
-        <nav className="sidebar-nav">
-          {navItems.map(({ label, icon: Icon }) => (
-            <button
-              key={label}
-              className={activeView === label ? "sidebar-link active" : "sidebar-link"}
-              type="button"
-              onClick={() => onViewChange(label)}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      <div className="sidebar-divider" />
-
-      <nav className="sidebar-nav compact">
-        {lowerNav.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            className={activeView === label ? "sidebar-link active" : "sidebar-link"}
-            type="button"
-            onClick={() => onViewChange(label)}
-          >
-            <Icon size={18} />
-            <span>{label}</span>
-          </button>
+      <div className="sidebar-section sidebar-project-tools">
+        {["BUILD", "DATA & LOGIC", "TEST & RELEASE", "PROJECT"].map((group) => (
+          <div className="sidebar-tool-group" key={group}>
+            <div className="sidebar-kicker">{group}</div>
+            <nav className="sidebar-nav">
+              {navItems
+                .filter((item) => item.group === group)
+                .map(({ label, icon: Icon }) => (
+                  <button
+                    key={label}
+                    className={activeView === label ? "sidebar-link active" : "sidebar-link"}
+                    type="button"
+                    onClick={() => onViewChange(label)}
+                  >
+                    <Icon size={18} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+            </nav>
+          </div>
         ))}
-      </nav>
+      </div>
 
       <div className="sidebar-footer">
         <button className="owner-card" type="button">
@@ -885,7 +885,7 @@ export default function App() {
     }
   });
   const [project, setProject] = useState(personalProjects[0]);
-  const [activeView, setActiveView] = useState("Chats");
+  const [activeView, setActiveView] = useState("AI Builder");
   const [previewMode, setPreviewMode] = useState("Desktop");
   const [previewVisible, setPreviewVisible] = useState(true);
   const [previewExpanded, setPreviewExpanded] = useState(false);
@@ -1011,7 +1011,7 @@ export default function App() {
         onWorkspaceChange={changeWorkspace}
         onProjectChange={(nextProject) => {
           setProject(nextProject);
-          setActiveView("Chats");
+          setActiveView("AI Builder");
         }}
         activeView={activeView}
         onViewChange={setActiveView}
@@ -1040,7 +1040,7 @@ export default function App() {
           style={{ "--preview-width": `${previewWidth}%` }}
         >
           {!previewExpanded && (
-            activeView === "Chats"
+            activeView === "AI Builder"
               ? <ChatWorkspace key={project.id} project={project} />
               : <WorkspaceView key={`${project.id}-${activeView}`} view={activeView} project={project} />
           )}
