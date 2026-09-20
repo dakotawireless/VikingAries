@@ -1354,7 +1354,7 @@ function ChatWorkspace({ project, active = true }) {
                         : "assistant-message"
                   }
                 >
-                  {renderChatContent(message.content, setFullSizeImage)}
+                  {renderChatContent(message.content, setFullSizeImage, message.fullSizeImage)}
                 </div>
                 {message.role === "assistant" && (
                   <div className="message-actions">
