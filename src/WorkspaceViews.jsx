@@ -646,6 +646,8 @@ function FilesMediaView({ project }) {
   const defaults = projectDefaults(project).files;
   const [items, setItems] = useProjectStorage(project.id, "files-media-v2", defaults);
   const [draft, setDraft] = useState({ name: "", type: "Screenshot", location: "", status: "Reference" });
+  const [uploadMessage, setUploadMessage] = useState("");
+  const fileInputRef = useRef(null);
 
   const add = () => {
     if (!draft.name.trim()) return;
@@ -653,32 +655,82 @@ function FilesMediaView({ project }) {
     setDraft({ name: "", type: "Screenshot", location: "", status: "Reference" });
   };
 
+  const uploadFiles = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    setUploadMessage("Reading hardcopy…");
+    const uploaded = [];
+    for (const file of files) {
+      if (file.size > 3 * 1024 * 1024) {
+        setUploadMessage(`${file.name} is larger than 3 MB and was skipped.`);
+        continue;
+      }
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("File could not be read."));
+          reader.readAsDataURL(file);
+        });
+        uploaded.push({
+          id: `upload-${Date.now()}-${uploaded.length}`,
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          location: "Browser hardcopy",
+          status: "Uploaded",
+          dataUrl,
+          size: file.size,
+          uploadedAt: Date.now(),
+        });
+      } catch {
+        setUploadMessage(`${file.name} could not be read.`);
+      }
+    }
+    if (uploaded.length) {
+      setItems((current) => [...current, ...uploaded]);
+      setUploadMessage(`${uploaded.length} hardcopy file${uploaded.length === 1 ? "" : "s"} uploaded to this project library.`);
+    }
+  };
+
   return (
     <WorkspacePage>
-      <PageHeader icon={FileImage} title="Files & Media" description="The shared project library for screenshots, mockups, logos, documents, and other assets used while we build." />
-      <InfoBanner text="This is the project catalog. Direct binary uploads/storage will be wired to Viking Aries storage; repository and Drive references can already be recorded here." />
+      <PageHeader icon={FileImage} title="Files & Media" description="Upload hardcopies of screenshots, mockups, logos, documents, and other project assets." />
+      <InfoBanner text="Uploaded hardcopies are kept in this browser's project library for now. Use the download button to retrieve them; durable shared storage can be connected without changing the library format." />
+      {uploadMessage && <div className="integration-feedback">{uploadMessage}</div>}
+      <section className="workspace-card upload-dropzone">
+        <input ref={fileInputRef} type="file" multiple onChange={uploadFiles} hidden />
+        <Upload size={24} />
+        <div><strong>Upload hardcopies</strong><p>Select one or more files from your device. Images, PDFs, text files, and office exports are supported up to 3 MB each.</p></div>
+        <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}><Upload size={15} /> Choose files</button>
+      </section>
       <div className="workspace-grid two-column">
-        {items.map((item) => (
-          <section className="workspace-card media-card" key={item.id}>
-            <div className="media-icon"><FileImage size={20} /></div>
-            <div>
-              <div className="card-heading-row compact"><h2>{item.name}</h2><StatusPill status={item.status} /></div>
-              <p>{item.type}</p>
-              <input value={item.location || ""} onChange={(e) => setItems((current) => current.map((row) => row.id === item.id ? { ...row, location: e.target.value } : row))} placeholder="File, repo, Drive, or URL reference" />
-            </div>
-            <button className="icon-action danger" type="button" onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}><Trash2 size={15} /></button>
-          </section>
-        ))}
+        {items.map((item) => {
+          const isUpload = Boolean(item.dataUrl);
+          const isImage = String(item.type || "").startsWith("image/");
+          const Icon = isImage ? FileImage : FileText;
+          return (
+            <section className="workspace-card media-card" key={item.id}>
+              <div className="media-icon">{isImage && isUpload ? <img className="media-thumb" src={item.dataUrl} alt="" /> : <Icon size={20} />}</div>
+              <div>
+                <div className="card-heading-row compact"><h2>{item.name}</h2><StatusPill status={item.status} /></div>
+                <p>{isUpload ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
+                {isUpload ? <a className="media-download" href={item.dataUrl} download={item.name}><Download size={14} /> Download hardcopy</a> : <input value={item.location || ""} onChange={(e) => setItems((current) => current.map((row) => row.id === item.id ? { ...row, location: e.target.value } : row))} placeholder="File, repo, Drive, or URL reference" />}
+              </div>
+              <button className="icon-action danger" type="button" onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}><Trash2 size={15} /></button>
+            </section>
+          );
+        })}
       </div>
       <section className="workspace-card va-entry-panel">
-        <div className="va-entry-title"><Upload size={15} /> Register shared file or media</div>
+        <div className="va-entry-title"><Plus size={15} /> Register an existing file or reference</div>
         <div className="va-entry-grid">
           <label><span>Name</span><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
           <label><span>Type</span><select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Screenshot</option><option>Mockup</option><option>Logo</option><option>Document</option><option>Export</option><option>Other</option></select></label>
           <label><span>Location / reference</span><input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} /></label>
           <label><span>Status</span><input value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} /></label>
         </div>
-        <button type="button" className="primary-action" onClick={add}><Plus size={15} /> Add to project library</button>
+        <button type="button" className="primary-action" onClick={add}><Plus size={15} /> Add reference</button>
       </section>
     </WorkspacePage>
   );
