@@ -964,29 +964,79 @@ export default function App() {
     if (!previewVisible || previewExpanded) return;
 
     event.preventDefault();
-    const shell = event.currentTarget.parentElement;
+
+    const handle = event.currentTarget;
+    const shell = handle.parentElement;
+    if (!shell) return;
+
     const rect = shell.getBoundingClientRect();
+    const pointerId = event.pointerId;
     let latestWidth = previewWidth;
+
+    // Keep receiving pointer events even when the cursor crosses the live-preview iframe.
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // Pointer capture is an enhancement; the drag shield below is the fallback.
+    }
 
     setResizingPreview(true);
     document.body.classList.add("resizing-preview");
 
-    const onPointerMove = (moveEvent) => {
-      const rawPercent = ((rect.right - moveEvent.clientX) / rect.width) * 100;
-      latestWidth = Math.min(65, Math.max(26, rawPercent));
+    const updateWidth = (clientX) => {
+      const rawPercent = ((rect.right - clientX) / rect.width) * 100;
+
+      // Keep both panes usable and make it impossible to strand the divider at an edge.
+      const minPreviewPx = 300;
+      const minWorkspacePx = 320;
+      const dividerPx = 7;
+      const minPercent = Math.max(22, (minPreviewPx / rect.width) * 100);
+      const maxPercent = Math.min(
+        72,
+        ((rect.width - minWorkspacePx - dividerPx) / rect.width) * 100
+      );
+
+      latestWidth = Math.min(
+        Math.max(minPercent, maxPercent),
+        Math.max(minPercent, rawPercent)
+      );
       setPreviewWidth(latestWidth);
     };
 
-    const stopResize = () => {
+    const onPointerMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      updateWidth(moveEvent.clientX);
+    };
+
+    const stopResize = (upEvent) => {
+      if (upEvent?.pointerId != null && upEvent.pointerId !== pointerId) return;
+
+      try {
+        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      } catch {
+        // Ignore capture cleanup failures.
+      }
+
       setResizingPreview(false);
       document.body.classList.remove("resizing-preview");
       window.localStorage.setItem("viking-aries-preview-width", String(latestWidth));
+
+      handle.removeEventListener("pointermove", onPointerMove);
+      handle.removeEventListener("pointerup", stopResize);
+      handle.removeEventListener("pointercancel", stopResize);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
     };
 
+    handle.addEventListener("pointermove", onPointerMove);
+    handle.addEventListener("pointerup", stopResize);
+    handle.addEventListener("pointercancel", stopResize);
+
+    // Window listeners are retained as a fallback for browsers with incomplete capture behavior.
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
   };
 
   const resetPreviewWidth = () => {
