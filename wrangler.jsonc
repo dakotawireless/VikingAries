@@ -14,21 +14,6 @@
       "binding": "OPENAI_API_KEY",
       "store_id": "000ba1ca2bbb43d3a614963366c9b7f8",
       "secret_name": "OPENAI_API_KEY"
-    },
-    {
-      "binding": "OWNER_ACCESS_CODE",
-      "store_id": "000ba1ca2bbb43d3a614963366c9b7f8",
-      "secret_name": "OWNER_ACCESS_CODE"
-    },
-    {
-      "binding": "OWNER_SESSION_SECRET",
-      "store_id": "000ba1ca2bbb43d3a614963366c9b7f8",
-      "secret_name": "OWNER_SESSION_SECRET"
-    },
-    {
-      "binding": "GITHUB_TOKEN",
-      "store_id": "000ba1ca2bbb43d3a614963366c9b7f8",
-      "secret_name": "GITHUB_TOKEN"
     }
   ]
 }
