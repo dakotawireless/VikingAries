@@ -389,29 +389,6 @@ function Sidebar({
   );
 }
 
-function ProjectSnapshot({ project }) {
-  const items = [
-    project?.repository ? { icon: Github, label: "Repo", value: project.repository } : null,
-    project?.backend ? { icon: Database, label: "Backend", value: project.backend } : null,
-    project?.deploymentUrl ? { icon: Cloud, label: "Live", value: "Production" } : null,
-  ].filter(Boolean);
-
-  if (!items.length) return null;
-
-  return (
-    <div className="project-snapshot" aria-label="Project snapshot">
-      {items.map(({ icon: Icon, label, value }) => (
-        <div className="project-snapshot-item" key={label} title={value}>
-          <Icon size={13} />
-          <span>{label}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
-      {project?.status && <span className="project-snapshot-status">{project.status}</span>}
-    </div>
-  );
-}
-
 function createSeedThreads() {
   return [
     {
@@ -632,9 +609,7 @@ function ChatWorkspace({ project }) {
       </div>
 
       <div className="workspace-scroll" ref={scrollRef}>
-        <ProjectSnapshot project={project} />
-
-        <section className="conversation live-conversation">
+<section className="conversation live-conversation">
           {activeThread?.messages.length === 0 && (
             <div className="empty-chat-state">
               <div className="empty-chat-icon"><Bot size={22} /></div>
