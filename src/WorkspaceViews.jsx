@@ -413,7 +413,7 @@ function dwPosDefaults(project) {
       { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New · migration-staging", purpose: "Source control for the merging POS", status: "Connected" },
       { id: "convex", name: "Convex", provider: "sleek-bear-647", purpose: "Database, functions, HTTP actions, crons", status: "Connected" },
       { id: "preview", name: "Migration Preview", provider: "Cloudflare staging target", purpose: "Preview only the migrated POS build inside VA; never embed the live Hercules production POS", status: "Pending staging deployment" },
-      { id: "cloudflare", name: "Cloudflare", provider: "Worker: dakota-wireless-pos-migration", purpose: "Isolated migration/staging frontend and VA preview target", status: "Configured / deployment pending" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Worker: dakota-wireless-pos---new", purpose: "Isolated migration/staging frontend and VA preview target", status: "Configured / deployment pending" },
       { id: "authorize-net", name: "Authorize.Net", provider: "Existing provider-managed configuration", purpose: "Online/card payments and CIM", status: "Existing / unknown" },
       { id: "easypost", name: "EasyPost", provider: "Existing provider-managed configuration", purpose: "Shipping and webhook workflows", status: "Existing / unknown" },
       { id: "zoho", name: "Zoho", provider: "Existing provider-managed configuration", purpose: "Invoice/balance synchronization", status: "Existing / unknown" },
