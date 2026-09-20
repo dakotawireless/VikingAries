@@ -63,7 +63,7 @@ export function useApiUsage(days = 30) {
 export function ApiCounter() {
   const { usage, error } = useApiUsage(0);
   return (
-    <output className="api-counter" aria-label="Total recorded API spend in US dollars"
+    <output className="api-counter" data-api-counter="true" aria-live="polite" aria-label="Total recorded API spend in US dollars"
       title={error || "Total recorded OpenAI spend across all VA projects (estimated USD). Updates every 15 seconds. Open API Usage for details."}>
       {error ? "Unavailable" : usage ? formatUsd(usage.totals.estimatedCostUsd) : "..."}
     </output>
