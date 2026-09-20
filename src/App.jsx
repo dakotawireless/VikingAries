@@ -76,7 +76,7 @@ const personalProjects = [
   { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
   { id: "dw-site", name: "DW Website", icon: Cloud },
   { id: "rez-lock", name: "Rez Lock & Key", icon: KeyRound },
-  { id: "viking-aries", name: "Viking Aries", icon: Boxes },
+  { id: "viking-aries", name: "Viking Aries", icon: Boxes, repository: "dakotawireless/VikingAries" },
 ];
 
 const defaultContractors = [
@@ -460,6 +460,36 @@ function loadProjectThreads(projectId) {
   return createSeedThreads();
 }
 
+function loadProjectIntegrationMappings(project) {
+  try {
+    const saved = window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`);
+    if (saved) return JSON.parse(saved);
+  } catch {
+    // Fall back to project metadata below.
+  }
+
+  return {
+    github: {
+      enabled: Boolean(project.repository),
+      repository: project.repository || (project.id === "viking-aries" ? "dakotawireless/VikingAries" : ""),
+      branch: "main",
+    },
+    cloudflare: {
+      enabled: Boolean(project.deploymentUrl),
+      worker: project.id === "timekeeper" ? "timekeeper-app" : project.id === "viking-aries" ? "vikingaries" : "",
+      deploymentUrl: project.deploymentUrl || "",
+    },
+    convex: {
+      enabled: project.backend === "Convex" || Boolean(project.backendUrl),
+      deployment: project.id === "timekeeper" ? "aware-caiman-251" : "",
+      url: project.backendUrl || "",
+      dashboardUrl: project.convexDashboardUrl || "",
+    },
+    drive: { enabled: false, folderUrl: "" },
+    gmail: { enabled: project.id === "timekeeper", identity: "" },
+  };
+}
+
 function ChatWorkspace({ project }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
@@ -545,6 +575,7 @@ function ChatWorkspace({ project }) {
       role,
       content: text,
     }));
+    const integrationMappings = loadProjectIntegrationMappings(project);
 
     updateThread(threadId, (thread) => ({
       ...thread,
@@ -569,10 +600,22 @@ function ChatWorkspace({ project }) {
           project: {
             id: project.id,
             name: project.name,
-            repository: project.repository || null,
-            deploymentUrl: project.deploymentUrl || null,
-            backend: project.backend || null,
-            backendUrl: project.backendUrl || null,
+            repository: integrationMappings.github?.enabled
+              ? integrationMappings.github.repository || project.repository || null
+              : project.repository || null,
+            defaultBranch: integrationMappings.github?.branch || "main",
+            deploymentUrl: integrationMappings.cloudflare?.enabled
+              ? integrationMappings.cloudflare.deploymentUrl || project.deploymentUrl || null
+              : project.deploymentUrl || null,
+            cloudflareWorker: integrationMappings.cloudflare?.worker || null,
+            backend: project.backend || (integrationMappings.convex?.enabled ? "Convex" : null),
+            backendDeployment: integrationMappings.convex?.deployment || null,
+            backendUrl: integrationMappings.convex?.enabled
+              ? integrationMappings.convex.url || project.backendUrl || null
+              : project.backendUrl || null,
+            convexDashboardUrl: integrationMappings.convex?.dashboardUrl || project.convexDashboardUrl || null,
+            driveFolderUrl: integrationMappings.drive?.enabled ? integrationMappings.drive.folderUrl || null : null,
+            gmailIdentity: integrationMappings.gmail?.enabled ? integrationMappings.gmail.identity || null : null,
             status: project.status || null,
             contextSummary: project.contextSummary || null,
           },
@@ -1234,7 +1277,13 @@ export default function App() {
           {!previewExpanded && (
             activeView === "AI Builder"
               ? <ChatWorkspace key={project.id} project={project} />
-              : <WorkspaceView key={`${project.id}-${activeView}`} view={activeView} project={project} />
+              : <WorkspaceView
+                  key={`${project.id}-${activeView}`}
+                  view={activeView}
+                  project={project}
+                  projects={workspace === "Personal" ? personalProjectsState : contractorsState.flatMap((contractor) => contractor.projects || [])}
+                  workspace={workspace}
+                />
           )}
           {!previewExpanded && previewVisible && (
             <div
