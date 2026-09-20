@@ -642,6 +642,13 @@ function UsersAccessView({ project }) {
   />;
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function FilesMediaView({ project }) {
   const defaults = projectDefaults(project).files;
   const [items, setItems] = useProjectStorage(project.id, "files-media-v2", defaults);
