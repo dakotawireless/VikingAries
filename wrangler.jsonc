@@ -15,5 +15,8 @@
       "store_id": "000ba1ca2bbb43d3a614963366c9b7f8",
       "secret_name": "OPENAI_API_KEY"
     }
+  ],
+  "compatibility_flags": [
+    "nodejs_als"
   ]
 }

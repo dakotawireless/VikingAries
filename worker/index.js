@@ -1,3 +1,4 @@
+import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
@@ -8,7 +9,7 @@ async function resolveSecret(binding) {
   if (!binding) return null;
   if (typeof binding === "string") return binding;
   if (typeof binding.get === "function") {
-    return await binding.get();
+    return await resolveBoundSecret(binding);
   }
   return null;
 }
@@ -1210,7 +1211,7 @@ function formatVerifiedActionHistory(receipts) {
     .join("\n");
 }
 
-async function callOpenAI({ apiKey, model, instructions, input, tools, previousResponseId }) {
+async function callOpenAI({ apiKey, model, instructions, input, tools, previousResponseId, finalOnly = false }) {
   const body = {
     model,
     instructions,
@@ -1221,6 +1222,7 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
     max_output_tokens: 30000,
   };
   if (tools?.length) body.tools = tools;
+  if (finalOnly) body.tool_choice = "none";
   if (previousResponseId) body.previous_response_id = previousResponseId;
 
   const response = await fetch(OPENAI_RESPONSES_URL, {
@@ -1459,7 +1461,7 @@ function json(data, init = {}) {
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
-export default {
+const worker = {
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -2319,6 +2321,7 @@ export default {
       "When a requested change is successfully committed to the selected GitHub repository, report it simply as 'Changes committed to GitHub' with the commit SHA. Treat Cloudflare as the repository's automatic deployment destination; do not add a warning that deployment is unverified or say the change is not deployed unless the owner specifically asks for deployment status or a tool result shows an actual deployment failure.",
       "Preserve existing product behavior unless the owner explicitly requests a change. In particular, keep the dollar API counter in the sidebar footer beside Log Out, keep API Usage as the detail-page navigation item, and keep both surfaces backed by the recorded usage totals. Do not remove, relocate, rename, or replace them during unrelated edits.",
       "GitHub editing supports both full-file replacement and targeted exact-text replacement. Prefer github_replace_text for focused edits to existing large files: first read the latest file, choose a unique oldText block, replace only that block, and commit. Use github_write_file when creating a file or when a full-file rewrite is genuinely appropriate. File size alone is never a reason to refuse a requested change. If a targeted replacement does not match exactly as expected, re-read the file and retry with a more specific block.",
+      "Work in focused batches. The runtime bounds tool calls and subrequests per message; when paused, summarize completed and remaining work accurately so the user can continue. Never repeat a verified write merely because a batch paused.",
       "For multi-file implementation work, batch independent read or inspection tool calls in the same model turn whenever safe instead of serializing every small step. Complete the requested implementation before returning a final answer.",
     ].filter(Boolean).join("\n");
 
@@ -2355,6 +2358,8 @@ export default {
       : instructions;
 
     let payload;
+    let budgetPaused = false;
+    let executedTools = 0;
     const actionReceipts = [];
     let chatUsage = {
       requests: 0,
@@ -2403,12 +2408,20 @@ export default {
       });
       await captureUsage(payload);
 
-      for (let step = 0; step < 40; step += 1) {
+      for (let step = 0; step < MAX_AGENT_ROUNDS; step += 1) {
         const calls = extractFunctionCalls(payload);
         if (!calls.length) break;
 
         const outputs = [];
         for (const call of calls) {
+          // Reserve four provider calls, two audit operations, and finalization.
+          if (budgetPaused || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8) {
+            budgetPaused = true;
+            outputs.push({ type: "function_call_output", call_id: call.call_id,
+              output: JSON.stringify({ ok: false, deferred: true, error: "Not executed: this batch reached its request budget. Ask the user to continue in a new message." }) });
+            continue;
+          }
+          executedTools += 1;
           try {
             let result;
             if (call.name.startsWith("github_")) {
@@ -2437,6 +2450,7 @@ export default {
               output: JSON.stringify({ ok: true, result }),
             });
           } catch (error) {
+            if (error instanceof RequestBudgetExceeded) budgetPaused = true;
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,
@@ -2445,24 +2459,40 @@ export default {
           }
         }
 
+        budgetPaused ||= step === MAX_AGENT_ROUNDS - 1 || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8;
         payload = await callOpenAI({
           apiKey,
           model,
-          instructions: runtimeInstructions,
+          instructions: runtimeInstructions + (budgetPaused
+            ? "\nThis batch is paused. Summarize verified completed work and remaining work, including relevant paths and findings. Deferred tools did not run. Do not claim completion. Ask the user to send continue for a fresh execution budget."
+            : ""),
+          finalOnly: budgetPaused,
           input: outputs,
           tools,
           previousResponseId: payload.id,
         });
         await captureUsage(payload);
+        if (budgetPaused) break;
       }
     } catch (error) {
+      if (budgetPaused || error instanceof RequestBudgetExceeded) {
+        return json({
+          text: "Execution paused at the batch limit. The progress summary could not be generated. Send continue to inspect the current state and finish remaining work. Do not repeat completed writes.\n" + formatVerifiedActionHistory(actionReceipts) + usageWarning(),
+          model, responseId: null, toolsAvailable: tools.map((tool) => tool.name),
+          usage: chatUsage, usageRecorded, actionReceipts,
+          executionStatus: "paused", continuationRequired: true,
+        });
+      }
       return json(
-        { error: (error.message || "Could not reach the AI service.") + usageWarning(), usage: chatUsage, usageRecorded },
+        { error: (error.message || "Could not reach the AI service.") + usageWarning(), usage: chatUsage, usageRecorded, actionReceipts },
         { status: error.status || 502 }
       );
     }
 
-    const text = extractResponseText(payload);
+    const pauseNotice = "Execution paused at the batch limit. Completed actions are preserved. Send continue to work on the remaining steps.";
+    const text = budgetPaused
+      ? [extractResponseText(payload), pauseNotice].filter(Boolean).join("\n\n")
+      : extractResponseText(payload);
     if (!text) {
       const incompleteReason =
         payload?.incomplete_details?.reason ||
@@ -2501,6 +2531,15 @@ export default {
       usage: chatUsage,
       usageRecorded,
       actionReceipts,
+      ...(budgetPaused ? { executionStatus: "paused", continuationRequired: true } : {}),
     });
+  },
+};
+
+export default {
+  fetch(request, env) {
+    return new URL(request.url).pathname === "/api/chat"
+      ? withRequestBudget(() => worker.fetch(request, env))
+      : worker.fetch(request, env);
   },
 };

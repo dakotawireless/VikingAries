@@ -98,3 +98,34 @@ Security behavior:
 The Integrations screen can verify the configured GitHub credential and shows whether GitHub tools are currently available to Viking Aries.
 
 The longer-term vault remains the target for durable encrypted provider credential storage and rotation. Cloudflare server-side secrets are the secure bootstrap mechanism until that vault is online.
+
+## Bounded agent execution
+
+Chat requests use a request-local budget of 44 outbound operations, including
+provider fetches, usage/audit persistence, and cached Secrets Store lookups. This
+leaves headroom under the Workers Free plan's 50-subrequest limit. Redirects are
+rejected in chat so hidden redirect hops cannot bypass accounting. Failed attempts
+count too. Each message permits at most 8 tool rounds and 20 tool executions.
+Before starting a tool, the runtime reserves capacity for up to four provider
+requests, two audit operations, and a final model response plus its usage record.
+
+When a budget is reached, unstarted tools receive explicit deferred results and
+the model is asked for a progress summary with tools disabled. The ordinary chat
+response includes the summary, completed action receipts, usage, and
+`executionStatus: "paused"`. Send **continue** in the same chat to start another
+bounded invocation using the conversation summary and verified action history.
+There is no automatic retry or replay of writes, and no background continuation
+is implied. The existing UI and job response contract are preserved.
+
+The checked-in configuration does not identify the account's Workers plan. Do not
+raise the platform limit on an unverified plan. Once Workers Paid is confirmed,
+`limits: { "subrequests": 10000 }` may be set in `wrangler.jsonc` (the current paid
+default); a higher value is unnecessary for this bounded runtime. If a dashboard
+limit is lower than 50, align it with the free-compatible 50 baseline. Keep the
+application budget in place even on Paid. A plan/limit change is not required for
+this fix. See https://developers.cloudflare.com/workers/platform/limits/ and
+https://developers.cloudflare.com/workers/wrangler/configuration/#limits.
+
+Run `npm test` and `npm run build` before deploying. Budget tests cover large tool
+batches, writes and receipts, repeated model rounds, storage failures, secret
+caching, hard limits, and concurrent request isolation.
