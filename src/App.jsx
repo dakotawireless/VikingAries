@@ -1738,6 +1738,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
 
   const changeWorkspace = (next) => {
     setWorkspace(next);
+    setActiveView("AI Builder");
     setProject(
       next === "Personal"
         ? personalProjectsState[0] || personalProjects[0]
