@@ -103,6 +103,33 @@ export default {
         ? body.thread.title.trim().slice(0, 160)
         : "Untitled chat";
 
+    const projectMetadata = {
+      repository:
+        typeof body?.project?.repository === "string"
+          ? body.project.repository.trim().slice(0, 240)
+          : "",
+      deploymentUrl:
+        typeof body?.project?.deploymentUrl === "string"
+          ? body.project.deploymentUrl.trim().slice(0, 500)
+          : "",
+      backend:
+        typeof body?.project?.backend === "string"
+          ? body.project.backend.trim().slice(0, 120)
+          : "",
+      backendUrl:
+        typeof body?.project?.backendUrl === "string"
+          ? body.project.backendUrl.trim().slice(0, 500)
+          : "",
+      status:
+        typeof body?.project?.status === "string"
+          ? body.project.status.trim().slice(0, 120)
+          : "",
+      contextSummary:
+        typeof body?.project?.contextSummary === "string"
+          ? body.project.contextSummary.trim().slice(0, 8000)
+          : "",
+    };
+
     const messages = Array.isArray(body?.messages)
       ? body.messages
           .filter(
@@ -123,15 +150,28 @@ export default {
     }
 
     const model = env.OPENAI_MODEL || "gpt-5.6-luna";
+    const projectFacts = [
+      projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
+      projectMetadata.deploymentUrl ? `Production URL: ${projectMetadata.deploymentUrl}` : "",
+      projectMetadata.backend ? `Backend: ${projectMetadata.backend}` : "",
+      projectMetadata.backendUrl ? `Backend URL: ${projectMetadata.backendUrl}` : "",
+      projectMetadata.status ? `Project status: ${projectMetadata.status}` : "",
+      projectMetadata.contextSummary ? `Known project context:\n${projectMetadata.contextSummary}` : "",
+    ].filter(Boolean).join("\n");
+
     const instructions = [
       "You are Viking Aries, an AI software-building assistant inside Erik's private app-builder workspace.",
       `The currently selected project is: ${projectName}.`,
       `The current chat thread is: ${threadTitle}.`,
+      projectFacts,
+      "Use supplied project facts as durable project context. Do not invent missing repository, deployment, backend, credential, or file details.",
       "Be practical, concise, and implementation-oriented.",
-      "Maintain awareness that Viking Aries is being built to manage multiple related projects while keeping write actions scoped to the selected project.",
+      "Maintain awareness that Viking Aries manages multiple related projects while keeping write actions scoped to the selected project.",
+      "Project records should either be stored in Viking Aries or point to a durable retrievable source such as a repository file, commit, deployment, provider record, or Drive item.",
+      "Never expose secret values to the AI layer unless the owner explicitly requests that exact value for an immediate task. Secret values belong in the secure vault; normal project context should include only names, providers, purposes, and configuration status.",
       "Do not claim that you changed code, deployed an app, accessed a repository, or called an external service unless the Viking Aries runtime actually supplied a tool result proving that action occurred.",
       "At this stage, chat can advise, plan, debug, and discuss implementation. Tool-backed editing and deployment actions will be added separately.",
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     let upstream;
     try {
