@@ -57,6 +57,16 @@ const personalProjects = [
     backend: "Convex",
     backendUrl: "https://aware-caiman-251.convex.cloud",
     status: "Active",
+    contextSummary: [
+      "Timekeeper is an independent production app migrated out of Hercules while preserving its existing Convex deployment and data.",
+      "Production stack: GitHub source, Cloudflare Workers hosting, Convex backend/database, Gmail SMTP email.",
+      "Production URL: https://timekeeper-app.erik-f2c.workers.dev",
+      "Employee self-service portal: /employee",
+      "Admin access remains PIN-based; employee clock access is restricted to registered browser profiles.",
+      "Dakota Wireless POS commission sync is server-side and uses mapped POS user IDs.",
+      "Do not replace Gmail SMTP with Microsoft Graph. Existing GMAIL_USER and GMAIL_APP_PASSWORD are the working mail configuration.",
+      "Preserve existing data and working behavior unless Erik explicitly requests a change."
+    ].join("\n"),
   },
   { id: "dw-pos", name: "Dakota Wireless POS", icon: Monitor },
   { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
@@ -545,6 +555,12 @@ function ChatWorkspace({ project }) {
           project: {
             id: project.id,
             name: project.name,
+            repository: project.repository || null,
+            deploymentUrl: project.deploymentUrl || null,
+            backend: project.backend || null,
+            backendUrl: project.backendUrl || null,
+            status: project.status || null,
+            contextSummary: project.contextSummary || null,
           },
           thread: {
             id: threadId,
