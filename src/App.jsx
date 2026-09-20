@@ -163,8 +163,6 @@ function ProjectSelector({
   contractorsState,
   onAddContractor,
   onAddContractorProject,
-  onLogout,
-  authConfigured,
 }) {
   const [open, setOpen] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState(contractorsState[0]?.id || null);
@@ -347,6 +345,8 @@ function Sidebar({
   contractorsState,
   onAddContractor,
   onAddContractorProject,
+  onLogout,
+  authConfigured,
 }) {
   return (
     <aside className="sidebar">
