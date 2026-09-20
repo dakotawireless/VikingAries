@@ -537,6 +537,7 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
     const textBefore = text.slice(cursor, match.index);
     if (textBefore) parts.push(<span key={`text-${match.index}`}>{textBefore}</span>);
     const imageSource = match[1].replace(/\s/g, "");
+    const fullImageSource = fullSizeImage || imageSource;
     parts.push(
       <button
         key={`pasted-image-${imageIndex}`}
