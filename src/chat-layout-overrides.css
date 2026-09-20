@@ -1,14 +1,16 @@
 /* Chat action layout refinements */
-.message-stack:has(.copy-message-button) {
-  position: relative;
-  padding-bottom: 34px;
+.message-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 26px;
+  padding-top: 4px;
 }
 
 .copy-message-button {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  margin-left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
 }
 
 .jump-to-bottom-button {
