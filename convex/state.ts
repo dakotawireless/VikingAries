@@ -8,6 +8,7 @@ export const listState = internalQuery({
     return rows.map((row) => ({
       key: row.key,
       value: row.value,
+      deleted: Boolean(row.deleted),
       updatedAt: row.updatedAt,
     }));
   },
@@ -31,12 +32,18 @@ export const upsertState = internalMutation({
       }
       await ctx.db.patch(existing._id, {
         value: args.value,
+        deleted: false,
         updatedAt: args.updatedAt,
       });
       return { applied: true, updatedAt: args.updatedAt };
     }
 
-    await ctx.db.insert("sharedState", args);
+    await ctx.db.insert("sharedState", {
+      key: args.key,
+      value: args.value,
+      deleted: false,
+      updatedAt: args.updatedAt,
+    });
     return { applied: true, updatedAt: args.updatedAt };
   },
 });
@@ -52,12 +59,24 @@ export const deleteState = internalMutation({
       .withIndex("by_key", (q) => q.eq("key", args.key))
       .unique();
 
-    if (!existing) return { applied: true, updatedAt: args.updatedAt };
-    if (args.updatedAt < existing.updatedAt) {
-      return { applied: false, updatedAt: existing.updatedAt };
+    if (existing) {
+      if (args.updatedAt < existing.updatedAt) {
+        return { applied: false, updatedAt: existing.updatedAt };
+      }
+      await ctx.db.patch(existing._id, {
+        value: "",
+        deleted: true,
+        updatedAt: args.updatedAt,
+      });
+      return { applied: true, updatedAt: args.updatedAt };
     }
 
-    await ctx.db.delete(existing._id);
+    await ctx.db.insert("sharedState", {
+      key: args.key,
+      value: "",
+      deleted: true,
+      updatedAt: args.updatedAt,
+    });
     return { applied: true, updatedAt: args.updatedAt };
   },
 });
