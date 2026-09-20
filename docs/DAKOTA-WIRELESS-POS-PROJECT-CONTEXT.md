@@ -132,6 +132,26 @@ Current cutover blockers are authentication, permanent email transport, permanen
 
 The detailed live ledger is also stored in the POS repository at `MIGRATION-STATUS.md`.
 
+## Authentication staging candidate
+
+Dakota Wireless POS authentication migration is isolated on:
+
+- Branch: `migration-auth-bridge`
+- Safety copy of the earlier pre-sync implementation: `migration-auth-bridge-pre-sync`
+
+The active auth branch was rebuilt directly from the current green `main` migration baseline on September 20, 2026, then only the generic OIDC/Convex auth changes were reapplied. It is currently **0 commits behind main**.
+
+The branch differs from main only in:
+- `package.json` / root pnpm importer removal of `@usehercules/auth`
+- generic OIDC provider
+- generic Convex auth bridge
+- POS-owned auth hook
+- sign-in button import
+- explicit callback/user synchronization flow
+- new `src/lib/oidc-auth.ts`
+
+Do not merge this branch into main until runtime staging verifies employee sign-in, callback handling, Convex authentication, existing-user identity matching, access control, and logout.
+
 ## Hosting target
 
 The target frontend host is Cloudflare Workers, consistent with the current Viking Aries migration architecture.
