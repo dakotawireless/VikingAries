@@ -899,6 +899,96 @@ async function executeGithubTool(call, token, projectMetadata) {
   throw new Error(`Unsupported tool: ${call.name}`);
 }
 
+function buildVerifiedActionReceipt(call, result, projectMetadata) {
+  let args = {};
+  try {
+    args = JSON.parse(call.arguments || "{}");
+  } catch {
+    args = {};
+  }
+
+  const recordedAt = new Date().toISOString();
+
+  if (
+    (call.name === "github_write_file" || call.name === "github_replace_text") &&
+    result?.commitSha
+  ) {
+    return {
+      provider: "GitHub",
+      action: "repository_write",
+      tool: call.name,
+      repository: result.repository || projectMetadata.repository || null,
+      path: result.path || String(args.path || "").trim() || null,
+      branch:
+        result.branch ||
+        String(args.branch || projectMetadata.defaultBranch || "main").trim() ||
+        "main",
+      commitSha: result.commitSha,
+      commitUrl: result.commitUrl || null,
+      commitMessage: String(args.message || "").trim().slice(0, 240) || null,
+      recordedAt,
+    };
+  }
+
+  if (call.name === "cloudflare_trigger_build") {
+    return {
+      provider: "Cloudflare",
+      action: "build_trigger",
+      tool: call.name,
+      worker: projectMetadata.cloudflareWorker || null,
+      branch:
+        String(args.branch || projectMetadata.defaultBranch || "main").trim() ||
+        "main",
+      commitHash: String(args.commitHash || "").trim() || null,
+      buildId:
+        result?.uuid ||
+        result?.id ||
+        result?.build_uuid ||
+        result?.buildId ||
+        null,
+      recordedAt,
+    };
+  }
+
+  return null;
+}
+
+function formatVerifiedActionHistory(receipts) {
+  if (!Array.isArray(receipts) || !receipts.length) return "";
+  return receipts
+    .slice(-40)
+    .map((receipt) => {
+      if (receipt?.provider === "GitHub") {
+        const commit = receipt.commitSha ? String(receipt.commitSha).slice(0, 12) : "unknown";
+        return [
+          "GitHub write",
+          receipt.repository ? `repo=${receipt.repository}` : "",
+          receipt.path ? `path=${receipt.path}` : "",
+          receipt.branch ? `branch=${receipt.branch}` : "",
+          `commit=${commit}`,
+          receipt.commitMessage ? `message=${receipt.commitMessage}` : "",
+          receipt.recordedAt ? `at=${receipt.recordedAt}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | ");
+      }
+      if (receipt?.provider === "Cloudflare") {
+        return [
+          "Cloudflare build trigger",
+          receipt.worker ? `worker=${receipt.worker}` : "",
+          receipt.branch ? `branch=${receipt.branch}` : "",
+          receipt.commitHash ? `commit=${receipt.commitHash}` : "",
+          receipt.buildId ? `build=${receipt.buildId}` : "",
+          receipt.recordedAt ? `at=${receipt.recordedAt}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | ");
+      }
+      return JSON.stringify(receipt);
+    })
+    .join("\n");
+}
+
 async function callOpenAI({ apiKey, model, instructions, input, tools, previousResponseId }) {
   const body = {
     model,
@@ -1710,6 +1800,13 @@ export default {
         ? env.OPENAI_MODEL
         : "gpt-5.6-luna";
     const model = requestedModel || configuredDefaultModel;
+    const verifiedActionHistory = Array.isArray(body?.verifiedActionHistory)
+      ? body.verifiedActionHistory
+          .filter((receipt) => receipt && typeof receipt === "object")
+          .slice(-40)
+      : [];
+    const verifiedActionText = formatVerifiedActionHistory(verifiedActionHistory);
+
     const projectFacts = [
       projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
       projectMetadata.defaultBranch ? `Default branch: ${projectMetadata.defaultBranch}` : "",
@@ -1723,6 +1820,9 @@ export default {
       projectMetadata.gmailIdentity ? `Gmail identity/purpose: ${projectMetadata.gmailIdentity}` : "",
       projectMetadata.status ? `Project status: ${projectMetadata.status}` : "",
       projectMetadata.contextSummary ? `Known project context:\n${projectMetadata.contextSummary}` : "",
+      verifiedActionText
+        ? `Verified prior action receipts from the Viking Aries runtime:\n${verifiedActionText}`
+        : "",
     ].filter(Boolean).join("\n");
 
     const instructions = [
@@ -1735,7 +1835,9 @@ export default {
       "Maintain awareness that Viking Aries manages multiple related projects while keeping write actions scoped to the selected project.",
       "Project records should either be stored in Viking Aries or point to a durable retrievable source such as a repository file, commit, deployment, provider record, or Drive item.",
       "Never expose secret values to the AI layer unless the owner explicitly requests that exact value for an immediate task. Secret values belong in the secure vault; normal project context should include only names, providers, purposes, and configuration status.",
-      "Do not claim that you changed code, deployed an app, accessed a repository, or called an external service unless the Viking Aries runtime actually supplied a tool result proving that action occurred.",
+      "Do not claim that you changed code, deployed an app, accessed a repository, or called an external service unless the Viking Aries runtime actually supplied a tool result or verified prior action receipt proving that action occurred.",
+      "Verified prior action receipts are authoritative evidence of earlier runtime actions. When the owner asks whether an earlier write, commit, or deployment action occurred, consult those receipts before answering. Never deny an action that a verified receipt proves occurred.",
+      "If the owner asks whether an earlier action occurred and no verified receipt is available, do not infer that it did not happen. Use the available provider inspection tools (for example GitHub history) to verify the current external record before answering when practical.",
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
       "When the owner explicitly asks you to make, fix, implement, update, commit, deploy, or otherwise carry out a project change, do the work with the available tools rather than stopping at diagnosis or giving instructions. Inspect the necessary files, make the requested change, commit it, and report the actual tool result. Only stop without executing when a required capability is genuinely unavailable, the request is ambiguous in a way that blocks safe execution, or the requested action would violate a safety constraint.",
       "GitHub editing supports both full-file replacement and targeted exact-text replacement. Prefer github_replace_text for focused edits to existing large files: first read the latest file, choose a unique oldText block, replace only that block, and commit. Use github_write_file when creating a file or when a full-file rewrite is genuinely appropriate. File size alone is never a reason to refuse a requested change. If a targeted replacement does not match exactly as expected, re-read the file and retry with a more specific block.",
@@ -1775,6 +1877,7 @@ export default {
       : instructions;
 
     let payload;
+    const actionReceipts = [];
     let chatUsage = {
       requests: 0,
       inputTokens: 0,
@@ -1812,6 +1915,10 @@ export default {
             } else {
               throw new Error(`Unsupported runtime tool: ${call.name}`);
             }
+
+            const receipt = buildVerifiedActionReceipt(call, result, projectMetadata);
+            if (receipt) actionReceipts.push(receipt);
+
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,
@@ -1899,6 +2006,7 @@ export default {
       toolsAvailable: tools.map((tool) => tool.name),
       usage: chatUsage,
       usageRecorded,
+      actionReceipts,
     });
   },
 };
