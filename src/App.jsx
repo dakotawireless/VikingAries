@@ -1382,6 +1382,31 @@ function ChatWorkspace({ project, active = true }) {
         </button>
       )}
 
+      {fullSizeImage && (
+        <div
+          className="image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Full-size pasted image"
+          onClick={() => setFullSizeImage("")}
+        >
+          <button
+            type="button"
+            className="image-lightbox-close"
+            onClick={() => setFullSizeImage("")}
+            aria-label="Close full-size image"
+            title="Close"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={fullSizeImage}
+            alt="Pasted image full size"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
+
       <form
         className="composer"
         onSubmit={(event) => {
