@@ -163,6 +163,8 @@ function ProjectSelector({
   contractorsState,
   onAddContractor,
   onAddContractorProject,
+  onLogout,
+  authConfigured,
 }) {
   const [open, setOpen] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState(contractorsState[0]?.id || null);
@@ -400,9 +402,15 @@ function Sidebar({
           </span>
           <ChevronRight size={16} />
         </button>
-        <button className="logout-link" type="button">
+        <button
+          className="logout-link"
+          type="button"
+          onClick={onLogout}
+          disabled={!authConfigured}
+          title={authConfigured ? "Log out of Viking Aries" : "Owner authentication is not configured yet"}
+        >
           <X size={17} />
-          Log Out
+          {authConfigured ? "Log Out" : "Security Setup Needed"}
         </button>
       </div>
     </aside>
@@ -1017,7 +1025,7 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
   );
 }
 
-export default function App() {
+function VikingAriesApp({ onLogout, authConfigured }) {
   const [workspace, setWorkspace] = useState(() => {
     const saved = window.localStorage.getItem("viking-aries:active-workspace");
     return saved === "Contractor" ? "Contractor" : "Personal";
@@ -1255,6 +1263,8 @@ export default function App() {
         contractorsState={contractorsState}
         onAddContractor={addContractor}
         onAddContractorProject={addContractorProject}
+        onLogout={onLogout}
+        authConfigured={authConfigured}
       />
 
       <div className="main-column">
@@ -1316,5 +1326,136 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+
+function OwnerLogin({ onAuthenticated }) {
+  const [accessCode, setAccessCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!accessCode.trim() || submitting) return;
+
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessCode }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not sign in.");
+      setAccessCode("");
+      onAuthenticated();
+    } catch (loginError) {
+      setError(loginError.message || "Could not sign in.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <main className="owner-login-screen">
+      <section className="owner-login-card">
+        <div className="owner-login-brand">
+          <span className="brand-mark">VA</span>
+          <div>
+            <h1>Viking Aries</h1>
+            <p>Owner access</p>
+          </div>
+        </div>
+
+        <div className="owner-login-shield"><ShieldCheck size={30} /></div>
+        <h2>Sign in to continue</h2>
+        <p className="owner-login-copy">
+          This workspace can manage source code, deployments, data, files, and connected services.
+        </p>
+
+        <form onSubmit={submit}>
+          <label>
+            <span>Owner access code</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={accessCode}
+              autoFocus
+              onChange={(event) => setAccessCode(event.target.value)}
+              placeholder="Enter owner access code"
+            />
+          </label>
+
+          {error && <div className="owner-login-error">{error}</div>}
+
+          <button className="primary-action owner-login-submit" type="submit" disabled={submitting || !accessCode.trim()}>
+            <KeyRound size={16} />
+            {submitting ? "Signing in…" : "Sign In"}
+          </button>
+        </form>
+
+        <small>Sessions expire automatically after 12 hours.</small>
+      </section>
+    </main>
+  );
+}
+
+export default function App() {
+  const [authState, setAuthState] = useState({
+    loading: true,
+    configured: false,
+    authenticated: false,
+  });
+
+  const refreshAuth = async () => {
+    try {
+      const response = await fetch("/api/auth/status", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      setAuthState({
+        loading: false,
+        configured: Boolean(payload.configured),
+        authenticated: Boolean(payload.authenticated),
+      });
+    } catch {
+      // Keep the app usable during initial security setup, but do not treat it as authenticated.
+      setAuthState({ loading: false, configured: false, authenticated: false });
+    }
+  };
+
+  useEffect(() => {
+    refreshAuth();
+  }, []);
+
+  const logout = async () => {
+    if (!authState.configured) return;
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setAuthState((current) => ({ ...current, authenticated: false }));
+    }
+  };
+
+  if (authState.loading) {
+    return (
+      <main className="owner-login-screen">
+        <section className="owner-login-card owner-login-loading">
+          <div className="owner-login-shield"><ShieldCheck size={30} /></div>
+          <h2>Checking owner session…</h2>
+        </section>
+      </main>
+    );
+  }
+
+  if (authState.configured && !authState.authenticated) {
+    return <OwnerLogin onAuthenticated={refreshAuth} />;
+  }
+
+  return (
+    <VikingAriesApp
+      onLogout={logout}
+      authConfigured={authState.configured}
+    />
   );
 }
