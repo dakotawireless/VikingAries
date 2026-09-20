@@ -506,6 +506,17 @@ function loadProjectIntegrationMappings(project) {
   };
 }
 
+const VA_MODEL_OPTIONS = [
+  { id: "gpt-5.6-luna", label: "Luna", note: "Fast / lowest cost" },
+  { id: "gpt-5.6-terra", label: "Terra", note: "Build / balanced" },
+  { id: "gpt-5.6-sol", label: "Sol", note: "Deep / highest capability" },
+];
+
+function loadSelectedModel() {
+  const saved = window.localStorage.getItem("viking-aries:selected-model");
+  return VA_MODEL_OPTIONS.some((item) => item.id === saved) ? saved : "gpt-5.6-luna";
+}
+
 function ChatWorkspace({ project }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
@@ -521,6 +532,7 @@ function ChatWorkspace({ project }) {
   const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
+  const [selectedModel, setSelectedModel] = useState(loadSelectedModel);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -534,6 +546,10 @@ function ChatWorkspace({ project }) {
   useEffect(() => {
     window.localStorage.setItem(`viking-aries:active-chat:${project.id}`, activeThreadId);
   }, [project.id, activeThreadId]);
+
+  useEffect(() => {
+    window.localStorage.setItem("viking-aries:selected-model", selectedModel);
+  }, [selectedModel]);
 
   const scrollToChatBottom = (behavior = "auto") => {
     const node = scrollRef.current;
@@ -651,6 +667,7 @@ function ChatWorkspace({ project }) {
             title: activeThread.title,
           },
           messages: requestMessages,
+          model: selectedModel,
         }),
       });
 
@@ -924,6 +941,21 @@ function ChatWorkspace({ project }) {
         <button className="send-button" type="submit" disabled={sending || !draft.trim()}>
           <Send size={17} /> {sending ? "Working" : "Send"}
         </button>
+        <label className="model-picker">
+          <span>Model</span>
+          <select
+            value={selectedModel}
+            onChange={(event) => setSelectedModel(event.target.value)}
+            disabled={sending}
+            title="Choose the AI model for the next message"
+          >
+            {VA_MODEL_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label} — {option.note}
+              </option>
+            ))}
+          </select>
+        </label>
         <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
       </form>
     </main>
