@@ -117,6 +117,21 @@ Before registering the POS in the Viking Aries runtime, the VA repository state 
 
 - `pre-dw-pos-registration-2026-09-20`
 
+## Migration progress — September 20, 2026
+
+The current GitHub migration copy has now completed these Hercules-detachment steps:
+
+- Hercules Vite and ESLint plugins removed from build configuration and root dependency importer.
+- Hercules page metadata replaced with Dakota Wireless POS metadata.
+- Public application/payment links centralized behind `DAKOTA_WIRELESS_POS_PUBLIC_URL`, while the existing Hercules hostname remains the temporary fallback.
+- All POS email call sites now route through `convex/lib/emailSender.ts`; Hercules SDK remains only as the temporary transport inside that adapter.
+- Frontend brand assets are centralized behind `src/lib/brand-assets.ts` and environment-configurable URLs.
+- Invoice email logo is configurable with `DAKOTA_WIRELESS_EMAIL_LOGO_URL`.
+
+Current cutover blockers are authentication, permanent email transport, permanent non-Hercules brand assets, Cloudflare POS deployment/configuration, end-to-end verification, and the mandatory fresh Hercules export/reconciliation immediately before disconnect.
+
+The detailed live ledger is also stored in the POS repository at `MIGRATION-STATUS.md`.
+
 ## Hosting target
 
 The target frontend host is Cloudflare Workers, consistent with the current Viking Aries migration architecture.
