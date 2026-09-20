@@ -24,21 +24,35 @@ A compact project dropdown near the top of the sidebar switches projects and wor
 The dropdown supports Personal and Contractor workspaces.
 
 ### Sidebar navigation
-Primary:
-- Chats
-- Architecture
+The sidebar is project-neutral. App-specific modules live inside Features.
+
+BUILD:
+- AI Builder
+- Features
+- Users & Access
+- Files & Media
 - Integrations
+
+DATA & LOGIC:
+- Database
 - Backend
+- Automations
+
+TEST & RELEASE:
+- Tests & Diagnostics
+- Versions
 - Deployments
-- Logs
+- Domains
+
+PROJECT:
 - Secrets
 - Settings
 
-Secondary:
-- Activity
-- Automations
+The right-side preview pane is the visual editor/viewer, so there is no separate Visual Editor navigation item.
 
-Secrets must be designed so secret values are not shown to the AI conversation layer.
+Files & Media is the shared project library for screenshots, mockups, logos, documents, exports, and durable external references.
+
+Secrets are masked by default. Viking Aries will retain owner-controlled encrypted copies so a saved secret can be revealed later even when the destination provider is write-only. Plaintext secret values must not be stored in browser localStorage or routinely exposed to the AI conversation layer.
 
 ### Center workspace
 - Current project title + active status.
@@ -55,11 +69,16 @@ Secrets must be designed so secret values are not shown to the AI conversation l
 - Mobile layout opens preview as a dedicated pane instead of squeezing it beside chat.
 
 ### External helper tools
-Top utility bar provides quick access to:
+Project integrations can include:
 - GitHub
 - Cloudflare
-- Supabase
 - Convex
+- Google Drive
+- Gmail
+- Supabase when a specific project actually uses it
+- other project-specific APIs/providers
+
+Convex is the preferred backend for Viking Aries and for future migrations where changing the existing backend is appropriate.
 
 ### Responsive behavior
 Desktop preserves three-pane layout.
