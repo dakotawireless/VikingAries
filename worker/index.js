@@ -312,7 +312,7 @@ function buildGithubTools() {
         required: ["path"],
         additionalProperties: false,
       },
-      strict: true,
+      strict: false,
     },
     {
       type: "function",
@@ -327,7 +327,7 @@ function buildGithubTools() {
         required: ["path"],
         additionalProperties: false,
       },
-      strict: true,
+      strict: false,
     },
     {
       type: "function",
@@ -344,7 +344,7 @@ function buildGithubTools() {
         required: ["path", "content", "message"],
         additionalProperties: false,
       },
-      strict: true,
+      strict: false,
     },
   ];
 }
@@ -724,16 +724,16 @@ export default {
       ? buildGithubTools()
       : [];
 
-    if (tools.length) {
-      instructions.concat("\nGitHub tools are available for the selected project's mapped repository.");
-    }
+    const runtimeInstructions = tools.length
+      ? `${instructions}\nGitHub read/list/write tools are available for the selected project's mapped repository. Use them when needed, and report commit SHAs from tool results after writes.`
+      : instructions;
 
     let payload;
     try {
       payload = await callOpenAI({
         apiKey,
         model,
-        instructions,
+        instructions: runtimeInstructions,
         input: messages,
         tools,
       });
@@ -763,7 +763,7 @@ export default {
         payload = await callOpenAI({
           apiKey,
           model,
-          instructions,
+          instructions: runtimeInstructions,
           input: outputs,
           tools,
           previousResponseId: payload.id,
