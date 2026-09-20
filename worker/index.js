@@ -737,19 +737,23 @@ async function cloudflareVerifyToken(token) {
   };
 }
 
-async function cloudflareStoreVikingAriesToken(token) {
+async function cloudflareStoreVikingAriesSecret(cloudflareToken, name, value) {
   await cloudflareRequest(
-    token,
+    cloudflareToken,
     `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/vikingaries/secrets`,
     {
       method: "PUT",
       body: JSON.stringify({
-        name: "CLOUDFLARE_API_TOKEN",
-        text: token,
+        name,
+        text: value,
         type: "secret_text",
       }),
     }
   );
+}
+
+async function cloudflareStoreVikingAriesToken(token) {
+  await cloudflareStoreVikingAriesSecret(token, "CLOUDFLARE_API_TOKEN", token);
 }
 
 async function cloudflareWorkerRecord(token, workerName) {
@@ -1628,6 +1632,28 @@ export default {
       ]);
       const projectConfig = registeredProjectConfig(url.searchParams.get("projectId"));
 
+      let githubRepositoryAccessible = false;
+      let githubRepositoryError = null;
+      if (
+        auth.configured &&
+        authenticated &&
+        githubToken &&
+        projectConfig?.repository
+      ) {
+        try {
+          await githubListDirectory(
+            githubToken,
+            projectConfig.repository,
+            "",
+            projectConfig.defaultBranch || "main"
+          );
+          githubRepositoryAccessible = true;
+        } catch (error) {
+          githubRepositoryError =
+            error instanceof Error ? error.message : "Repository access check failed.";
+        }
+      }
+
       return json({
         ownerAuth: {
           configured: auth.configured,
@@ -1646,11 +1672,15 @@ export default {
         providers: {
           github: {
             configured: Boolean(githubToken),
+            mapped: Boolean(projectConfig?.repository),
+            repositoryAccessible: githubRepositoryAccessible,
+            repositoryError: githubRepositoryError,
             usable: Boolean(
               auth.configured &&
               authenticated &&
               githubToken &&
-              projectConfig?.repository
+              projectConfig?.repository &&
+              githubRepositoryAccessible
             ),
           },
           cloudflare: {
@@ -1693,15 +1723,118 @@ export default {
         return json({ error: "GITHUB_TOKEN is not configured in Cloudflare." }, { status: 503 });
       }
 
+      const projectConfig = registeredProjectConfig(url.searchParams.get("projectId"));
+
       try {
         const profile = await githubRequest(githubToken, "/user");
+
+        if (projectConfig?.repository) {
+          try {
+            await githubListDirectory(
+              githubToken,
+              projectConfig.repository,
+              "",
+              projectConfig.defaultBranch || "main"
+            );
+          } catch (error) {
+            return json(
+              {
+                error: `GitHub token is valid for ${profile?.login || "the connected account"}, but it cannot access ${projectConfig.repository}: ${error instanceof Error ? error.message : "Not Found"}`,
+                login: profile?.login || null,
+                repository: projectConfig.repository,
+                repositoryAccessible: false,
+              },
+              { status: 403 }
+            );
+          }
+        }
+
         return json({
           ok: true,
           login: profile?.login || null,
           name: profile?.name || null,
+          repository: projectConfig?.repository || null,
+          defaultBranch: projectConfig?.defaultBranch || "main",
+          repositoryAccessible: Boolean(projectConfig?.repository),
         });
       } catch (error) {
-        return json({ error: error.message }, { status: 502 });
+        return json({ error: error instanceof Error ? error.message : "GitHub verification failed." }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/github/configure") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Invalid GitHub connection request." }, { status: 400 });
+      }
+
+      const token = typeof body?.token === "string" ? body.token.trim() : "";
+      if (token.length < 20 || token.length > 4096) {
+        return json({ error: "Enter a valid GitHub token." }, { status: 400 });
+      }
+
+      const projectConfig = registeredProjectConfig(
+        typeof body?.projectId === "string" ? body.projectId : ""
+      );
+      if (!projectConfig?.repository) {
+        return json({ error: "This project does not have a registered GitHub repository." }, { status: 400 });
+      }
+
+      try {
+        const profile = await githubRequest(token, "/user");
+        await githubListDirectory(
+          token,
+          projectConfig.repository,
+          "",
+          projectConfig.defaultBranch || "main"
+        );
+
+        const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+        if (!cloudflareToken) {
+          return json(
+            {
+              error:
+                "The GitHub token is valid and can access this repository, but Cloudflare must be connected before Viking Aries can securely save the replacement GITHUB_TOKEN.",
+            },
+            { status: 503 }
+          );
+        }
+
+        await cloudflareStoreVikingAriesSecret(
+          cloudflareToken,
+          "GITHUB_TOKEN",
+          token
+        );
+
+        return json({
+          ok: true,
+          login: profile?.login || null,
+          name: profile?.name || null,
+          repository: projectConfig.repository,
+          defaultBranch: projectConfig.defaultBranch || "main",
+          repositoryAccessible: true,
+        });
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "GitHub connection failed.",
+          },
+          { status: 502 }
+        );
       }
     }
 
