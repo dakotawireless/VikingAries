@@ -771,14 +771,17 @@ function ChatWorkspace({ project, active = true }) {
       ...thread,
       title:
         thread.title === "New Chat"
-          ? content.length > 28
-            ? `${content.slice(0, 28)}…`
-            : content
+          ? typedContent
+            ? typedContent.length > 28
+              ? `${typedContent.slice(0, 28)}…`
+              : typedContent
+            : "Pasted image"
           : thread.title,
       messages: [...thread.messages, userMessage],
     }));
 
     setDraft("");
+    setAttachment(null);
     try {
       window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
     } catch {
