@@ -1,6 +1,6 @@
-const MAX_IMAGE_DIMENSION = 768;
-const JPEG_QUALITY = 0.72;
-const MAX_DATA_URL_LENGTH = 120000;
+const MAX_IMAGE_DIMENSION = 256;
+const JPEG_QUALITY = 0.55;
+const MAX_DATA_URL_LENGTH = 9000;
 
 function resizeImage(file) {
   return new Promise((resolve, reject) => {
@@ -38,18 +38,16 @@ function insertAtCursor(textarea, value) {
   const end = textarea.selectionEnd ?? textarea.value.length;
   const before = textarea.value.slice(0, start);
   const after = textarea.value.slice(end);
-  const separatorBefore = before && !/[\\s]$/.test(before) ? " " : "";
-  const separatorAfter = after && !/^[\\s]/.test(after) ? " " : "";
-  const nextValue = `${before}${separatorBefore}${value}${separatorAfter}${after}`;
-  textarea.value = nextValue;
+  const separatorBefore = before && !/[\s]$/.test(before) ? " " : "";
+  const separatorAfter = after && !/^[\s]/.test(after) ? " " : "";
+  textarea.value = `${before}${separatorBefore}${value}${separatorAfter}${after}`;
   textarea.selectionStart = textarea.selectionEnd = before.length + separatorBefore.length + value.length + separatorAfter.length;
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function setComposerStatus(message) {
   const workspace = document.querySelector(".workspace");
-  if (!workspace) return;
-  const status = workspace.querySelector(".chat-connection-status");
+  const status = workspace?.querySelector(".chat-connection-status");
   if (!status) return;
   const previous = status.textContent;
   status.textContent = message;
@@ -62,13 +60,13 @@ function enablePastedImages() {
   document.addEventListener("paste", async (event) => {
     const textarea = event.target?.closest?.(".composer textarea");
     if (!textarea) return;
-    const image = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
-    if (!image) return;
+    const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
 
     event.preventDefault();
     setComposerStatus("Preparing pasted image…");
     try {
-      const dataUrl = await resizeImage(image.getAsFile());
+      const dataUrl = await resizeImage(imageItem.getAsFile());
       insertAtCursor(textarea, `![Pasted image](${dataUrl})`);
       setComposerStatus("Image attached");
     } catch (error) {
@@ -77,5 +75,4 @@ function enablePastedImages() {
   });
 }
 
-// This runs before React mounts so pasted images work with the existing controlled composer.
 enablePastedImages();
