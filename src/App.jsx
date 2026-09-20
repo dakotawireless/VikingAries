@@ -484,13 +484,23 @@ function renderChatContent(content) {
   while ((match = imagePattern.exec(text)) !== null) {
     const textBefore = text.slice(cursor, match.index);
     if (textBefore) parts.push(<span key={`text-${match.index}`}>{textBefore}</span>);
+    const imageSource = match[1].replace(/\s/g, "");
     parts.push(
-      <img
+      <a
         key={`pasted-image-${imageIndex}`}
-        className="chat-pasted-image"
-        src={match[1].replace(/\s/g, "")}
-        alt="Pasted image"
-      />
+        className="chat-pasted-image-link"
+        href={imageSource}
+        target="_blank"
+        rel="noreferrer"
+        title="Open full-size image"
+        aria-label="Open pasted image full size in a new tab"
+      >
+        <img
+          className="chat-pasted-image"
+          src={imageSource}
+          alt="Pasted image"
+        />
+      </a>
     );
     imageIndex += 1;
     cursor = match.index + match[0].length;
