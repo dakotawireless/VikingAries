@@ -335,6 +335,73 @@ async function githubDownloadProjectFile(token, { projectId, path }) {
   return response;
 }
 
+function inferMimeType(name) {
+  const lower = String(name || "").toLowerCase();
+  const extension = lower.includes(".") ? lower.split(".").pop() : "";
+  const known = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    pdf: "application/pdf",
+    txt: "text/plain",
+    csv: "text/csv",
+    json: "application/json",
+    html: "text/html",
+    htm: "text/html",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    zip: "application/zip",
+    gz: "application/gzip",
+  };
+  return known[extension] || "application/octet-stream";
+}
+
+function originalStoredFileName(path) {
+  const base = String(path || "").split("/").pop() || "file";
+  return base.replace(/^\d+-[A-Za-z0-9]{8}-/, "") || base;
+}
+
+async function githubListProjectFiles(token, projectId) {
+  const safeProject = safeProjectStorageId(projectId);
+  if (!safeProject) throw new Error("A valid project is required.");
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${VA_FILE_STORAGE_REPOSITORY}/git/trees/${encodeURIComponent(VA_FILE_STORAGE_BRANCH)}?recursive=1`
+  );
+  const prefix = `project-files/${safeProject}/`;
+
+  return (Array.isArray(payload?.tree) ? payload.tree : [])
+    .filter((entry) => entry?.type === "blob" && String(entry.path || "").startsWith(prefix))
+    .map((entry) => {
+      const name = originalStoredFileName(entry.path);
+      const storedBase = String(entry.path || "").split("/").pop() || "";
+      const timestamp = Number(storedBase.split("-")[0] || 0);
+      return {
+        id: `durable-${entry.sha}`,
+        name,
+        type: inferMimeType(name),
+        size: Number(entry.size || 0),
+        status: "Stored",
+        storage: "github",
+        storageRepository: VA_FILE_STORAGE_REPOSITORY,
+        storageBranch: VA_FILE_STORAGE_BRANCH,
+        storagePath: entry.path,
+        storageSha: entry.sha,
+        uploadedAt: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
+        location: `Durable VA storage · ${entry.path}`,
+      };
+    })
+    .sort((a, b) => Number(b.uploadedAt || 0) - Number(a.uploadedAt || 0));
+}
+
 async function githubRequest(token, path, init = {}) {
   const response = await fetch(`https://api.github.com${path}`, {
     ...init,
@@ -1503,7 +1570,8 @@ export default {
     if (
       url.pathname === "/api/files/upload" ||
       url.pathname === "/api/files/download" ||
-      url.pathname === "/api/files/delete"
+      url.pathname === "/api/files/delete" ||
+      url.pathname === "/api/files/list"
     ) {
       const auth = await ownerAuthConfig(env);
       if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
@@ -1524,10 +1592,10 @@ export default {
           const form = await request.formData();
           const projectId = String(form.get("projectId") || "").trim();
           const file = form.get("file");
-          if (!registeredProjectConfig(projectId)) {
-            return json({ error: "This project is not registered for durable file storage." }, { status: 400 });
+          if (!safeProjectStorageId(projectId)) {
+            return json({ error: "A valid project is required." }, { status: 400 });
           }
-          if (!(file instanceof File)) {
+          if (!file || typeof file.arrayBuffer !== "function") {
             return json({ error: "A file is required." }, { status: 400 });
           }
 
@@ -1542,8 +1610,8 @@ export default {
 
           const body = await request.json().catch(() => ({}));
           const projectId = String(body?.projectId || "").trim();
-          if (!registeredProjectConfig(projectId)) {
-            return json({ error: "This project is not registered for durable file storage." }, { status: 400 });
+          if (!safeProjectStorageId(projectId)) {
+            return json({ error: "A valid project is required." }, { status: 400 });
           }
 
           const result = await githubDeleteProjectFile(githubToken, {
@@ -1560,8 +1628,13 @@ export default {
         }
 
         const projectId = String(url.searchParams.get("projectId") || "").trim();
-        if (!registeredProjectConfig(projectId)) {
-          return json({ error: "This project is not registered for durable file storage." }, { status: 400 });
+        if (!safeProjectStorageId(projectId)) {
+          return json({ error: "A valid project is required." }, { status: 400 });
+        }
+
+        if (url.pathname === "/api/files/list") {
+          const files = await githubListProjectFiles(githubToken, projectId);
+          return json({ ok: true, files });
         }
 
         const path = url.searchParams.get("path") || "";
@@ -1572,7 +1645,8 @@ export default {
 
         const headers = new Headers();
         headers.set("Content-Type", contentType);
-        headers.set("Content-Length", upstream.headers.get("Content-Length") || "");
+        const contentLength = upstream.headers.get("Content-Length");
+        if (contentLength) headers.set("Content-Length", contentLength);
         headers.set(
           "Content-Disposition",
           `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fileName)}`
