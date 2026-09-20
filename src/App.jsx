@@ -876,6 +876,7 @@ function ChatWorkspace({ project, active = true }) {
     <main
       className={active ? "workspace chat-workspace-host active" : "workspace chat-workspace-host background"}
       aria-hidden={!active}
+      style={active ? undefined : { display: "none" }}
     >
       <div className="project-heading">
         <div className="project-title-row">
