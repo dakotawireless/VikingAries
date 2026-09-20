@@ -195,7 +195,26 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .message-stack { max-width: 78%; }
 .message-meta { display: flex; align-items: center; gap: 7px; margin: 1px 0 6px; font-size: 12px; }
 .message-meta strong { font-size: 13px; }
-.message-meta span { color: #758699; }
+.message-meta > span { color: #758699; }
+.copy-message-button {
+  margin-left: auto;
+  min-height: 27px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #657b8d;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.copy-message-button:hover {
+  color: #0878df;
+  background: #f3f8fc;
+  border-color: #d8e5ef;
+}
+.copy-message-button:active { transform: translateY(1px); }
 .user-message, .assistant-message {
   border: 1px solid var(--line); border-radius: 7px; padding: 11px 13px; font-size: 13px; line-height: 1.5;
 }
