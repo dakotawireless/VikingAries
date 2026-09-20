@@ -10,6 +10,27 @@ async function resolveSecret(binding) {
 }
 
 
+const PROJECT_RUNTIME_CONFIG = {
+  timekeeper: {
+    repository: "dakotawireless/TimeKeeper-App",
+    defaultBranch: "main",
+    cloudflareWorker: "timekeeper-app",
+    backend: "Convex",
+    backendDeployment: "aware-caiman-251",
+    backendUrl: "https://aware-caiman-251.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/t/erik-2df00/timekeeper/aware-caiman-251",
+  },
+  "viking-aries": {
+    repository: "dakotawireless/VikingAries",
+    defaultBranch: "main",
+    cloudflareWorker: "vikingaries",
+  },
+};
+
+function registeredProjectConfig(projectId) {
+  return PROJECT_RUNTIME_CONFIG[String(projectId || "").trim()] || null;
+}
+
 const OWNER_SESSION_COOKIE = "va_owner_session";
 const OWNER_SESSION_SECONDS = 60 * 60 * 12;
 
@@ -500,16 +521,32 @@ export default {
         ? await verifyOwnerSession(request, auth.sessionSecret)
         : false;
       const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+      const projectConfig = registeredProjectConfig(url.searchParams.get("projectId"));
 
       return json({
         ownerAuth: {
           configured: auth.configured,
           authenticated,
         },
+        project: projectConfig
+          ? {
+              registered: true,
+              repository: projectConfig.repository || null,
+              defaultBranch: projectConfig.defaultBranch || "main",
+              cloudflareWorker: projectConfig.cloudflareWorker || null,
+              backend: projectConfig.backend || null,
+              backendDeployment: projectConfig.backendDeployment || null,
+            }
+          : { registered: false },
         providers: {
           github: {
             configured: Boolean(githubToken),
-            usable: Boolean(auth.configured && authenticated && githubToken),
+            usable: Boolean(
+              auth.configured &&
+              authenticated &&
+              githubToken &&
+              projectConfig?.repository
+            ),
           },
           cloudflare: { configured: false, usable: false },
           convex: { configured: false, usable: false },
@@ -619,6 +656,12 @@ export default {
         ? body.thread.title.trim().slice(0, 160)
         : "Untitled chat";
 
+    const projectId =
+      typeof body?.project?.id === "string"
+        ? body.project.id.trim().slice(0, 120)
+        : "";
+    const runtimeProject = registeredProjectConfig(projectId);
+
     const projectMetadata = {
       repository:
         typeof body?.project?.repository === "string"
@@ -669,6 +712,19 @@ export default {
           ? body.project.contextSummary.trim().slice(0, 8000)
           : "",
     };
+
+    if (runtimeProject) {
+      projectMetadata.repository = runtimeProject.repository || "";
+      projectMetadata.defaultBranch = runtimeProject.defaultBranch || "main";
+      projectMetadata.cloudflareWorker = runtimeProject.cloudflareWorker || projectMetadata.cloudflareWorker;
+      projectMetadata.backend = runtimeProject.backend || projectMetadata.backend;
+      projectMetadata.backendDeployment = runtimeProject.backendDeployment || projectMetadata.backendDeployment;
+      projectMetadata.backendUrl = runtimeProject.backendUrl || projectMetadata.backendUrl;
+      projectMetadata.convexDashboardUrl = runtimeProject.convexDashboardUrl || projectMetadata.convexDashboardUrl;
+    } else {
+      // Until the durable VA backend owns project mappings, unregistered projects do not receive write-capable provider tools.
+      projectMetadata.repository = "";
+    }
 
     const messages = Array.isArray(body?.messages)
       ? body.messages
@@ -725,7 +781,7 @@ export default {
       : [];
 
     const runtimeInstructions = tools.length
-      ? `${instructions}\nGitHub read/list/write tools are available for the selected project's mapped repository. Use them when needed, and report commit SHAs from tool results after writes.`
+      ? `${instructions}\nGitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.`
       : instructions;
 
     let payload;
