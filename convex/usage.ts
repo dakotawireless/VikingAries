@@ -25,15 +25,18 @@ export const recordUsage = internalMutation({
 });
 
 export const usageSummary = internalQuery({
-  args: { days: v.number() },
-  handler: async (ctx, { days }) => {
+  args: {
+    startAt: v.number(),
+    endAt: v.number(),
+    periodLabel: v.string(),
+  },
+  handler: async (ctx, { startAt, endAt, periodLabel }) => {
     const now = Date.now();
-    const start = now - Math.max(1, Math.min(365, days)) * 86400000;
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const rows = await ctx.db
       .query("apiUsage")
-      .withIndex("by_createdAt", (q) => q.gte("createdAt", start))
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", startAt).lt("createdAt", endAt))
       .collect();
 
     const blank = () => ({
