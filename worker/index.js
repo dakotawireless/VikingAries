@@ -1157,6 +1157,68 @@ async function writeVAState(env, entry) {
   return payload;
 }
 
+function verifiedActionStateKey(projectId, threadId) {
+  const safeProject = String(projectId || "unknown").replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 100);
+  const safeThread = String(threadId || "unknown").replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 120);
+  return `viking-aries:audit:actions:${safeProject}:${safeThread}`;
+}
+
+function actionReceiptIdentity(receipt) {
+  if (receipt?.provider === "GitHub" && receipt?.commitSha) {
+    return `github:${receipt.commitSha}`;
+  }
+  if (receipt?.provider === "Cloudflare") {
+    return `cloudflare:${receipt.buildId || ""}:${receipt.commitHash || ""}:${receipt.recordedAt || ""}`;
+  }
+  return JSON.stringify(receipt);
+}
+
+function mergeVerifiedActionReceipts(...groups) {
+  const merged = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const receipt of Array.isArray(group) ? group : []) {
+      if (!receipt || typeof receipt !== "object") continue;
+      const identity = actionReceiptIdentity(receipt);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      merged.push(receipt);
+    }
+  }
+  return merged.slice(-80);
+}
+
+async function readVerifiedActionReceipts(env, projectId, threadId) {
+  if (!projectId || !threadId) return [];
+  const state = await readVAState(env);
+  const key = verifiedActionStateKey(projectId, threadId);
+  const entry = (Array.isArray(state?.entries) ? state.entries : []).find(
+    (item) => item?.key === key && !item?.deleted
+  );
+  if (!entry || typeof entry.value !== "string") return [];
+  try {
+    const parsed = JSON.parse(entry.value);
+    return Array.isArray(parsed) ? parsed.slice(-80) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function appendVerifiedActionReceipts(env, projectId, threadId, receipts) {
+  if (!projectId || !threadId || !Array.isArray(receipts) || !receipts.length) {
+    return { stored: false };
+  }
+
+  const existing = await readVerifiedActionReceipts(env, projectId, threadId);
+  const merged = mergeVerifiedActionReceipts(existing, receipts);
+  await writeVAState(env, {
+    key: verifiedActionStateKey(projectId, threadId),
+    value: JSON.stringify(merged),
+    updatedAt: Date.now(),
+  });
+  return { stored: true, count: merged.length };
+}
+
 async function deleteVAState(env, key, updatedAt) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
@@ -1700,6 +1762,10 @@ export default {
       typeof body?.thread?.title === "string" && body.thread.title.trim()
         ? body.thread.title.trim().slice(0, 160)
         : "Untitled chat";
+    const threadId =
+      typeof body?.thread?.id === "string" && body.thread.id.trim()
+        ? body.thread.id.trim().slice(0, 180)
+        : "";
 
     const projectId =
       typeof body?.project?.id === "string"
@@ -1800,11 +1866,22 @@ export default {
         ? env.OPENAI_MODEL
         : "gpt-5.6-luna";
     const model = requestedModel || configuredDefaultModel;
-    const verifiedActionHistory = Array.isArray(body?.verifiedActionHistory)
+    const requestActionHistory = Array.isArray(body?.verifiedActionHistory)
       ? body.verifiedActionHistory
           .filter((receipt) => receipt && typeof receipt === "object")
           .slice(-40)
       : [];
+    let durableActionHistory = [];
+    try {
+      durableActionHistory = await readVerifiedActionReceipts(env, projectId, threadId);
+    } catch {
+      // Audit history improves reliability but must never block chat.
+      durableActionHistory = [];
+    }
+    const verifiedActionHistory = mergeVerifiedActionReceipts(
+      durableActionHistory,
+      requestActionHistory
+    ).slice(-40);
     const verifiedActionText = formatVerifiedActionHistory(verifiedActionHistory);
 
     const projectFacts = [
@@ -1917,7 +1994,14 @@ export default {
             }
 
             const receipt = buildVerifiedActionReceipt(call, result, projectMetadata);
-            if (receipt) actionReceipts.push(receipt);
+            if (receipt) {
+              actionReceipts.push(receipt);
+              try {
+                await appendVerifiedActionReceipts(env, projectId, threadId, [receipt]);
+              } catch {
+                // A receipt-store outage must not turn a successful provider action into a failed action.
+              }
+            }
 
             outputs.push({
               type: "function_call_output",
