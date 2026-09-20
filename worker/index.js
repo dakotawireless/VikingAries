@@ -321,6 +321,84 @@ async function githubWriteFile(token, repository, { path, content, message, bran
   };
 }
 
+async function githubReplaceText(token, repository, {
+  path,
+  oldText,
+  newText,
+  message,
+  branch = "main",
+  expectedOccurrences = 1,
+}) {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+
+  const safePath = String(path || "").replace(/^\/+/, "").trim();
+  const searchText = String(oldText ?? "");
+  const replacementText = String(newText ?? "");
+  const commitMessage = String(message || "").trim().slice(0, 240);
+  const expected = Number(expectedOccurrences);
+
+  if (!safePath) throw new Error("A repository file path is required.");
+  if (!searchText) throw new Error("oldText is required.");
+  if (!commitMessage) throw new Error("A commit message is required.");
+  if (!Number.isInteger(expected) || expected < 1 || expected > 50) {
+    throw new Error("expectedOccurrences must be an integer between 1 and 50.");
+  }
+
+  const existing = await githubRequest(
+    token,
+    `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch || "main")}`
+  );
+
+  if (existing?.type !== "file") {
+    throw new Error("The requested GitHub path is not a file.");
+  }
+
+  const currentContent =
+    existing.encoding === "base64" ? base64ToUtf8(existing.content || "") : "";
+
+  const matches = currentContent.split(searchText).length - 1;
+  if (matches !== expected) {
+    throw new Error(
+      `Target text matched ${matches} time(s); expected exactly ${expected}. Re-read the file and use a more specific oldText block.`
+    );
+  }
+
+  const updatedContent = currentContent.split(searchText).join(replacementText);
+  if (updatedContent === currentContent) {
+    throw new Error("The replacement produced no change.");
+  }
+  if (updatedContent.length > 500000) {
+    throw new Error("Updated file content is too large for this editor action.");
+  }
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: commitMessage,
+        content: utf8ToBase64(updatedContent),
+        branch: branch || "main",
+        sha: existing.sha,
+      }),
+    }
+  );
+
+  return {
+    ok: true,
+    repository: safeRepo,
+    path: payload?.content?.path || safePath,
+    branch: branch || "main",
+    replacements: matches,
+    contentSha: payload?.content?.sha || null,
+    commitSha: payload?.commit?.sha || null,
+    commitUrl: payload?.commit?.html_url || null,
+  };
+}
+
 function githubToolsEnabled(authenticated, token, repository) {
   return Boolean(authenticated && token && normalizeRepository(repository));
 }
@@ -370,6 +448,25 @@ function buildGithubTools() {
           branch: { type: "string", description: "Target branch. Defaults to the project's default branch." },
         },
         required: ["path", "content", "message"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "github_replace_text",
+      description: "Safely edit part of an existing file in the selected project's mapped GitHub repository. The runtime reads the latest file, requires oldText to match exactly the expected number of times, replaces it with newText, and commits using the current blob SHA. Prefer this for targeted edits to large files.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Existing file path relative to repository root." },
+          oldText: { type: "string", description: "Exact existing text block to replace. Include enough surrounding context to make the match unique." },
+          newText: { type: "string", description: "Replacement text block." },
+          message: { type: "string", description: "Concise Git commit message." },
+          branch: { type: "string", description: "Target branch. Defaults to the project's default branch." },
+          expectedOccurrences: { type: "integer", description: "Exact number of expected matches. Defaults to 1.", minimum: 1, maximum: 50 },
+        },
+        required: ["path", "oldText", "newText", "message"],
         additionalProperties: false,
       },
       strict: false,
@@ -755,6 +852,16 @@ async function executeGithubTool(call, token, projectMetadata) {
       content: args.content,
       message: args.message,
       branch: args.branch || defaultBranch,
+    });
+  }
+  if (call.name === "github_replace_text") {
+    return githubReplaceText(token, repository, {
+      path: args.path,
+      oldText: args.oldText,
+      newText: args.newText,
+      message: args.message,
+      branch: args.branch || defaultBranch,
+      expectedOccurrences: args.expectedOccurrences ?? 1,
     });
   }
 
@@ -1333,7 +1440,7 @@ export default {
       "Do not claim that you changed code, deployed an app, accessed a repository, or called an external service unless the Viking Aries runtime actually supplied a tool result proving that action occurred.",
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
       "When the owner explicitly asks you to make, fix, implement, update, commit, deploy, or otherwise carry out a project change, do the work with the available tools rather than stopping at diagnosis or giving instructions. Inspect the necessary files, make the requested change, commit it, and report the actual tool result. Only stop without executing when a required capability is genuinely unavailable, the request is ambiguous in a way that blocks safe execution, or the requested action would violate a safety constraint.",
-      "The GitHub write tool replaces a complete file by design. That is an expected and supported edit path, including for large source files. File size alone is not a reason to refuse a requested change. For an existing file, first read the latest version, preserve unrelated content, apply the smallest targeted transformation to that fetched content, then write the complete updated file using the current blob SHA. If the write fails because the file changed concurrently, re-read the latest file and retry the transformation instead of refusing preemptively.",
+      "GitHub editing supports both full-file replacement and targeted exact-text replacement. Prefer github_replace_text for focused edits to existing large files: first read the latest file, choose a unique oldText block, replace only that block, and commit. Use github_write_file when creating a file or when a full-file rewrite is genuinely appropriate. File size alone is never a reason to refuse a requested change. If a targeted replacement does not match exactly as expected, re-read the file and retry with a more specific block.",
     ].filter(Boolean).join("\n");
 
     const [githubToken, cloudflareToken, convexToken] = await Promise.all([
