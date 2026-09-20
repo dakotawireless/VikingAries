@@ -176,12 +176,22 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   border-right: 1px solid var(--line);
   overflow: hidden;
 }
-.project-heading { padding: 16px 20px 8px; background: white; }
+.project-heading { padding: 16px 20px 8px; background: white; flex: 0 0 auto; }
 .project-title-row { display: flex; align-items: center; gap: 11px; }
 .project-title-row h1 { margin: 0; font-size: 23px; line-height: 1; letter-spacing: -.025em; }
 .active-project { display: inline-flex; align-items: center; gap: 6px; color: #66788b; font-size: 12px; }
 .active-project > span { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
-.chat-tab-row { display: flex; align-items: stretch; padding: 0 20px; background: white; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.chat-tab-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 42px;
+  flex: 0 0 42px;
+  padding: 0 20px;
+  background: white;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 .chat-tab {
   min-height: 42px;
   border: 0;
@@ -232,7 +242,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .workspace-scroll {
   position: relative;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   padding: 14px 18px 100px;
   overflow-y: auto;
   overscroll-behavior: contain;
