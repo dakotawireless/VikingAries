@@ -84,7 +84,7 @@ const personalProjects = [
     icon: Monitor,
     repository: "dakotawireless/Dakota-Wireless-POS---New",
     defaultBranch: "migration-staging",
-    cloudflareWorker: "dakota-wireless-pos-migration",
+    cloudflareWorker: "dakota-wireless-pos---new",
     backend: "Convex",
     backendUrl: "https://sleek-bear-647.convex.cloud",
     convexDashboardUrl: "https://dashboard.convex.dev/",
