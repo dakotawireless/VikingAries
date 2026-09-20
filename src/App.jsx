@@ -729,58 +729,32 @@ function ChatWorkspace({ project }) {
   );
 }
 
-function PreviewDashboard() {
+function PreviewDashboard({ project }) {
+  const ProjectIcon = getProjectIcon(project, Boxes);
+
   return (
     <div className="preview-app">
       <div className="preview-app-header">
-        <div className="preview-app-brand"><Clock3 size={18} /> <strong>Timekeeper</strong></div>
+        <div className="preview-app-brand"><ProjectIcon size={18} /> <strong>{project?.name || "Project"}</strong></div>
         <nav>
-          <span className="active">Dashboard</span><span>Employees</span><span>Time Cards</span><span>Reports</span>
+          <span className="active">Preview</span>
         </nav>
         <Settings size={17} />
       </div>
 
       <div className="preview-dashboard">
-        <div className="preview-welcome">
-          <div><h2>Welcome back, Erik</h2><p>Here’s what’s happening with your team today.</p></div>
-          <small>Saturday, September 19</small>
-        </div>
-
-        <div className="metrics-grid">
-          <Metric icon={Users} value="24" label="Active Employees" />
-          <Metric icon={Clock3} value="142" label="Hours This Week" />
-          <Metric icon={Zap} value="$3,842" label="Total Commissions" />
-          <Metric icon={Activity} value="98%" label="Sync Health" />
-        </div>
-
-        <section className="sync-card">
-          <div className="sync-card-head">
-            <div className="sync-badge"><ShieldCheck size={21} /></div>
-            <div><strong>Dakota Wireless POS Commission Sync</strong><small>Last synced 12 minutes ago · 1,284 sales records processed</small></div>
-            <span className="connected-pill">Connected</span>
+        <div className="empty-preview-state">
+          <div className="empty-preview-icon"><Monitor size={28} /></div>
+          <h2>No live preview connected yet</h2>
+          <p>
+            Add this project's production, staging, or preview URL in Settings or Deployments.
+            Viking Aries will load the actual app here when a URL is available.
+          </p>
+          <div className="preview-project-facts">
+            {project?.repository && <span><Github size={14} /> {project.repository}</span>}
+            {project?.backend && <span><Database size={14} /> {project.backend}</span>}
+            {project?.status && <span><ShieldCheck size={14} /> {project.status}</span>}
           </div>
-          <div className="sync-actions">
-            <button type="button"><RefreshCw size={16} /> Sync Now</button>
-            <button type="button"><Logs size={16} /> View Sync Logs</button>
-          </div>
-        </section>
-
-        <div className="preview-bottom-grid">
-          <section className="preview-list-card">
-            <div className="preview-card-title"><strong>Recent Activity</strong><button type="button">View All</button></div>
-            <ul>
-              <li><span className="activity-dot green" />Commission sync completed <small>12 minutes ago</small></li>
-              <li><span className="activity-dot blue" />Processed 1,284 sales records <small>12 minutes ago</small></li>
-              <li><span className="activity-dot gray" />Employee data updated <small>2 hours ago</small></li>
-            </ul>
-          </section>
-          <section className="preview-list-card">
-            <div className="preview-card-title"><strong>Quick Actions</strong></div>
-            <button type="button"><UserRound size={15} /> Add Employee</button>
-            <button type="button"><RefreshCw size={15} /> Run Commission Sync</button>
-            <button type="button"><Activity size={15} /> View Reports</button>
-            <button type="button"><Link2 size={15} /> Manage Integrations</button>
-          </section>
         </div>
       </div>
     </div>
@@ -812,8 +786,9 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
           <div className="preview-integrations">
             <ToolButton icon={Github} label="GitHub" />
             <ToolButton icon={Cloud} label="Cloudflare" />
-            <ToolButton icon={Database} label="Supabase" />
             <ToolButton icon={Boxes} label="Convex" />
+            <ToolButton icon={FileImage} label="Drive" />
+            <ToolButton icon={Send} label="Gmail" />
           </div>
 
           <div className="preview-control-strip">
@@ -865,7 +840,7 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
                 style={{ width: "100%", height: "100%", minHeight: "720px", border: 0, background: "#fff" }}
               />
             ) : (
-              <PreviewDashboard />
+              <PreviewDashboard project={project} />
             )}
           </div>
         </div>
