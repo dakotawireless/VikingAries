@@ -543,7 +543,7 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
         key={`pasted-image-${imageIndex}`}
         type="button"
         className="chat-pasted-image-link"
-        onClick={() => onImageOpen?.(imageSource)}
+        onClick={() => onImageOpen?.(fullImageSource)}
         title="Open full-size image"
         aria-label="Open pasted image full size"
       >
