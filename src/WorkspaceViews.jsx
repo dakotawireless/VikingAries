@@ -483,24 +483,43 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   }, []);
 
   const verifyProvider = async (providerId) => {
-    if (providerId !== "github") return;
+    if (!["github", "cloudflare"].includes(providerId)) return;
 
     setProviderBusy(providerId);
     setProviderMessage("");
     try {
-      const response = await fetch("/api/github/verify", { method: "POST" });
+      const endpoint = providerId === "github" ? "/api/github/verify" : "/api/cloudflare/verify";
+      const response = await fetch(endpoint, { method: "POST" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Could not verify GitHub.");
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+          (providerId === "github" ? "Could not verify GitHub." : "Could not verify Cloudflare.")
+        );
+      }
 
-      updateProvider("github", {
-        account: payload.login || payload.name || "Connected GitHub account",
-        status: "Connected",
-      });
-      setProviderMessage(`GitHub verified as ${payload.login || payload.name || "connected account"}.`);
+      if (providerId === "github") {
+        updateProvider("github", {
+          account: payload.login || payload.name || "Connected GitHub account",
+          status: "Connected",
+        });
+        setProviderMessage(`GitHub verified as ${payload.login || payload.name || "connected account"}.`);
+      } else {
+        updateProvider("cloudflare", {
+          account: `Account ${String(payload.accountId || "").slice(0, 8)}…`,
+          status: payload.status === "active" ? "Connected" : "Needs attention",
+        });
+        setProviderMessage(
+          payload.status === "active"
+            ? "Cloudflare API token verified. Runtime tools are ready for registered Workers."
+            : `Cloudflare token status: ${payload.status || "unknown"}.`
+        );
+      }
+
       await refreshRuntimeStatus();
     } catch (error) {
-      setProviderMessage(error.message || "Could not verify GitHub.");
-      updateProvider("github", { status: "Needs attention" });
+      setProviderMessage(error.message || `Could not verify ${providerId}.`);
+      updateProvider(providerId, { status: "Needs attention" });
     } finally {
       setProviderBusy("");
     }
@@ -571,7 +590,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   </div>
                   <StatusPill
                     status={
-                      item.id === "github" && runtimeStatus?.providers?.github?.usable
+                      runtimeStatus?.providers?.[item.id]?.usable
                         ? "Connected"
                         : item.status
                     }
@@ -622,17 +641,19 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   <button
                     type="button"
                     className="secondary-action"
-                    disabled={providerBusy === item.id || item.id !== "github"}
+                    disabled={providerBusy === item.id || !["github", "cloudflare"].includes(item.id)}
                     title={
                       item.id === "github"
                         ? "Verify the GitHub credential configured in the Viking Aries runtime"
-                        : "This provider runtime connection is not wired yet"
+                        : item.id === "cloudflare"
+                          ? "Verify the Cloudflare API token configured in the Viking Aries runtime"
+                          : "This provider runtime connection is not wired yet"
                     }
                     onClick={() => verifyProvider(item.id)}
                   >
                     {providerBusy === item.id
                       ? "Checking…"
-                      : item.id === "github" && runtimeStatus?.providers?.github?.usable
+                      : runtimeStatus?.providers?.[item.id]?.usable
                         ? "Reconnect"
                         : "Connect"}
                   </button>
@@ -649,7 +670,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     Disconnect
                   </button>
                 </div>
-                {item.id === "github" && runtimeStatus && (
+                {["github", "cloudflare"].includes(item.id) && runtimeStatus && (
                   <div className="integration-runtime-state">
                     <strong>Runtime:</strong>
                     <span>
@@ -657,11 +678,17 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                         ? " Owner security setup required"
                         : !runtimeStatus.ownerAuth?.authenticated
                           ? " Owner login required"
-                          : !runtimeStatus.providers?.github?.configured
-                            ? " GITHUB_TOKEN not configured"
-                            : runtimeStatus.providers?.github?.usable
-                              ? " GitHub tools available to VA"
-                              : " GitHub needs attention"}
+                          : !runtimeStatus.providers?.[item.id]?.configured
+                            ? item.id === "github"
+                              ? " GITHUB_TOKEN not configured"
+                              : " CLOUDFLARE_API_TOKEN not configured"
+                            : runtimeStatus.providers?.[item.id]?.usable
+                              ? item.id === "github"
+                                ? " GitHub tools available to VA"
+                                : " Cloudflare tools available to VA"
+                              : item.id === "github"
+                                ? " GitHub needs attention"
+                                : " Cloudflare needs attention"}
                     </span>
                   </div>
                 )}
