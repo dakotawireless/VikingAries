@@ -69,6 +69,19 @@
   outline: none;
 }
 
+/* Render pasted photos in the conversation as images, never as their
+   underlying data-URL/markdown source. */
+.chat-pasted-image {
+  display: block;
+  width: min(100%, 280px);
+  max-height: 220px;
+  margin: 2px 0;
+  object-fit: contain;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  background: #fff;
+}
+
 /* Keep the hidden-preview toolbar reachable on desktop. Previously its
    auto-sized pane could collapse behind the workspace, leaving no visible
    control for restoring the preview. */
