@@ -522,6 +522,7 @@ function ChatWorkspace({ project }) {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const scrollRef = useRef(null);
+  const isAtBottomRef = useRef(true);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
 
@@ -538,6 +539,7 @@ function ChatWorkspace({ project }) {
   const scrollToChatBottom = (behavior = "auto") => {
     const node = scrollRef.current;
     if (!node) return;
+    isAtBottomRef.current = true;
     node.scrollTo({ top: node.scrollHeight, behavior });
     setShowJumpToBottom(false);
   };
@@ -546,21 +548,29 @@ function ChatWorkspace({ project }) {
     const node = scrollRef.current;
     if (!node) return;
     const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    setShowJumpToBottom(distanceFromBottom > 140);
+    const atBottom = distanceFromBottom <= 80;
+    isAtBottomRef.current = atBottom;
+    setShowJumpToBottom(!atBottom);
   };
 
+  // Changing projects or chat threads should open at the newest message.
   useEffect(() => {
-    const run = () => scrollToChatBottom("auto");
-
-    // Run after layout and once more after embedded content/fonts finish settling.
-    const frame = window.requestAnimationFrame(run);
-    const timer = window.setTimeout(run, 80);
+    const frame = window.requestAnimationFrame(() => scrollToChatBottom("auto"));
+    const timer = window.setTimeout(() => scrollToChatBottom("auto"), 80);
 
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [project.id, activeThreadId, activeThread?.messages?.length, sending]);
+  }, [project.id, activeThreadId]);
+
+  // New content follows the bottom only when the user is already there.
+  // This prevents React/layout updates from fighting manual scrolling.
+  useEffect(() => {
+    if (!isAtBottomRef.current) return;
+    const frame = window.requestAnimationFrame(() => scrollToChatBottom("auto"));
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeThread?.messages?.length]);
 
   useEffect(() => {
     return () => {
@@ -618,6 +628,8 @@ function ChatWorkspace({ project }) {
     setDraft("");
     setSending(true);
     setStatusText("Viking Aries is thinking…");
+    isAtBottomRef.current = true;
+    window.requestAnimationFrame(() => scrollToChatBottom("auto"));
 
     try {
       const response = await fetch("/api/chat", {
