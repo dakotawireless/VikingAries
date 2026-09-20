@@ -549,7 +549,7 @@ function prepareImageAttachment(file) {
     const image = new Image();
     image.onload = () => {
       URL.revokeObjectURL(objectUrl);
-      const scale = Math.min(1, 900 / Math.max(image.naturalWidth, image.naturalHeight));
+      const scale = Math.min(1, 256 / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
       canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
