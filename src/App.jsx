@@ -472,7 +472,7 @@ function formatChatTime() {
 }
 
 function renderChatContent(content) {
-  const imagePattern = /!\\[Pasted image\\]\\((data:image\\/[^)]+)\\)/g;
+  const imagePattern = /!\[Pasted image\]\((data:image\/[^)]+)\)/g;
   const parts = [];
   let cursor = 0;
   let match;
