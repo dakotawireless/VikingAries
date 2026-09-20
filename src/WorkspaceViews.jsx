@@ -525,13 +525,10 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
         );
       } else {
         updateProvider("convex", {
-          account:
-            payload.teamId || payload.projectId
-              ? `Team ${payload.teamId || "connected"}`
-              : "Connected Convex account",
+          account: "Connected Convex account",
           status: "Connected",
         });
-        setProviderMessage("Convex personal access token verified. Runtime deployment tools are ready for registered Convex projects.");
+        setProviderMessage("Convex personal access token verified. The shared PERSONAL connection is ready; each project still needs its own Convex deployment mapping.");
       }
 
       await refreshRuntimeStatus();
@@ -608,7 +605,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   </div>
                   <StatusPill
                     status={
-                      runtimeStatus?.providers?.[item.id]?.usable
+                      runtimeStatus?.providers?.[item.id]?.usable || item.status === "Connected"
                         ? "Connected"
                         : item.status
                     }
@@ -673,7 +670,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   >
                     {providerBusy === item.id
                       ? "Checking…"
-                      : runtimeStatus?.providers?.[item.id]?.usable
+                      : item.status === "Connected" || runtimeStatus?.providers?.[item.id]?.usable
                         ? "Reconnect"
                         : "Connect"}
                   </button>
@@ -710,11 +707,13 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                                 : item.id === "cloudflare"
                                   ? " Cloudflare tools available to VA"
                                   : " Convex tools available to VA"
-                              : item.id === "github"
-                                ? " GitHub needs attention"
-                                : item.id === "cloudflare"
-                                  ? " Cloudflare needs attention"
-                                  : " Convex needs attention"}
+                              : item.id === "convex" && runtimeStatus.providers?.convex?.configured && !runtimeStatus.providers?.convex?.mapped
+                                ? " Convex connection loaded; this project has no Convex deployment mapped yet"
+                                : item.id === "github"
+                                  ? " GitHub needs attention"
+                                  : item.id === "cloudflare"
+                                    ? " Cloudflare needs attention"
+                                    : " Convex needs attention"}
                     </span>
                   </div>
                 )}
