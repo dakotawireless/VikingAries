@@ -1447,9 +1447,9 @@ function ChatWorkspace({ project, active = true }) {
           <Mic size={18} />
         </button>
         <div className="composer-input-wrap">
-          {attachment?.dataUrl && (
+          {attachment?.thumbnailDataUrl && (
             <div className="composer-image-thumbnail">
-              <img src={attachment.dataUrl} alt="Pasted image thumbnail" />
+              <img src={attachment.thumbnailDataUrl} alt="Pasted image thumbnail" />
               <span>Image attached</span>
               <button
                 type="button"
