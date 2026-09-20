@@ -154,12 +154,14 @@ function projectIntegrationDefaults(project) {
       dashboardUrl: project?.convexDashboardUrl || "",
     },
     drive: {
-      enabled: false,
+      enabled: project?.id === "rez-lock",
+      account: project?.id === "rez-lock" ? "rezridesllc@gmail.com" : "",
       folderUrl: "",
     },
     gmail: {
-      enabled: project?.id === "timekeeper",
-      identity: "",
+      enabled: project?.id === "timekeeper" || project?.id === "rez-lock",
+      account: project?.id === "rez-lock" ? "rezridesllc@gmail.com" : "",
+      identity: project?.id === "rez-lock" ? "rezridesllc@gmail.com" : "",
     },
   };
 }
@@ -329,7 +331,8 @@ function rezLockDefaults(project) {
     integrations: [
       { id: "github", name: "GitHub", provider: "dakotawireless/rez-lock-and-key-staging", purpose: "Source control", status: "Connected" },
       { id: "cloudflare", name: "Cloudflare", provider: "Worker: rez-lock-and-key-staging", purpose: "Hosting, builds, static assets, and /api/* runtime", status: "Connected" },
-      { id: "google-script", name: "Google Apps Script", provider: "RLK_EMAIL_WEBHOOK_URL", purpose: "Existing estimate/contact lead email webhook", status: "Configured" },
+      { id: "google-script", name: "Google Apps Script", provider: "rezridesllc@gmail.com", purpose: "Existing estimate/contact lead email webhook referenced by RLK_EMAIL_WEBHOOK_URL", status: "Configured" },
+      { id: "google-account", name: "Google Account", provider: "rezridesllc@gmail.com", purpose: "Project-specific Google identity for Rez Lock & Key", status: "Configured" },
       { id: "twilio", name: "Twilio", provider: "Cloudflare environment bindings", purpose: "Optional alert configuration detected by /api/health", status: "Existing / unknown" },
     ],
     tables: [],
@@ -907,18 +910,24 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
             <div className="project-mapping-title"><FileImage size={18} /><strong>Google Drive folder</strong></div>
             <label className="mapping-toggle">
               <input type="checkbox" checked={Boolean(mappings.drive?.enabled)} onChange={(e) => updateMapping("drive", { enabled: e.target.checked })} />
-              Use shared Drive connection for this project
+              {project.id === "rez-lock" ? "Use RLK Google account for this project" : "Use shared Drive connection for this project"}
             </label>
-            <label className="compact-field"><span>Project folder URL or durable reference</span><input value={mappings.drive?.folderUrl || ""} placeholder="https://drive.google.com/..." onChange={(e) => updateMapping("drive", { folderUrl: e.target.value })} /></label>
+            <div className="mapping-field-grid">
+              <label className="compact-field"><span>Google account</span><input value={mappings.drive?.account || ""} placeholder="account@gmail.com" onChange={(e) => updateMapping("drive", { account: e.target.value })} /></label>
+              <label className="compact-field"><span>Project folder URL or durable reference</span><input value={mappings.drive?.folderUrl || ""} placeholder="https://drive.google.com/..." onChange={(e) => updateMapping("drive", { folderUrl: e.target.value })} /></label>
+            </div>
           </div>
 
           <div className="project-mapping-card">
             <div className="project-mapping-title"><Mail size={18} /><strong>Gmail identity</strong></div>
             <label className="mapping-toggle">
               <input type="checkbox" checked={Boolean(mappings.gmail?.enabled)} onChange={(e) => updateMapping("gmail", { enabled: e.target.checked })} />
-              Use shared Gmail connection for this project
+              {project.id === "rez-lock" ? "Use RLK Google account for this project" : "Use shared Gmail connection for this project"}
             </label>
-            <label className="compact-field"><span>Project mail identity / purpose</span><input value={mappings.gmail?.identity || ""} placeholder="Sender address, alias, or workflow purpose" onChange={(e) => updateMapping("gmail", { identity: e.target.value })} /></label>
+            <div className="mapping-field-grid">
+              <label className="compact-field"><span>Google account</span><input value={mappings.gmail?.account || ""} placeholder="account@gmail.com" onChange={(e) => updateMapping("gmail", { account: e.target.value })} /></label>
+              <label className="compact-field"><span>Project mail identity / purpose</span><input value={mappings.gmail?.identity || ""} placeholder="Sender address, alias, or workflow purpose" onChange={(e) => updateMapping("gmail", { identity: e.target.value })} /></label>
+            </div>
           </div>
         </div>
       </section>
