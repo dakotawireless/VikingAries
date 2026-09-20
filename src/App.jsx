@@ -732,7 +732,11 @@ function ChatWorkspace({ project, active = true }) {
   };
 
   const sendMessage = async () => {
-    const content = draft.trim();
+    const typedContent = draft.trim();
+    const content = [
+      typedContent,
+      attachment?.dataUrl ? `![Pasted image](${attachment.dataUrl})` : "",
+    ].filter(Boolean).join("\n\n");
     if (!content || sending || !activeThread) return;
 
     // Invalidate the current speech-recognition session before clearing the
