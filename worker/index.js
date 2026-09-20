@@ -1484,7 +1484,12 @@ export default {
             jobId,
             messages: messages.map((message) => ({ ...message })),
           };
-          const currentUserIndex = normalizedBody.messages.lastIndexOf(lastUserMessage);
+          const currentUserIndex = normalizedBody.messages.findLastIndex(
+            (message) =>
+              message?.role === "user" &&
+              typeof message?.content === "string" &&
+              message.content === lastUserMessage.content
+          );
           if (currentUserIndex >= 0) {
             normalizedBody.messages[currentUserIndex] = {
               ...normalizedBody.messages[currentUserIndex],
