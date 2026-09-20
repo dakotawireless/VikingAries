@@ -1239,9 +1239,10 @@ function ChatWorkspace({ project, active = true }) {
 
     setStatusText("Preparing pasted image…");
     try {
-      const dataUrl = await prepareImageAttachment(file);
+      const imageData = await prepareImageAttachment(file);
       setAttachment({
-        dataUrl,
+        thumbnailDataUrl: imageData.thumbnailDataUrl,
+        fullDataUrl: imageData.fullDataUrl,
         name: file.name || "Pasted image",
         type: file.type || "image/jpeg",
       });
