@@ -317,7 +317,30 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 .voice-button:disabled { opacity: .55; cursor: not-allowed; }
 .send-button { border: 0; padding: 0 15px; background: #0878df; color: white; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
-.composer-hint { grid-column: 3 / 5; justify-self: end; color: #77899a; font-size: 9px; }
+.model-picker {
+  grid-column: 3;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #667b8e;
+  font-size: 9px;
+  font-weight: 600;
+}
+.model-picker select {
+  height: 28px;
+  max-width: 190px;
+  padding: 0 24px 0 8px;
+  border: 1px solid #cbd8e3;
+  border-radius: 4px;
+  background: white;
+  color: #34495c;
+  font-size: 10px;
+  font-weight: 600;
+}
+.model-picker select:disabled { opacity: .55; }
+.composer-hint { grid-column: 4; justify-self: end; align-self: center; color: #77899a; font-size: 9px; }
 
 .preview-resize-handle {
   position: relative;
