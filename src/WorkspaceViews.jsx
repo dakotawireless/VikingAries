@@ -51,6 +51,106 @@ function useProjectStorage(projectId, key, initialValue) {
   return [value, setValue];
 }
 
+function useSharedStorage(key, initialValue) {
+  const storageKey = `viking-aries:personal:${key}`;
+  const [value, setValue] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(value));
+    } catch {
+      // Shared integration metadata is temporary until VA's Convex persistence is wired.
+    }
+  }, [storageKey, value]);
+
+  return [value, setValue];
+}
+
+const sharedIntegrationDefaults = [
+  {
+    id: "github",
+    name: "GitHub",
+    provider: "GitHub",
+    account: "dakotawireless",
+    status: "Needs connection",
+    capabilities: "Read repositories, edit files, commit changes, branches, pull requests",
+    purpose: "Shared source control connection for PERSONAL projects",
+  },
+  {
+    id: "cloudflare",
+    name: "Cloudflare",
+    provider: "Cloudflare",
+    account: "",
+    status: "Needs connection",
+    capabilities: "Deployments, builds, Workers, Pages, logs, bindings",
+    purpose: "Shared hosting and deployment connection",
+  },
+  {
+    id: "convex",
+    name: "Convex",
+    provider: "Convex",
+    account: "",
+    status: "Needs connection",
+    capabilities: "Projects, deployments, functions, schema, data, environment configuration",
+    purpose: "Shared backend and database connection",
+  },
+  {
+    id: "drive",
+    name: "Google Drive",
+    provider: "Google",
+    account: "",
+    status: "Needs connection",
+    capabilities: "Search, read, register, and upload project files",
+    purpose: "Shared project files and durable document references",
+  },
+  {
+    id: "gmail",
+    name: "Gmail",
+    provider: "Google",
+    account: "",
+    status: "Needs connection",
+    capabilities: "Read and send mail when explicitly authorized",
+    purpose: "Shared email connection for project workflows",
+  },
+];
+
+function projectIntegrationDefaults(project) {
+  return {
+    github: {
+      enabled: Boolean(project?.repository),
+      repository: project?.repository || (project?.id === "viking-aries" ? "dakotawireless/VikingAries" : ""),
+      branch: "main",
+    },
+    cloudflare: {
+      enabled: Boolean(project?.deploymentUrl),
+      project: "",
+      worker: project?.id === "timekeeper" ? "timekeeper-app" : project?.id === "viking-aries" ? "vikingaries" : "",
+      deploymentUrl: project?.deploymentUrl || "",
+    },
+    convex: {
+      enabled: project?.backend === "Convex" || Boolean(project?.backendUrl),
+      deployment: project?.id === "timekeeper" ? "aware-caiman-251" : "",
+      url: project?.backendUrl || "",
+      dashboardUrl: project?.convexDashboardUrl || "",
+    },
+    drive: {
+      enabled: false,
+      folderUrl: "",
+    },
+    gmail: {
+      enabled: project?.id === "timekeeper",
+      identity: "",
+    },
+  };
+}
+
 function timekeeperDefaults() {
   return {
     features: [
@@ -353,32 +453,207 @@ function FilesMediaView({ project }) {
   );
 }
 
-function IntegrationsView({ project }) {
-  const defaults = projectDefaults(project).integrations;
-  const [items, setItems] = useProjectStorage(project.id, "integrations-v2", defaults);
+function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
+  const [providers, setProviders] = useSharedStorage("integrations-v1", sharedIntegrationDefaults);
+  const [mappings, setMappings] = useProjectStorage(project.id, "integration-mappings-v1", projectIntegrationDefaults(project));
 
-  const icons = { GitHub: Github, Cloudflare: Cloud, Convex: Box, Gmail: Mail, "Google Drive": FileImage, Supabase: Database, "Dakota Wireless POS": Link2 };
+  const icons = {
+    GitHub: Github,
+    Cloudflare: Cloud,
+    Convex: Box,
+    Gmail: Mail,
+    "Google Drive": FileImage,
+  };
+
+  const providerUsage = (providerId) => {
+    const names = [];
+    for (const candidate of projects) {
+      try {
+        const saved = window.localStorage.getItem(`viking-aries:${candidate.id}:integration-mappings-v1`);
+        const candidateMappings = saved ? JSON.parse(saved) : projectIntegrationDefaults(candidate);
+        if (candidateMappings?.[providerId]?.enabled) names.push(candidate.name);
+      } catch {
+        const fallback = projectIntegrationDefaults(candidate);
+        if (fallback?.[providerId]?.enabled) names.push(candidate.name);
+      }
+    }
+    return names;
+  };
+
+  const updateProvider = (id, patch) => {
+    setProviders((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const updateMapping = (providerId, patch) => {
+    setMappings((current) => ({
+      ...current,
+      [providerId]: { ...(current[providerId] || {}), ...patch },
+    }));
+  };
+
+  const projectUsage = providers.filter((provider) => mappings?.[provider.id]?.enabled);
 
   return (
     <WorkspacePage>
-      <PageHeader icon={Link2} title="Integrations" description="External services, APIs, and connected apps used by this project." />
-      <div className="workspace-grid two-column">
-        {items.map((item) => {
-          const Icon = icons[item.name] || Link2;
-          return (
-            <section className="workspace-card integration-card" key={item.id}>
-              <div className="integration-icon"><Icon size={19} /></div>
-              <div className="integration-copy">
-                <div className="card-heading-row compact"><h2>{item.name}</h2><StatusPill status={item.status} /></div>
-                <p>{item.purpose}</p>
-                <label className="compact-field"><span>Connection / provider</span><input value={item.provider} onChange={(e) => setItems((current) => current.map((row) => row.id === item.id ? { ...row, provider: e.target.value } : row))} /></label>
-                <label className="compact-field"><span>Status</span><select value={item.status} onChange={(e) => setItems((current) => current.map((row) => row.id === item.id ? { ...row, status: e.target.value } : row))}><option>Connected</option><option>Configured</option><option>Available</option><option>Not configured</option><option>Not used</option></select></label>
+      <PageHeader
+        icon={Link2}
+        title="Integrations"
+        description={
+          workspace === "Personal"
+            ? "One PERSONAL connection per provider, with a separate destination mapping for each project."
+            : "Contractor integrations remain isolated from PERSONAL connections."
+        }
+      />
+
+      <InfoBanner text="Shared authentication and project destinations are separate. Connecting GitHub once does not make every project use the same repository." />
+
+      <section className="workspace-card">
+        <div className="card-heading-row">
+          <div>
+            <h2>PERSONAL provider connections</h2>
+            <p>These records are shared across all PERSONAL projects. Credentials will move into the secure vault when the VA backend is connected.</p>
+          </div>
+          <span className="count-badge">{providers.length}</span>
+        </div>
+
+        <div className="shared-integration-grid">
+          {providers.map((item) => {
+            const Icon = icons[item.name] || Link2;
+            const usage = providerUsage(item.id);
+            return (
+              <div className="shared-integration-card" key={item.id}>
+                <div className="shared-integration-head">
+                  <span className="integration-icon"><Icon size={19} /></span>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small>{item.purpose}</small>
+                  </div>
+                  <StatusPill status={item.status} />
+                </div>
+
+                <div className="shared-integration-fields">
+                  <label className="compact-field">
+                    <span>Connected account / workspace</span>
+                    <input
+                      value={item.account || ""}
+                      placeholder="Not connected"
+                      onChange={(e) => updateProvider(item.id, { account: e.target.value })}
+                    />
+                  </label>
+                  <label className="compact-field">
+                    <span>Connection status</span>
+                    <select
+                      value={item.status}
+                      onChange={(e) => updateProvider(item.id, { status: e.target.value })}
+                    >
+                      <option>Needs connection</option>
+                      <option>Connected</option>
+                      <option>Needs attention</option>
+                      <option>Disconnected</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="integration-capabilities">
+                  <strong>Enabled capabilities</strong>
+                  <span>{item.capabilities}</span>
+                </div>
+
+                <div className="integration-usage">
+                  <strong>Projects using it</strong>
+                  <span>{usage.length ? usage.join(", ") : "No project mappings yet"}</span>
+                </div>
+
+                <div className="integration-actions">
+                  <button type="button" className="secondary-action" onClick={() => updateProvider(item.id, { status: item.status === "Connected" ? "Needs attention" : "Needs connection" })}>
+                    Configure
+                  </button>
+                  <button type="button" className="secondary-action" disabled title="Provider authorization will be wired into the VA runtime next">
+                    {item.status === "Connected" ? "Reconnect" : "Connect"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action danger-action"
+                    disabled={usage.length > 1}
+                    title={usage.length > 1 ? `${usage.length} projects depend on this connection` : "Disconnect will be enabled when secure provider auth is wired"}
+                  >
+                    Disconnect
+                  </button>
+                </div>
               </div>
-            </section>
-          );
-        })}
-      </div>
-      <InfoBanner text="Connection metadata is project-scoped. Secret values remain in the provider and are never displayed here." />
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="workspace-card">
+        <div className="card-heading-row">
+          <div>
+            <h2>{project.name} provider mappings</h2>
+            <p>This is where Viking Aries learns the exact repository, deployment, backend, Drive folder, and mail identity for this project.</p>
+          </div>
+          <span className="count-badge">{projectUsage.length}</span>
+        </div>
+
+        <div className="project-integration-mappings">
+          <div className="project-mapping-card">
+            <div className="project-mapping-title"><Github size={18} /><strong>GitHub repository</strong></div>
+            <label className="mapping-toggle">
+              <input type="checkbox" checked={Boolean(mappings.github?.enabled)} onChange={(e) => updateMapping("github", { enabled: e.target.checked })} />
+              Use shared GitHub connection for this project
+            </label>
+            <div className="mapping-field-grid">
+              <label className="compact-field"><span>Repository</span><input value={mappings.github?.repository || ""} placeholder="owner/repository" onChange={(e) => updateMapping("github", { repository: e.target.value })} /></label>
+              <label className="compact-field"><span>Default branch</span><input value={mappings.github?.branch || "main"} onChange={(e) => updateMapping("github", { branch: e.target.value })} /></label>
+            </div>
+          </div>
+
+          <div className="project-mapping-card">
+            <div className="project-mapping-title"><Cloud size={18} /><strong>Cloudflare destination</strong></div>
+            <label className="mapping-toggle">
+              <input type="checkbox" checked={Boolean(mappings.cloudflare?.enabled)} onChange={(e) => updateMapping("cloudflare", { enabled: e.target.checked })} />
+              Use shared Cloudflare connection for this project
+            </label>
+            <div className="mapping-field-grid">
+              <label className="compact-field"><span>Worker / project</span><input value={mappings.cloudflare?.worker || ""} placeholder="Worker or Pages project" onChange={(e) => updateMapping("cloudflare", { worker: e.target.value })} /></label>
+              <label className="compact-field"><span>Production / preview URL</span><input value={mappings.cloudflare?.deploymentUrl || ""} onChange={(e) => updateMapping("cloudflare", { deploymentUrl: e.target.value })} /></label>
+            </div>
+          </div>
+
+          <div className="project-mapping-card">
+            <div className="project-mapping-title"><Box size={18} /><strong>Convex deployment</strong></div>
+            <label className="mapping-toggle">
+              <input type="checkbox" checked={Boolean(mappings.convex?.enabled)} onChange={(e) => updateMapping("convex", { enabled: e.target.checked })} />
+              Use shared Convex connection for this project
+            </label>
+            <div className="mapping-field-grid three">
+              <label className="compact-field"><span>Deployment</span><input value={mappings.convex?.deployment || ""} placeholder="deployment-name" onChange={(e) => updateMapping("convex", { deployment: e.target.value })} /></label>
+              <label className="compact-field"><span>Deployment URL</span><input value={mappings.convex?.url || ""} onChange={(e) => updateMapping("convex", { url: e.target.value })} /></label>
+              <label className="compact-field"><span>Dashboard URL</span><input value={mappings.convex?.dashboardUrl || ""} onChange={(e) => updateMapping("convex", { dashboardUrl: e.target.value })} /></label>
+            </div>
+          </div>
+
+          <div className="project-mapping-card">
+            <div className="project-mapping-title"><FileImage size={18} /><strong>Google Drive folder</strong></div>
+            <label className="mapping-toggle">
+              <input type="checkbox" checked={Boolean(mappings.drive?.enabled)} onChange={(e) => updateMapping("drive", { enabled: e.target.checked })} />
+              Use shared Drive connection for this project
+            </label>
+            <label className="compact-field"><span>Project folder URL or durable reference</span><input value={mappings.drive?.folderUrl || ""} placeholder="https://drive.google.com/..." onChange={(e) => updateMapping("drive", { folderUrl: e.target.value })} /></label>
+          </div>
+
+          <div className="project-mapping-card">
+            <div className="project-mapping-title"><Mail size={18} /><strong>Gmail identity</strong></div>
+            <label className="mapping-toggle">
+              <input type="checkbox" checked={Boolean(mappings.gmail?.enabled)} onChange={(e) => updateMapping("gmail", { enabled: e.target.checked })} />
+              Use shared Gmail connection for this project
+            </label>
+            <label className="compact-field"><span>Project mail identity / purpose</span><input value={mappings.gmail?.identity || ""} placeholder="Sender address, alias, or workflow purpose" onChange={(e) => updateMapping("gmail", { identity: e.target.value })} /></label>
+          </div>
+        </div>
+      </section>
+
+      <InfoBanner text="This first phase stores connection and mapping metadata in the browser only. No OAuth token or secret value is stored here. The next phase moves these records to VA's backend and wires real provider authorization/actions." />
     </WorkspacePage>
   );
 }
@@ -628,7 +903,7 @@ function InfoBanner({ text }) {
   return <div className="info-banner"><ShieldCheck size={15} /><span>{text}</span></div>;
 }
 
-export default function WorkspaceView({ view, project }) {
+export default function WorkspaceView({ view, project, projects = [], workspace = "Personal" }) {
   switch (view) {
     case "Features":
       return <FeaturesView project={project} />;
@@ -637,7 +912,7 @@ export default function WorkspaceView({ view, project }) {
     case "Files & Media":
       return <FilesMediaView project={project} />;
     case "Integrations":
-      return <IntegrationsView project={project} />;
+      return <IntegrationsView project={project} projects={projects} workspace={workspace} />;
     case "Database":
       return <DatabaseView project={project} />;
     case "Backend":
