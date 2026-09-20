@@ -456,6 +456,9 @@ function FilesMediaView({ project }) {
 function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const [providers, setProviders] = useSharedStorage("integrations-v1", sharedIntegrationDefaults);
   const [mappings, setMappings] = useProjectStorage(project.id, "integration-mappings-v1", projectIntegrationDefaults(project));
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [providerMessage, setProviderMessage] = useState("");
+  const [providerBusy, setProviderBusy] = useState("");
 
   const icons = {
     GitHub: Github,
@@ -463,6 +466,44 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
     Convex: Box,
     Gmail: Mail,
     "Google Drive": FileImage,
+  };
+
+  const refreshRuntimeStatus = async () => {
+    try {
+      const response = await fetch("/api/integrations/status", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) setRuntimeStatus(payload);
+    } catch {
+      setRuntimeStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    refreshRuntimeStatus();
+  }, []);
+
+  const verifyProvider = async (providerId) => {
+    if (providerId !== "github") return;
+
+    setProviderBusy(providerId);
+    setProviderMessage("");
+    try {
+      const response = await fetch("/api/github/verify", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not verify GitHub.");
+
+      updateProvider("github", {
+        account: payload.login || payload.name || "Connected GitHub account",
+        status: "Connected",
+      });
+      setProviderMessage(`GitHub verified as ${payload.login || payload.name || "connected account"}.`);
+      await refreshRuntimeStatus();
+    } catch (error) {
+      setProviderMessage(error.message || "Could not verify GitHub.");
+      updateProvider("github", { status: "Needs attention" });
+    } finally {
+      setProviderBusy("");
+    }
   };
 
   const providerUsage = (providerId) => {
@@ -528,7 +569,13 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     <strong>{item.name}</strong>
                     <small>{item.purpose}</small>
                   </div>
-                  <StatusPill status={item.status} />
+                  <StatusPill
+                    status={
+                      item.id === "github" && runtimeStatus?.providers?.github?.usable
+                        ? "Connected"
+                        : item.status
+                    }
+                  />
                 </div>
 
                 <div className="shared-integration-fields">
@@ -565,21 +612,59 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                 </div>
 
                 <div className="integration-actions">
-                  <button type="button" className="secondary-action" onClick={() => updateProvider(item.id, { status: item.status === "Connected" ? "Needs attention" : "Needs connection" })}>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => updateProvider(item.id, { status: item.status === "Connected" ? "Needs attention" : "Needs connection" })}
+                  >
                     Configure
                   </button>
-                  <button type="button" className="secondary-action" disabled title="Provider authorization will be wired into the VA runtime next">
-                    {item.status === "Connected" ? "Reconnect" : "Connect"}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={providerBusy === item.id || item.id !== "github"}
+                    title={
+                      item.id === "github"
+                        ? "Verify the GitHub credential configured in the Viking Aries runtime"
+                        : "This provider runtime connection is not wired yet"
+                    }
+                    onClick={() => verifyProvider(item.id)}
+                  >
+                    {providerBusy === item.id
+                      ? "Checking…"
+                      : item.id === "github" && runtimeStatus?.providers?.github?.usable
+                        ? "Reconnect"
+                        : "Connect"}
                   </button>
                   <button
                     type="button"
                     className="secondary-action danger-action"
-                    disabled={usage.length > 1}
-                    title={usage.length > 1 ? `${usage.length} projects depend on this connection` : "Disconnect will be enabled when secure provider auth is wired"}
+                    disabled
+                    title={
+                      usage.length > 1
+                        ? `${usage.length} projects depend on this connection`
+                        : "Disconnect will be enabled after the secure provider registry is persisted server-side"
+                    }
                   >
                     Disconnect
                   </button>
                 </div>
+                {item.id === "github" && runtimeStatus && (
+                  <div className="integration-runtime-state">
+                    <strong>Runtime:</strong>
+                    <span>
+                      {!runtimeStatus.ownerAuth?.configured
+                        ? " Owner security setup required"
+                        : !runtimeStatus.ownerAuth?.authenticated
+                          ? " Owner login required"
+                          : !runtimeStatus.providers?.github?.configured
+                            ? " GITHUB_TOKEN not configured"
+                            : runtimeStatus.providers?.github?.usable
+                              ? " GitHub tools available to VA"
+                              : " GitHub needs attention"}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -653,7 +738,8 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
         </div>
       </section>
 
-      <InfoBanner text="This first phase stores connection and mapping metadata in the browser only. No OAuth token or secret value is stored here. The next phase moves these records to VA's backend and wires real provider authorization/actions." />
+      {providerMessage && <div className="integration-feedback">{providerMessage}</div>}
+      <InfoBanner text="Project mappings are still browser-persisted during bootstrap. Provider credentials are never stored in localStorage or GitHub. GitHub runtime access now uses server-side secrets behind owner authentication; the remaining providers and durable VA vault are next." />
     </WorkspacePage>
   );
 }
