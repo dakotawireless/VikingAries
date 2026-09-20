@@ -77,7 +77,14 @@ const personalProjects = [
   { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
   { id: "dw-site", name: "DW Website", icon: Cloud },
   { id: "rez-lock", name: "Rez Lock & Key", icon: KeyRound },
-  { id: "viking-aries", name: "Viking Aries", icon: Boxes, repository: "dakotawireless/VikingAries" },
+  {
+    id: "viking-aries",
+    name: "Viking Aries",
+    icon: Boxes,
+    repository: "dakotawireless/VikingAries",
+    deploymentUrl: "https://vikingaries.dakotawireless.net/",
+    status: "Active",
+  },
 ];
 
 const defaultContractors = [
