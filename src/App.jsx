@@ -1,4 +1,5 @@
 import WorkspaceView from "./WorkspaceViews.jsx";
+import { startSharedStorageSync } from "./shared-storage.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -1571,6 +1572,7 @@ export default function App() {
     configured: false,
     authenticated: false,
   });
+  const [sharedStorageReady, setSharedStorageReady] = useState(false);
 
   const refreshAuth = async () => {
     try {
@@ -1591,6 +1593,44 @@ export default function App() {
     refreshAuth();
   }, []);
 
+  useEffect(() => {
+    let stopSync = null;
+    let cancelled = false;
+
+    if (authState.loading) return undefined;
+
+    if (!authState.configured) {
+      setSharedStorageReady(true);
+      return undefined;
+    }
+
+    if (!authState.authenticated) {
+      setSharedStorageReady(false);
+      return undefined;
+    }
+
+    setSharedStorageReady(false);
+    startSharedStorageSync()
+      .then((stop) => {
+        if (cancelled) {
+          stop?.();
+          return;
+        }
+        stopSync = stop;
+        setSharedStorageReady(true);
+      })
+      .catch(() => {
+        // If Convex sync is temporarily unavailable, do not lock Erik out of VA.
+        // Local browser state remains usable and sync will retry next login/reload.
+        if (!cancelled) setSharedStorageReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+      stopSync?.();
+    };
+  }, [authState.loading, authState.configured, authState.authenticated]);
+
   const logout = async () => {
     if (!authState.configured) return;
     try {
@@ -1606,6 +1646,17 @@ export default function App() {
         <section className="owner-login-card owner-login-loading">
           <div className="owner-login-shield"><ShieldCheck size={30} /></div>
           <h2>Checking owner session…</h2>
+        </section>
+      </main>
+    );
+  }
+
+  if (authState.configured && authState.authenticated && !sharedStorageReady) {
+    return (
+      <main className="owner-login-screen">
+        <section className="owner-login-card owner-login-loading">
+          <div className="owner-login-shield"><Database size={30} /></div>
+          <h2>Syncing Viking Aries workspace…</h2>
         </section>
       </main>
     );
