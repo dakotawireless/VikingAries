@@ -27,6 +27,10 @@ const PROJECT_RUNTIME_CONFIG = {
     repository: "dakotawireless/VikingAries",
     defaultBranch: "main",
     cloudflareWorker: "vikingaries",
+    backend: "Convex",
+    backendDeployment: "flippant-mandrill-487",
+    backendUrl: "https://flippant-mandrill-487.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/",
   },
 };
 
@@ -803,6 +807,92 @@ function extractResponseText(payload) {
   return parts.join("\n").trim();
 }
 
+
+const VA_CONVEX_SITE_URL = "https://flippant-mandrill-487.convex.site";
+
+const OPENAI_PRICING = {
+  "gpt-5.6-luna": { input: 0.20, cached: 0.02, cacheWrite: 0.25, output: 1.20 },
+  "gpt-5.6-terra": { input: 2.00, cached: 0.20, cacheWrite: 2.50, output: 12.00 },
+  "gpt-5.6-sol": { input: 4.00, cached: 0.40, cacheWrite: 5.00, output: 20.00 },
+};
+
+function openAIUsageForResponse(model, payload) {
+  const usage = payload?.usage || {};
+  const inputTokens = Number(usage.input_tokens || 0);
+  const cachedTokens = Number(usage.input_tokens_details?.cached_tokens || 0);
+  const cacheWriteTokens = Number(usage.input_tokens_details?.cache_write_tokens || 0);
+  const outputTokens = Number(usage.output_tokens || 0);
+  const reasoningTokens = Number(usage.output_tokens_details?.reasoning_tokens || 0);
+  const ordinaryInputTokens = Math.max(0, inputTokens - cachedTokens - cacheWriteTokens);
+  const rates = OPENAI_PRICING[model] || OPENAI_PRICING["gpt-5.6-luna"];
+  const largePromptMultiplier = inputTokens > 272000 ? 2 : 1;
+  const largeOutputMultiplier = inputTokens > 272000 ? 1.5 : 1;
+  const estimatedCostUsd =
+    ((ordinaryInputTokens * rates.input * largePromptMultiplier) +
+      (cachedTokens * rates.cached * largePromptMultiplier) +
+      (cacheWriteTokens * rates.cacheWrite * largePromptMultiplier) +
+      (outputTokens * rates.output * largeOutputMultiplier)) / 1000000;
+
+  return {
+    requests: 1,
+    inputTokens,
+    cachedTokens,
+    cacheWriteTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens: Number(usage.total_tokens || inputTokens + outputTokens),
+    estimatedCostUsd,
+  };
+}
+
+function addUsageTotals(current, next) {
+  return {
+    requests: Number(current.requests || 0) + Number(next.requests || 0),
+    inputTokens: Number(current.inputTokens || 0) + Number(next.inputTokens || 0),
+    cachedTokens: Number(current.cachedTokens || 0) + Number(next.cachedTokens || 0),
+    cacheWriteTokens: Number(current.cacheWriteTokens || 0) + Number(next.cacheWriteTokens || 0),
+    outputTokens: Number(current.outputTokens || 0) + Number(next.outputTokens || 0),
+    reasoningTokens: Number(current.reasoningTokens || 0) + Number(next.reasoningTokens || 0),
+    totalTokens: Number(current.totalTokens || 0) + Number(next.totalTokens || 0),
+    estimatedCostUsd: Number(current.estimatedCostUsd || 0) + Number(next.estimatedCostUsd || 0),
+  };
+}
+
+async function recordVAUsage(env, record) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) return { recorded: false, reason: "VA_USAGE_INGEST_SECRET is not configured." };
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/usage/record`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(record),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Usage store returned status ${response.status}`);
+  }
+  return { recorded: true, id: payload?.id || null };
+}
+
+async function readVAUsage(env, days) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(
+    `${VA_CONVEX_SITE_URL}/usage/summary?days=${encodeURIComponent(days)}`,
+    { headers: { Authorization: `Bearer ${secret}` } }
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Usage store returned status ${response.status}`);
+  }
+  return payload;
+}
+
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -829,6 +919,7 @@ export default {
           githubTokenBinding: Boolean(env.GITHUB_TOKEN),
           cloudflareApiTokenBinding: Boolean(env.CLOUDFLARE_API_TOKEN),
           convexPersonalAccessTokenBinding: Boolean(env.CONVEX_PERSONAL_ACCESS_TOKEN),
+          vaUsageIngestSecretBinding: Boolean(env.VA_USAGE_INGEST_SECRET),
         },
       });
     }
@@ -1016,6 +1107,24 @@ export default {
           tokenType: verification.tokenType,
           tokenCount: verification.tokenCount,
         });
+      } catch (error) {
+        return json({ error: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/usage") {
+      if (request.method !== "GET") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days") || 30)));
+      try {
+        return json(await readVAUsage(env, days));
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
       }
@@ -1256,6 +1365,16 @@ export default {
       : instructions;
 
     let payload;
+    let chatUsage = {
+      requests: 0,
+      inputTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 0,
+      estimatedCostUsd: 0,
+    };
     try {
       payload = await callOpenAI({
         apiKey,
@@ -1264,6 +1383,7 @@ export default {
         input: messages,
         tools,
       });
+      chatUsage = addUsageTotals(chatUsage, openAIUsageForResponse(model, payload));
 
       for (let step = 0; step < 8; step += 1) {
         const calls = extractFunctionCalls(payload);
@@ -1304,6 +1424,7 @@ export default {
           tools,
           previousResponseId: payload.id,
         });
+        chatUsage = addUsageTotals(chatUsage, openAIUsageForResponse(model, payload));
       }
     } catch (error) {
       return json(
@@ -1317,11 +1438,33 @@ export default {
       return json({ error: "The AI service returned no text." }, { status: 502 });
     }
 
+    let usageRecorded = false;
+    try {
+      const recorded = await recordVAUsage(env, {
+        projectId: projectId || "unknown",
+        projectName,
+        threadId:
+          typeof body?.thread?.id === "string"
+            ? body.thread.id.trim().slice(0, 180)
+            : "",
+        model,
+        responseId: payload?.id || "",
+        ...chatUsage,
+        createdAt: Date.now(),
+      });
+      usageRecorded = Boolean(recorded?.recorded);
+    } catch {
+      // Usage telemetry must never block the user's chat response.
+      usageRecorded = false;
+    }
+
     return json({
       text,
       model,
       responseId: payload?.id || null,
       toolsAvailable: tools.map((tool) => tool.name),
+      usage: chatUsage,
+      usageRecorded,
     });
   },
 };
