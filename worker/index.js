@@ -17,7 +17,8 @@ async function resolveSecret(binding) {
 const PROJECT_RUNTIME_CONFIG = {
   "dw-pos": {
     repository: "dakotawireless/Dakota-Wireless-POS---New",
-    defaultBranch: "main",
+    defaultBranch: "migration-staging",
+    cloudflareWorker: "dakota-wireless-pos-migration",
     backend: "Convex",
     backendDeployment: "sleek-bear-647",
     backendUrl: "https://sleek-bear-647.convex.cloud",
