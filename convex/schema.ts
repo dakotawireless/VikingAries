@@ -16,6 +16,8 @@ export default defineSchema({
     threadId: v.string(),
     threadTitle: v.string(),
     requestJson: v.string(),
+    userMessageId: v.optional(v.string()),
+    userMessageContent: v.optional(v.string()),
     status: v.string(),
     resultText: v.optional(v.string()),
     error: v.optional(v.string()),
@@ -28,6 +30,7 @@ export default defineSchema({
   })
     .index("by_jobId", ["jobId"])
     .index("by_project_updatedAt", ["projectId", "updatedAt"])
+    .index("by_project_thread_updatedAt", ["projectId", "threadId", "updatedAt"])
     .index("by_thread_updatedAt", ["threadId", "updatedAt"]),
 
   apiUsage: defineTable({
