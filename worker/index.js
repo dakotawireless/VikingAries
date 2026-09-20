@@ -1183,7 +1183,16 @@ export default {
       return json({ error: "At least one chat message is required." }, { status: 400 });
     }
 
-    const model = env.OPENAI_MODEL || "gpt-5.6-luna";
+    const allowedModels = new Set(["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]);
+    const requestedModel =
+      typeof body?.model === "string" && allowedModels.has(body.model)
+        ? body.model
+        : "";
+    const configuredDefaultModel =
+      typeof env.OPENAI_MODEL === "string" && allowedModels.has(env.OPENAI_MODEL)
+        ? env.OPENAI_MODEL
+        : "gpt-5.6-luna";
+    const model = requestedModel || configuredDefaultModel;
     const projectFacts = [
       projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
       projectMetadata.defaultBranch ? `Default branch: ${projectMetadata.defaultBranch}` : "",
