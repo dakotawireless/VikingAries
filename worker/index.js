@@ -766,7 +766,10 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
     model,
     instructions,
     input,
-    max_output_tokens: 3000,
+    // Repository writes may require the model to emit the complete contents of a
+    // large source file as function-call arguments. A 3k cap can truncate the
+    // tool call before it is valid, leaving the response with no user-facing text.
+    max_output_tokens: 30000,
   };
   if (tools?.length) body.tools = tools;
   if (previousResponseId) body.previous_response_id = previousResponseId;
@@ -1436,7 +1439,30 @@ export default {
 
     const text = extractResponseText(payload);
     if (!text) {
-      return json({ error: "The AI service returned no text." }, { status: 502 });
+      const incompleteReason =
+        payload?.incomplete_details?.reason ||
+        payload?.status ||
+        null;
+      const pendingCalls = extractFunctionCalls(payload);
+      if (pendingCalls.length) {
+        return json(
+          {
+            error:
+              "The AI response ended while a tool action was still pending. Retry the request; no successful completion was returned.",
+            responseStatus: incompleteReason,
+            pendingTools: pendingCalls.map((call) => call.name),
+          },
+          { status: 502 }
+        );
+      }
+      return json(
+        {
+          error: incompleteReason
+            ? `The AI response did not complete (${incompleteReason}). Please retry.`
+            : "The AI service returned no text.",
+        },
+        { status: 502 }
+      );
     }
 
     let usageRecorded = false;
