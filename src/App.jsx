@@ -586,8 +586,16 @@ function loadProjectIntegrationMappings(project) {
       url: project.backendUrl || "",
       dashboardUrl: project.convexDashboardUrl || "",
     },
-    drive: { enabled: false, folderUrl: "" },
-    gmail: { enabled: project.id === "timekeeper", identity: "" },
+    drive: {
+      enabled: project.id === "rez-lock",
+      account: project.id === "rez-lock" ? "rezridesllc@gmail.com" : "",
+      folderUrl: "",
+    },
+    gmail: {
+      enabled: project.id === "timekeeper" || project.id === "rez-lock",
+      account: project.id === "rez-lock" ? "rezridesllc@gmail.com" : "",
+      identity: project.id === "rez-lock" ? "rezridesllc@gmail.com" : "",
+    },
   };
 }
 
