@@ -3,7 +3,11 @@ const POLL_MS = 1200;
 const PULL_MS = 5000;
 
 function isSharedKey(key) {
-  return typeof key === "string" && key.startsWith(PREFIX);
+  return (
+    typeof key === "string" &&
+    key.startsWith(PREFIX) &&
+    !key.startsWith("viking-aries:audit:")
+  );
 }
 
 function snapshotLocal() {
