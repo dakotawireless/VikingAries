@@ -271,7 +271,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .conversation { padding: 18px 6px 10px; display: flex; flex-direction: column; gap: 18px; }
 .message-row { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; }
 .assistant-avatar { width: 34px; height: 34px; border-radius: 8px; background: #05243a; color: #73c2ff; display: grid; place-items: center; }
-.message-stack { max-width: 78%; }
+.message-stack { position: relative; max-width: 78%; }
 .message-meta { display: flex; align-items: center; gap: 7px; margin: 1px 0 6px; font-size: 12px; }
 .message-meta strong { font-size: 13px; }
 .message-meta > span { color: #758699; }
