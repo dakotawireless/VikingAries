@@ -1,4 +1,6 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
+const CLOUDFLARE_ACCOUNT_ID = "f2ca2f43ab364db1c4391a015d6698fe";
 
 async function resolveSecret(binding) {
   if (!binding) return null;
@@ -370,6 +372,268 @@ function buildGithubTools() {
   ];
 }
 
+
+async function cloudflareRequest(token, path, init = {}) {
+  const response = await fetch(`${CLOUDFLARE_API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.success === false) {
+    const apiMessage = Array.isArray(payload?.errors) && payload.errors.length
+      ? payload.errors.map((item) => item.message || item.code).join("; ")
+      : null;
+    throw new Error(apiMessage || `Cloudflare request failed with status ${response.status}`);
+  }
+  return payload;
+}
+
+async function cloudflareVerifyToken(token) {
+  const payload = await cloudflareRequest(token, "/user/tokens/verify");
+  return {
+    status: payload?.result?.status || null,
+    id: payload?.result?.id || null,
+    expiresOn: payload?.result?.expires_on || null,
+  };
+}
+
+async function cloudflareWorkerRecord(token, workerName) {
+  if (!workerName) throw new Error("No Cloudflare Worker is registered for this project.");
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts`
+  );
+  const rows = Array.isArray(payload?.result) ? payload.result : [];
+  const worker = rows.find((item) => item?.id === workerName);
+  if (!worker) throw new Error(`Cloudflare Worker "${workerName}" was not found in this account.`);
+  return worker;
+}
+
+async function cloudflareListVersions(token, workerName) {
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${encodeURIComponent(workerName)}/versions?per_page=10`
+  );
+  const rows = Array.isArray(payload?.result) ? payload.result : [];
+  return rows.slice(0, 10).map((item) => ({
+    id: item.id || null,
+    number: item.number || null,
+    createdOn: item.metadata?.created_on || null,
+    modifiedOn: item.metadata?.modified_on || null,
+    source: item.metadata?.source || null,
+    authorEmail: item.metadata?.author_email || null,
+  }));
+}
+
+async function cloudflareListDeployments(token, workerName) {
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${encodeURIComponent(workerName)}/deployments`
+  );
+  const rows = Array.isArray(payload?.result) ? payload.result : [];
+  return rows.slice(0, 10).map((item) => ({
+    id: item.id || null,
+    createdOn: item.created_on || null,
+    source: item.source || null,
+    strategy: item.strategy || null,
+    versions: Array.isArray(item.versions)
+      ? item.versions.map((version) => ({
+          versionId: version.version_id,
+          percentage: version.percentage,
+        }))
+      : [],
+    message: item.annotations?.["workers/message"] || null,
+    triggeredBy: item.annotations?.["workers/triggered_by"] || null,
+  }));
+}
+
+async function cloudflareWorkerTag(token, workerName) {
+  const worker = await cloudflareWorkerRecord(token, workerName);
+  if (!worker?.tag) throw new Error("Cloudflare did not return a Worker tag for this project.");
+  return worker.tag;
+}
+
+async function cloudflareListBuilds(token, workerName) {
+  const tag = await cloudflareWorkerTag(token, workerName);
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${encodeURIComponent(tag)}/builds`
+  );
+  const rows = Array.isArray(payload?.result) ? payload.result : [];
+  return rows.slice(0, 10).map((item) => ({
+    buildUuid: item.build_uuid || null,
+    outcome: item.build_outcome || null,
+    createdOn: item.created_on || item.created_at || null,
+    branch: item.build_trigger_metadata?.branch || null,
+    commitHash: item.build_trigger_metadata?.commit_hash || null,
+    triggerSource: item.build_trigger_metadata?.build_trigger_source || null,
+    triggerName: item.build_trigger_metadata?.trigger_name || null,
+    buildCommand: item.build_trigger_metadata?.build_command || null,
+    deployCommand: item.build_trigger_metadata?.deploy_command || null,
+  }));
+}
+
+async function cloudflareGetBuildLogs(token, buildUuid) {
+  const safeUuid = String(buildUuid || "").trim();
+  if (!/^[0-9a-f-]{20,}$/i.test(safeUuid)) throw new Error("A valid Cloudflare build UUID is required.");
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${encodeURIComponent(safeUuid)}/logs`
+  );
+  const lines = Array.isArray(payload?.result?.lines) ? payload.result.lines : [];
+  return {
+    buildUuid: safeUuid,
+    truncated: Boolean(payload?.result?.truncated),
+    lines: lines.slice(-500),
+  };
+}
+
+async function cloudflareListBuildTriggers(token, workerName) {
+  const tag = await cloudflareWorkerTag(token, workerName);
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${encodeURIComponent(tag)}/triggers`
+  );
+  const rows = Array.isArray(payload?.result) ? payload.result : [];
+  return rows.map((item) => ({
+    uuid: item.trigger_uuid || item.uuid || null,
+    name: item.trigger_name || null,
+    branchIncludes: item.branch_includes || [],
+    branchExcludes: item.branch_excludes || [],
+    buildCommand: item.build_command || null,
+    deployCommand: item.deploy_command || null,
+    rootDirectory: item.root_directory || null,
+  }));
+}
+
+async function cloudflareTriggerBuild(token, workerName, branch, commitHash) {
+  const triggers = await cloudflareListBuildTriggers(token, workerName);
+  if (!triggers.length) throw new Error("No Cloudflare build trigger is configured for this Worker.");
+
+  const preferred = triggers.find((item) =>
+    Array.isArray(item.branchIncludes) && item.branchIncludes.includes(branch)
+  ) || triggers[0];
+
+  if (!preferred?.uuid) throw new Error("Cloudflare did not return a usable build trigger UUID.");
+
+  const body = {};
+  if (branch) body.branch = branch;
+  if (commitHash) body.commit_hash = commitHash;
+  if (!body.branch && !body.commit_hash) body.branch = "main";
+
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/triggers/${encodeURIComponent(preferred.uuid)}/builds`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
+  );
+
+  return {
+    ok: true,
+    worker: workerName,
+    trigger: preferred.name || preferred.uuid,
+    buildUuid: payload?.result?.build_uuid || payload?.result?.uuid || null,
+    branch: body.branch || null,
+    commitHash: body.commit_hash || null,
+  };
+}
+
+function cloudflareToolsEnabled(authenticated, token, workerName) {
+  return Boolean(authenticated && token && workerName);
+}
+
+function buildCloudflareTools() {
+  return [
+    {
+      type: "function",
+      name: "cloudflare_get_project_status",
+      description: "Inspect the selected project's registered Cloudflare Worker, including recent versions, deployments, and builds.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "cloudflare_get_build_logs",
+      description: "Read Cloudflare build logs for a known build UUID belonging to the selected project's build history.",
+      parameters: {
+        type: "object",
+        properties: {
+          buildUuid: { type: "string", description: "Cloudflare build UUID." },
+        },
+        required: ["buildUuid"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "cloudflare_trigger_build",
+      description: "Trigger the selected project's existing Cloudflare production build pipeline. Use only when the user explicitly asks to deploy or rebuild.",
+      parameters: {
+        type: "object",
+        properties: {
+          branch: { type: "string", description: "Git branch to build. Defaults to the project's registered default branch." },
+          commitHash: { type: "string", description: "Optional specific Git commit SHA to build." },
+        },
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+  ];
+}
+
+async function executeCloudflareTool(call, token, projectMetadata) {
+  let args = {};
+  try {
+    args = JSON.parse(call.arguments || "{}");
+  } catch {
+    throw new Error("The Cloudflare tool arguments were invalid JSON.");
+  }
+
+  const workerName = projectMetadata.cloudflareWorker;
+  if (!workerName) throw new Error("No Cloudflare Worker is registered for this project.");
+
+  if (call.name === "cloudflare_get_project_status") {
+    const [versions, deployments, builds] = await Promise.all([
+      cloudflareListVersions(token, workerName),
+      cloudflareListDeployments(token, workerName),
+      cloudflareListBuilds(token, workerName).catch((error) => [{ error: error.message }]),
+    ]);
+    return {
+      worker: workerName,
+      versions,
+      deployments,
+      builds,
+    };
+  }
+
+  if (call.name === "cloudflare_get_build_logs") {
+    return cloudflareGetBuildLogs(token, args.buildUuid);
+  }
+
+  if (call.name === "cloudflare_trigger_build") {
+    return cloudflareTriggerBuild(
+      token,
+      workerName,
+      args.branch || projectMetadata.defaultBranch || "main",
+      args.commitHash || null
+    );
+  }
+
+  throw new Error(`Unsupported Cloudflare tool: ${call.name}`);
+}
+
 function extractFunctionCalls(payload) {
   return (payload?.output || []).filter((item) => item?.type === "function_call");
 }
@@ -473,6 +737,7 @@ export default {
           ownerAccessCodeBinding: Boolean(env.OWNER_ACCESS_CODE),
           ownerSessionSecretBinding: Boolean(env.OWNER_SESSION_SECRET),
           githubTokenBinding: Boolean(env.GITHUB_TOKEN),
+          cloudflareApiTokenBinding: Boolean(env.CLOUDFLARE_API_TOKEN),
         },
       });
     }
@@ -525,7 +790,10 @@ export default {
       const authenticated = auth.configured
         ? await verifyOwnerSession(request, auth.sessionSecret)
         : false;
-      const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+      const [githubToken, cloudflareToken] = await Promise.all([
+        resolveSecret(env.GITHUB_TOKEN),
+        resolveSecret(env.CLOUDFLARE_API_TOKEN),
+      ]);
       const projectConfig = registeredProjectConfig(url.searchParams.get("projectId"));
 
       return json({
@@ -553,7 +821,15 @@ export default {
               projectConfig?.repository
             ),
           },
-          cloudflare: { configured: false, usable: false },
+          cloudflare: {
+            configured: Boolean(cloudflareToken),
+            usable: Boolean(
+              auth.configured &&
+              authenticated &&
+              cloudflareToken &&
+              projectConfig?.cloudflareWorker
+            ),
+          },
           convex: { configured: false, usable: false },
           drive: { configured: false, usable: false },
           gmail: { configured: false, usable: false },
@@ -582,6 +858,35 @@ export default {
           ok: true,
           login: profile?.login || null,
           name: profile?.name || null,
+        });
+      } catch (error) {
+        return json({ error: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/cloudflare/verify") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+      if (!cloudflareToken) {
+        return json({ error: "CLOUDFLARE_API_TOKEN is not configured in Cloudflare runtime secrets." }, { status: 503 });
+      }
+
+      try {
+        const verification = await cloudflareVerifyToken(cloudflareToken);
+        return json({
+          ok: verification.status === "active",
+          status: verification.status,
+          tokenId: verification.id,
+          expiresOn: verification.expiresOn,
+          accountId: CLOUDFLARE_ACCOUNT_ID,
         });
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
@@ -780,13 +1085,29 @@ export default {
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
     ].filter(Boolean).join("\n");
 
-    const githubToken = await resolveSecret(env.GITHUB_TOKEN);
-    const tools = githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
-      ? buildGithubTools()
-      : [];
+    const [githubToken, cloudflareToken] = await Promise.all([
+      resolveSecret(env.GITHUB_TOKEN),
+      resolveSecret(env.CLOUDFLARE_API_TOKEN),
+    ]);
+    const tools = [
+      ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
+        ? buildGithubTools()
+        : []),
+      ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
+        ? buildCloudflareTools()
+        : []),
+    ];
 
-    const runtimeInstructions = tools.length
-      ? `${instructions}\nGitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.`
+    const runtimeCapabilityNotes = [];
+    if (githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
+      runtimeCapabilityNotes.push("GitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.");
+    }
+    if (cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)) {
+      runtimeCapabilityNotes.push("Cloudflare status, build-log, and build-trigger tools are available for the selected project's server-registered Worker. Trigger builds only when the user explicitly asks to deploy or rebuild.");
+    }
+
+    const runtimeInstructions = runtimeCapabilityNotes.length
+      ? `${instructions}\n${runtimeCapabilityNotes.join("\n")}`
       : instructions;
 
     let payload;
@@ -806,7 +1127,14 @@ export default {
         const outputs = [];
         for (const call of calls) {
           try {
-            const result = await executeGithubTool(call, githubToken, projectMetadata);
+            let result;
+            if (call.name.startsWith("github_")) {
+              result = await executeGithubTool(call, githubToken, projectMetadata);
+            } else if (call.name.startsWith("cloudflare_")) {
+              result = await executeCloudflareTool(call, cloudflareToken, projectMetadata);
+            } else {
+              throw new Error(`Unsupported runtime tool: ${call.name}`);
+            }
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,
