@@ -845,6 +845,109 @@ body.resizing-preview * {
 }
 .integration-copy .secondary-action { margin-top: 10px; }
 
+.shared-integration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.shared-integration-card,
+.project-mapping-card {
+  border: 1px solid #dce5ec;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+.shared-integration-head {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+.shared-integration-head > div strong,
+.shared-integration-head > div small {
+  display: block;
+}
+.shared-integration-head > div strong { font-size: 14px; }
+.shared-integration-head > div small {
+  margin-top: 3px;
+  color: #6f8394;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.shared-integration-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(150px, .7fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.integration-capabilities,
+.integration-usage {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #e5ebf0;
+}
+.integration-capabilities strong,
+.integration-usage strong {
+  color: #3b5367;
+  font-size: 11px;
+}
+.integration-capabilities span,
+.integration-usage span {
+  color: #6d8193;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 11px;
+}
+.secondary-action.danger-action {
+  color: #a33636;
+  border-color: #e2c5c5;
+}
+.secondary-action:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.project-integration-mappings {
+  display: grid;
+  gap: 9px;
+}
+.project-mapping-card {
+  background: white;
+}
+.project-mapping-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #253f54;
+  font-size: 14px;
+}
+.mapping-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 9px 0 10px;
+  color: #536b7f;
+  font-size: 11px;
+}
+.mapping-toggle input {
+  width: 15px;
+  height: 15px;
+}
+.mapping-field-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(120px, .5fr);
+  gap: 8px;
+}
+.mapping-field-grid.three {
+  grid-template-columns: .7fr 1fr 1.2fr;
+}
+
 .deployment-row,
 .secret-row,
 .automation-row,
@@ -957,6 +1060,10 @@ body.resizing-preview * {
 
 @media (max-width: 900px) {
   .utility-scroll { padding: 12px; min-height: calc(100vh - 56px); }
+  .shared-integration-grid,
+  .shared-integration-fields,
+  .mapping-field-grid,
+  .mapping-field-grid.three { grid-template-columns: 1fr; }
   .workspace-grid.two-column { grid-template-columns: 1fr; }
   .architecture-form,
   .automation-form { grid-template-columns: 1fr; }
