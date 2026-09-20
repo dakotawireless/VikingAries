@@ -1,10 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 const requests = new AsyncLocalStorage();
-export const MAX_AGENT_ROUNDS = 8;
-export const MAX_AGENT_TOOLS = 20;
-// Leave room below the Free plan's 50 subrequests for runtime overhead.
-const MAX_SUBREQUESTS = 44;
+export const MAX_AGENT_ROUNDS = 32;
+export const MAX_AGENT_TOOLS = 120;
+// Viking Aries runs on Workers Paid. Keep an internal safety guard well below the platform ceiling.
+const MAX_SUBREQUESTS = 2500;
 
 export class RequestBudgetExceeded extends Error {
   constructor() {

@@ -18,5 +18,9 @@
   ],
   "compatibility_flags": [
     "nodejs_als"
-  ]
+  ],
+  "limits": {
+    "cpu_ms": 300000,
+    "subrequests": 50000
+  }
 }
