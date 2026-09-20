@@ -483,18 +483,27 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   }, []);
 
   const verifyProvider = async (providerId) => {
-    if (!["github", "cloudflare"].includes(providerId)) return;
+    if (!["github", "cloudflare", "convex"].includes(providerId)) return;
 
     setProviderBusy(providerId);
     setProviderMessage("");
     try {
-      const endpoint = providerId === "github" ? "/api/github/verify" : "/api/cloudflare/verify";
+      const endpoint =
+        providerId === "github"
+          ? "/api/github/verify"
+          : providerId === "cloudflare"
+            ? "/api/cloudflare/verify"
+            : "/api/convex/verify";
       const response = await fetch(endpoint, { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(
           payload.error ||
-          (providerId === "github" ? "Could not verify GitHub." : "Could not verify Cloudflare.")
+          (providerId === "github"
+            ? "Could not verify GitHub."
+            : providerId === "cloudflare"
+              ? "Could not verify Cloudflare."
+              : "Could not verify Convex.")
         );
       }
 
@@ -504,7 +513,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
           status: "Connected",
         });
         setProviderMessage(`GitHub verified as ${payload.login || payload.name || "connected account"}.`);
-      } else {
+      } else if (providerId === "cloudflare") {
         updateProvider("cloudflare", {
           account: `Account ${String(payload.accountId || "").slice(0, 8)}…`,
           status: payload.status === "active" ? "Connected" : "Needs attention",
@@ -514,6 +523,15 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
             ? "Cloudflare API token verified. Runtime tools are ready for registered Workers."
             : `Cloudflare token status: ${payload.status || "unknown"}.`
         );
+      } else {
+        updateProvider("convex", {
+          account:
+            payload.teamId || payload.projectId
+              ? `Team ${payload.teamId || "connected"}`
+              : "Connected Convex account",
+          status: "Connected",
+        });
+        setProviderMessage("Convex personal access token verified. Runtime deployment tools are ready for registered Convex projects.");
       }
 
       await refreshRuntimeStatus();
@@ -641,13 +659,15 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   <button
                     type="button"
                     className="secondary-action"
-                    disabled={providerBusy === item.id || !["github", "cloudflare"].includes(item.id)}
+                    disabled={providerBusy === item.id || !["github", "cloudflare", "convex"].includes(item.id)}
                     title={
                       item.id === "github"
                         ? "Verify the GitHub credential configured in the Viking Aries runtime"
                         : item.id === "cloudflare"
                           ? "Verify the Cloudflare API token configured in the Viking Aries runtime"
-                          : "This provider runtime connection is not wired yet"
+                          : item.id === "convex"
+                            ? "Verify the Convex personal access token configured in the Viking Aries runtime"
+                            : "This provider runtime connection is not wired yet"
                     }
                     onClick={() => verifyProvider(item.id)}
                   >
@@ -670,7 +690,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     Disconnect
                   </button>
                 </div>
-                {["github", "cloudflare"].includes(item.id) && runtimeStatus && (
+                {["github", "cloudflare", "convex"].includes(item.id) && runtimeStatus && (
                   <div className="integration-runtime-state">
                     <strong>Runtime:</strong>
                     <span>
@@ -681,14 +701,20 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                           : !runtimeStatus.providers?.[item.id]?.configured
                             ? item.id === "github"
                               ? " GITHUB_TOKEN not configured"
-                              : " CLOUDFLARE_API_TOKEN not configured"
+                              : item.id === "cloudflare"
+                                ? " CLOUDFLARE_API_TOKEN not configured"
+                                : " CONVEX_PERSONAL_ACCESS_TOKEN not configured"
                             : runtimeStatus.providers?.[item.id]?.usable
                               ? item.id === "github"
                                 ? " GitHub tools available to VA"
-                                : " Cloudflare tools available to VA"
+                                : item.id === "cloudflare"
+                                  ? " Cloudflare tools available to VA"
+                                  : " Convex tools available to VA"
                               : item.id === "github"
                                 ? " GitHub needs attention"
-                                : " Cloudflare needs attention"}
+                                : item.id === "cloudflare"
+                                  ? " Cloudflare needs attention"
+                                  : " Convex needs attention"}
                     </span>
                   </div>
                 )}
