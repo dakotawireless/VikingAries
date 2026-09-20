@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Archive,
+  ArrowDown,
   Bot,
   Boxes,
   ChevronDown,
@@ -511,6 +512,7 @@ function ChatWorkspace({ project }) {
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -526,16 +528,26 @@ function ChatWorkspace({ project }) {
     window.localStorage.setItem(`viking-aries:active-chat:${project.id}`, activeThreadId);
   }, [project.id, activeThreadId]);
 
+  const scrollToChatBottom = (behavior = "auto") => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight, behavior });
+    setShowJumpToBottom(false);
+  };
+
+  const handleChatScroll = () => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    setShowJumpToBottom(distanceFromBottom > 140);
+  };
+
   useEffect(() => {
-    const scrollToBottom = () => {
-      const node = scrollRef.current;
-      if (!node) return;
-      node.scrollTop = node.scrollHeight;
-    };
+    const run = () => scrollToChatBottom("auto");
 
     // Run after layout and once more after embedded content/fonts finish settling.
-    const frame = window.requestAnimationFrame(scrollToBottom);
-    const timer = window.setTimeout(scrollToBottom, 80);
+    const frame = window.requestAnimationFrame(run);
+    const timer = window.setTimeout(run, 80);
 
     return () => {
       window.cancelAnimationFrame(frame);
@@ -793,8 +805,8 @@ function ChatWorkspace({ project }) {
         </button>
       </div>
 
-      <div className="workspace-scroll" ref={scrollRef}>
-<section className="conversation live-conversation">
+      <div className="workspace-scroll" ref={scrollRef} onScroll={handleChatScroll}>
+        <section className="conversation live-conversation">
           {activeThread?.messages.length === 0 && (
             <div className="empty-chat-state">
               <div className="empty-chat-icon"><Bot size={22} /></div>
@@ -857,6 +869,18 @@ function ChatWorkspace({ project }) {
             </article>
           )}
         </section>
+        {showJumpToBottom && (
+          <button
+            type="button"
+            className="jump-to-bottom-button"
+            onClick={() => scrollToChatBottom("smooth")}
+            title="Jump to latest message"
+            aria-label="Jump to latest message"
+          >
+            <ArrowDown size={17} />
+            <span>Latest</span>
+          </button>
+        )}
       </div>
 
       <form
