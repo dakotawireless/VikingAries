@@ -56,6 +56,7 @@ const personalProjects = [
     deploymentUrl: "https://timekeeper-app.erik-f2c.workers.dev",
     backend: "Convex",
     backendUrl: "https://aware-caiman-251.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/t/erik-2df00/timekeeper/aware-caiman-251",
     status: "Active",
     contextSummary: [
       "Timekeeper is an independent production app migrated out of Hercules while preserving its existing Convex deployment and data.",
@@ -124,7 +125,23 @@ const navItems = [
 
 const chatTabs = ["Migration", "Payroll", "Commission Sync"];
 
-function ToolButton({ icon: Icon, label }) {
+function ToolButton({ icon: Icon, label, href }) {
+  if (href) {
+    return (
+      <a
+        className="tool-button"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={`Open ${label}`}
+        aria-label={`Open ${label}`}
+      >
+        <Icon size={16} />
+        <span>{label}</span>
+      </a>
+    );
+  }
+
   return (
     <button className="tool-button" type="button">
       <Icon size={16} />
@@ -734,6 +751,13 @@ function Metric({ icon: Icon, value, label }) {
 
 function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
   const widths = { Desktop: "100%", Mobile: "390px" };
+  const integrationUrls = {
+    github: project?.repository ? `https://github.com/${project.repository}` : "https://github.com/",
+    cloudflare: "https://dash.cloudflare.com/",
+    convex: project?.convexDashboardUrl || "https://dashboard.convex.dev/",
+    drive: "https://drive.google.com/drive/my-drive",
+    gmail: "https://mail.google.com/",
+  };
 
   return (
     <aside className={expanded ? "preview-pane expanded" : "preview-pane"}>
@@ -744,6 +768,14 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
         </div>
 
         <div className="preview-header-controls">
+          <div className="preview-integrations">
+            <ToolButton icon={Github} label="GitHub" href={integrationUrls.github} />
+            <ToolButton icon={Cloud} label="Cloudflare" href={integrationUrls.cloudflare} />
+            <ToolButton icon={Boxes} label="Convex" href={integrationUrls.convex} />
+            <ToolButton icon={FileImage} label="Drive" href={integrationUrls.drive} />
+            <ToolButton icon={Send} label="Gmail" href={integrationUrls.gmail} />
+          </div>
+
           <div className="preview-control-strip">
             <div className="device-icon-switcher" aria-label="Preview device">
               {[
