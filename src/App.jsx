@@ -664,46 +664,76 @@ function formatAttachmentSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function imageCanvasDataUrl(image, maxDimension, quality) {
+  const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Your browser could not prepare that image.");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function compactImageDataUrl(image, {
+  maxDimension,
+  maxLength,
+  startQuality = 0.82,
+  minQuality = 0.42,
+}) {
+  let dimension = maxDimension;
+  while (dimension >= 320) {
+    for (let quality = startQuality; quality >= minQuality; quality -= 0.10) {
+      const dataUrl = imageCanvasDataUrl(image, dimension, quality);
+      if (dataUrl.length <= maxLength) return dataUrl;
+    }
+    dimension = Math.floor(dimension * 0.82);
+  }
+
+  // Last-resort compact screenshot. This should still be large enough for UI
+  // screenshots while keeping the queued job payload comfortably bounded.
+  const fallback = imageCanvasDataUrl(image, 320, 0.38);
+  if (fallback.length <= maxLength) return fallback;
+  throw new Error("That image could not be compressed enough to attach.");
+}
+
 function prepareImageAttachment(file) {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const image = new Image();
+
     image.onload = () => {
       URL.revokeObjectURL(objectUrl);
-      const scale = Math.min(1, 256 / Math.max(image.naturalWidth, image.naturalHeight));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext("2d");
-      if (!context) {
-        reject(new Error("Your browser could not prepare that image."));
-        return;
-      }
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const thumbnailDataUrl = canvas.toDataURL("image/jpeg", 0.55);
-      if (thumbnailDataUrl.length > 9000) {
-        reject(new Error("That image is too large after resizing. Try a smaller photo."));
-        return;
-      }
+      try {
+        // The request copy needs enough resolution for UI screenshots and text,
+        // but must stay small enough to travel with chat history.
+        const thumbnailDataUrl = compactImageDataUrl(image, {
+          maxDimension: 960,
+          maxLength: 180000,
+          startQuality: 0.78,
+          minQuality: 0.42,
+        });
 
-      // Keep the compact version in the chat request, but retain the original
-      // pasted file locally so the viewer can show its real resolution.
-      const reader = new FileReader();
-      reader.onload = () => {
-        const fullDataUrl = String(reader.result || "");
-        if (!fullDataUrl.startsWith("data:image/")) {
-          reject(new Error("That image could not be read."));
-          return;
-        }
+        // Store a larger compressed viewer copy instead of the original multi-MB
+        // clipboard image. This prevents browser localStorage from being exhausted.
+        const fullDataUrl = compactImageDataUrl(image, {
+          maxDimension: 1600,
+          maxLength: 650000,
+          startQuality: 0.84,
+          minQuality: 0.48,
+        });
+
         resolve({ thumbnailDataUrl, fullDataUrl });
-      };
-      reader.onerror = () => reject(new Error("That image could not be read."));
-      reader.readAsDataURL(file);
+      } catch (error) {
+        reject(error);
+      }
     };
+
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
       reject(new Error("That image could not be read."));
     };
+
     image.src = objectUrl;
   });
 }
@@ -1501,7 +1531,7 @@ function ChatWorkspace({ project, active = true }) {
   );
 }
 
-function PreviewDashboard({ project }) {
+function PreviewDashboard({ project, selfPreview = false }) {
   const ProjectIcon = getProjectIcon(project, Boxes);
 
   return (
@@ -1517,10 +1547,11 @@ function PreviewDashboard({ project }) {
       <div className="preview-dashboard">
         <div className="empty-preview-state">
           <div className="empty-preview-icon"><Monitor size={28} /></div>
-          <h2>No live preview connected yet</h2>
+          <h2>{selfPreview ? "Viking Aries is already open" : "No live preview connected yet"}</h2>
           <p>
-            Add this project's production, staging, or preview URL in Settings or Deployments.
-            Viking Aries will load the actual app here when a URL is available.
+            {selfPreview
+              ? "Self-preview is disabled to prevent Viking Aries from recursively loading another Viking Aries preview inside itself."
+              : "Add this project's production, staging, or preview URL in Settings or Deployments. Viking Aries will load the actual app here when a URL is available."}
           </p>
           <div className="preview-project-facts">
             {project?.repository && <span><Github size={14} /> {project.repository}</span>}
@@ -1546,6 +1577,15 @@ function Metric({ icon: Icon, value, label }) {
 function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const widths = { Desktop: "100%", Mobile: "390px" };
+  const selfPreview = useMemo(() => {
+    if (!project?.deploymentUrl) return false;
+    if (project.id === "viking-aries") return true;
+    try {
+      return new URL(project.deploymentUrl, window.location.href).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }, [project?.id, project?.deploymentUrl]);
   const integrationUrls = {
     github: project?.repository ? `https://github.com/${project.repository}` : "https://github.com/",
     cloudflare: "https://dash.cloudflare.com/",
@@ -1619,7 +1659,7 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
       {visible && (
         <div className="preview-stage">
           <div className="preview-device" style={{ maxWidth: widths[mode] }}>
-            {project?.deploymentUrl ? (
+            {project?.deploymentUrl && !selfPreview ? (
               <iframe
                 key={`${project.deploymentUrl}-${refreshKey}`}
                 src={project.deploymentUrl}
@@ -1627,7 +1667,7 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
                 style={{ width: "100%", height: "100%", minHeight: "720px", border: 0, background: "#fff" }}
               />
             ) : (
-              <PreviewDashboard project={project} />
+              <PreviewDashboard project={project} selfPreview={selfPreview} />
             )}
           </div>
         </div>
