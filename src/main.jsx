@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./styles.css";
 import "./chat-layout-overrides.css";
-import "./image-paste.js";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
