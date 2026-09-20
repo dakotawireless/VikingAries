@@ -512,6 +512,21 @@ async function cloudflareVerifyToken(token) {
   };
 }
 
+async function cloudflareStoreVikingAriesToken(token) {
+  await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/vikingaries/secrets`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name: "CLOUDFLARE_API_TOKEN",
+        text: token,
+        type: "secret_text",
+      }),
+    }
+  );
+}
+
 async function cloudflareWorkerRecord(token, workerName) {
   if (!workerName) throw new Error("No Cloudflare Worker is registered for this project.");
   const payload = await cloudflareRequest(
@@ -1263,6 +1278,52 @@ export default {
         });
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/cloudflare/configure") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Invalid Cloudflare connection request." }, { status: 400 });
+      }
+
+      const token = typeof body?.token === "string" ? body.token.trim() : "";
+      if (token.length < 20 || token.length > 4096) {
+        return json({ error: "Enter a valid Cloudflare API token." }, { status: 400 });
+      }
+
+      try {
+        const verification = await cloudflareVerifyToken(token);
+        if (verification.status !== "active") {
+          return json({ error: `Cloudflare token status is ${verification.status || "unknown"}.` }, { status: 400 });
+        }
+
+        // Confirm the token can see the Viking Aries Worker before persisting it.
+        await cloudflareWorkerRecord(token, "vikingaries");
+
+        // Persist only in Cloudflare's Worker secret store. The token is never
+        // written to GitHub, localStorage, Convex state, or the response body.
+        await cloudflareStoreVikingAriesToken(token);
+
+        return json({
+          ok: true,
+          status: verification.status,
+          accountId: CLOUDFLARE_ACCOUNT_ID,
+          worker: "vikingaries",
+        });
+      } catch (error) {
+        return json({ error: error.message || "Cloudflare connection failed." }, { status: 502 });
       }
     }
 
