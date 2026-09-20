@@ -183,12 +183,51 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .active-project > span { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .chat-tab-row { display: flex; align-items: stretch; padding: 0 20px; background: white; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .chat-tab {
-  min-height: 42px; border: 0; border-bottom: 2px solid transparent; padding: 0 17px; background: transparent;
-  color: #42576b; font-size: 13px; font-weight: 600; white-space: nowrap;
+  min-height: 42px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 6px 0 14px;
+  background: transparent;
+  color: #42576b;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 .chat-tab:hover { color: #0878df; }
 .chat-tab.active { color: #0878df; border-bottom-color: #168df0; background: #f8fbff; }
-.chat-tab.new-chat { border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+.chat-tab-main {
+  min-height: 40px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+}
+.chat-tab-close {
+  width: 24px;
+  height: 24px;
+  margin-left: 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #7c8d9d;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.chat-tab-close:hover {
+  color: #b12d2d;
+  background: #fceeee;
+}
+.chat-tab.new-chat {
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 0 17px;
+}
 
 .workspace-scroll {
   position: relative;
@@ -2127,8 +2166,16 @@ body.resizing-preview * {
 
 .app-shell.mobile-ui .chat-tab {
   min-height: 44px;
-  padding: 0 13px;
+  padding: 0 5px 0 12px;
   font-size: 14px;
+}
+.app-shell.mobile-ui .chat-tab.new-chat {
+  padding: 0 13px;
+}
+.app-shell.mobile-ui .chat-tab-close {
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
 }
 
 .app-shell.mobile-ui .composer textarea {
