@@ -535,7 +535,7 @@ function loadProjectDraft(projectId) {
   }
 }
 
-function ChatWorkspace({ project }) {
+function ChatWorkspace({ project, active = true }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
     const availableThreads = loadProjectThreads(project.id);
@@ -609,6 +609,15 @@ function ChatWorkspace({ project }) {
       window.clearTimeout(timer);
     };
   }, [project.id, activeThreadId, activeThread?.messages?.length, sending]);
+
+  useEffect(() => {
+    if (!active && recognitionRef.current) {
+      recognitionSessionRef.current += 1;
+      recognitionRef.current?.abort?.();
+      recognitionRef.current = null;
+      setListening(false);
+    }
+  }, [active]);
 
   useEffect(() => {
     return () => {
@@ -864,7 +873,10 @@ function ChatWorkspace({ project }) {
   };
 
   return (
-    <main className="workspace">
+    <main
+      className={active ? "workspace chat-workspace-host active" : "workspace chat-workspace-host background"}
+      aria-hidden={!active}
+    >
       <div className="project-heading">
         <div className="project-title-row">
           <h1>{project.name}</h1>
@@ -1230,6 +1242,19 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     return "app-shell";
   }, [previewExpanded, previewVisible]);
 
+  const allChatProjects = useMemo(() => {
+    const rows = [
+      ...personalProjectsState,
+      ...contractorsState.flatMap((contractor) => contractor.projects || []),
+    ];
+    const seen = new Set();
+    return rows.filter((item) => {
+      if (!item?.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [personalProjectsState, contractorsState]);
+
   const changeWorkspace = (next) => {
     setWorkspace(next);
     setProject(
@@ -1413,15 +1438,24 @@ function VikingAriesApp({ onLogout, authConfigured }) {
           style={{ "--preview-width": `${previewWidth}%` }}
         >
           {!previewExpanded && (
-            activeView === "AI Builder"
-              ? <ChatWorkspace key={project.id} project={project} />
-              : <WorkspaceView
+            <>
+              {allChatProjects.map((chatProject) => (
+                <ChatWorkspace
+                  key={chatProject.id}
+                  project={chatProject}
+                  active={activeView === "AI Builder" && chatProject.id === project.id}
+                />
+              ))}
+              {activeView !== "AI Builder" && (
+                <WorkspaceView
                   key={`${project.id}-${activeView}`}
                   view={activeView}
                   project={project}
                   projects={workspace === "Personal" ? personalProjectsState : contractorsState.flatMap((contractor) => contractor.projects || [])}
                   workspace={workspace}
                 />
+              )}
+            </>
           )}
           {!previewExpanded && previewVisible && (
             <div
