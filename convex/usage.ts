@@ -94,6 +94,7 @@ export const usageSummary = internalQuery({
         id: row._id,
         projectId: row.projectId,
         projectName: row.projectName,
+        provider: row.provider || "OpenAI",
         model: row.model,
         responseId: row.responseId,
         requests: row.requests,
