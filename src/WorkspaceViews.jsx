@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   CheckCircle2,
+  ChartNoAxesCombined,
   Cloud,
   Code2,
   Database,
@@ -999,6 +1000,138 @@ function SecretsView({ project }) {
   );
 }
 
+
+function formatUsd(value) {
+  const amount = Number(value || 0);
+  if (amount < 0.01 && amount > 0) return `${amount.toFixed(4)}`;
+  return `${amount.toFixed(2)}`;
+}
+
+function formatTokenCount(value) {
+  return new Intl.NumberFormat("en-US").format(Number(value || 0));
+}
+
+function ApiUsageView({ project }) {
+  const [rangeDays, setRangeDays] = useState(30);
+  const [usage, setUsage] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadUsage = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/usage?days=${rangeDays}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not load API usage.");
+      setUsage(payload);
+    } catch (err) {
+      setError(err.message || "Could not load API usage.");
+      setUsage(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsage();
+  }, [rangeDays]);
+
+  const totals = usage?.totals || {};
+  const today = usage?.today || {};
+  const byModel = Array.isArray(usage?.byModel) ? usage.byModel : [];
+  const recent = Array.isArray(usage?.recent) ? usage.recent : [];
+
+  return (
+    <WorkspacePage>
+      <PageHeader
+        icon={ChartNoAxesCombined}
+        title="API Usage"
+        description="Exact OpenAI token usage recorded by Viking Aries, with estimated model cost."
+        action={
+          <div className="usage-header-actions">
+            <select value={rangeDays} onChange={(e) => setRangeDays(Number(e.target.value))}>
+              <option value={1}>Today</option>
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+            </select>
+            <button type="button" className="secondary-action" onClick={loadUsage} disabled={loading}>
+              <RefreshCw size={14} /> {loading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+        }
+      />
+
+      <InfoBanner text="Cost is estimated from the model/token usage returned by OpenAI. Provider account credits and invoices remain the source of truth for billing." />
+
+      {error && (
+        <section className="workspace-card usage-error-card">
+          <strong>API Counter needs setup</strong>
+          <p>{error}</p>
+        </section>
+      )}
+
+      {!error && (
+        <>
+          <section className="usage-metric-grid">
+            <div className="usage-metric-card"><span>Today</span><strong>{formatUsd(today.estimatedCostUsd)}</strong><small>{formatTokenCount(today.requests)} requests</small></div>
+            <div className="usage-metric-card"><span>{rangeDays === 1 ? "Selected period" : `Last ${rangeDays} days`}</span><strong>{formatUsd(totals.estimatedCostUsd)}</strong><small>{formatTokenCount(totals.requests)} requests</small></div>
+            <div className="usage-metric-card"><span>Input tokens</span><strong>{formatTokenCount(totals.inputTokens)}</strong><small>{formatTokenCount(totals.cachedTokens)} cached</small></div>
+            <div className="usage-metric-card"><span>Output tokens</span><strong>{formatTokenCount(totals.outputTokens)}</strong><small>{formatTokenCount(totals.reasoningTokens)} reasoning</small></div>
+          </section>
+
+          <section className="workspace-card">
+            <div className="card-heading-row">
+              <div><h2>By model</h2><p>Usage and estimated spend across Luna, Terra, and Sol.</p></div>
+            </div>
+            {loading ? (
+              <EmptyState text="Loading API usage…" />
+            ) : byModel.length ? (
+              <div className="usage-table">
+                <div className="usage-table-row usage-table-head">
+                  <span>Model</span><span>Requests</span><span>Input</span><span>Output</span><span>Estimated cost</span>
+                </div>
+                {byModel.map((row) => (
+                  <div className="usage-table-row" key={row.model}>
+                    <strong>{row.model}</strong>
+                    <span>{formatTokenCount(row.requests)}</span>
+                    <span>{formatTokenCount(row.inputTokens)}</span>
+                    <span>{formatTokenCount(row.outputTokens)}</span>
+                    <strong>{formatUsd(row.estimatedCostUsd)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="No recorded API usage yet. New Viking Aries chat requests will appear here after the backend is deployed." />
+            )}
+          </section>
+
+          <section className="workspace-card">
+            <div className="card-heading-row">
+              <div><h2>Recent requests</h2><p>Most recent recorded model calls across Viking Aries projects.</p></div>
+            </div>
+            {recent.length ? (
+              <div className="usage-recent-list">
+                {recent.map((row) => (
+                  <div className="usage-recent-row" key={row.id || row.responseId || `${row.createdAt}-${row.projectId}`}>
+                    <div>
+                      <strong>{row.projectName || row.projectId || "Unknown project"}</strong>
+                      <small>{row.model} · {new Date(row.createdAt).toLocaleString()}</small>
+                    </div>
+                    <span>{formatTokenCount(row.totalTokens)} tokens</span>
+                    <strong>{formatUsd(row.estimatedCostUsd)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </>
+      )}
+    </WorkspacePage>
+  );
+}
+
 function SettingsView({ project }) {
   const defaults = projectDefaults(project).settings;
   const [settings, setSettings] = useProjectStorage(project.id, "settings-v2", defaults);
@@ -1061,6 +1194,8 @@ export default function WorkspaceView({ view, project, projects = [], workspace 
       return <BackendView project={project} />;
     case "Automations":
       return <AutomationsView project={project} />;
+    case "API Usage":
+      return <ApiUsageView project={project} />;
     case "Tests & Diagnostics":
       return <DiagnosticsView project={project} />;
     case "Versions":
