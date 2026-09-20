@@ -472,20 +472,23 @@ function formatChatTime() {
 }
 
 function renderChatContent(content) {
-  const imagePattern = /!\[Pasted image\]\((data:image\/[^)]+)\)/g;
+  const text = String(content || "");
+  // Match any markdown image backed by an inline image data URL. Keeping this
+  // generic also fixes thumbnails for images saved by older paste versions.
+  const imagePattern = /!\[[^\]]*\]\(\s*(data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+)\s*\)/gi;
   const parts = [];
   let cursor = 0;
   let match;
   let imageIndex = 0;
 
-  while ((match = imagePattern.exec(content)) !== null) {
-    const textBefore = content.slice(cursor, match.index);
+  while ((match = imagePattern.exec(text)) !== null) {
+    const textBefore = text.slice(cursor, match.index);
     if (textBefore) parts.push(<span key={`text-${match.index}`}>{textBefore}</span>);
     parts.push(
       <img
         key={`pasted-image-${imageIndex}`}
         className="chat-pasted-image"
-        src={match[1]}
+        src={match[1].replace(/\s/g, "")}
         alt="Pasted image"
       />
     );
@@ -493,8 +496,8 @@ function renderChatContent(content) {
     cursor = match.index + match[0].length;
   }
 
-  if (!parts.length) return content;
-  const trailingText = content.slice(cursor);
+  if (!parts.length) return text;
+  const trailingText = text.slice(cursor);
   if (trailingText) parts.push(<span key="text-trailing">{trailingText}</span>);
   return parts;
 }
