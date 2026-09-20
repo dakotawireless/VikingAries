@@ -1095,3 +1095,21 @@ body.resizing-preview * {
   color: #52697b;
   font-size: 8px;
 }
+
+
+/* Keep iframe content from swallowing pointer events while resizing the preview. */
+.content-shell.is-resizing .preview-pane iframe,
+.content-shell.is-resizing .preview-stage {
+  pointer-events: none;
+}
+.content-shell.is-resizing::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  cursor: col-resize;
+  background: transparent;
+}
+.content-shell.is-resizing .preview-resize-handle {
+  z-index: 9999;
+}
