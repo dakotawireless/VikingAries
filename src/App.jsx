@@ -83,6 +83,7 @@ const personalProjects = [
     name: "Dakota Wireless POS",
     icon: Monitor,
     repository: "dakotawireless/Dakota-Wireless-POS---New",
+    deploymentUrl: "https://dakota-wireless-pos-301249.onhercules.app/",
     backend: "Convex",
     backendUrl: "https://sleek-bear-647.convex.cloud",
     convexDashboardUrl: "https://dashboard.convex.dev/",
