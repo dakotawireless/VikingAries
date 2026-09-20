@@ -1121,16 +1121,33 @@ function ChatWorkspace({ project, active = true }) {
         >
           <Mic size={18} />
         </button>
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          disabled={sending}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleComposerKeyDown}
-          placeholder="Tell Viking Aries what to build, fix, connect, or deploy..."
-          rows={1}
-        />
-        <button className="send-button" type="submit" disabled={sending || !draft.trim()}>
+        <div className="composer-input-wrap">
+          {attachment?.dataUrl && (
+            <div className="composer-image-thumbnail">
+              <img src={attachment.dataUrl} alt="Pasted image thumbnail" />
+              <span>Image attached</span>
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                title="Remove pasted image"
+                aria-label="Remove pasted image"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            disabled={sending}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            onPaste={handleComposerPaste}
+            placeholder="Tell Viking Aries what to build, fix, connect, or deploy..."
+            rows={1}
+          />
+        </div>
+        <button className="send-button" type="submit" disabled={sending || (!draft.trim() && !attachment)}>
           <Send size={17} /> {sending ? "Working" : "Send"}
         </button>
         <label className="model-picker">
