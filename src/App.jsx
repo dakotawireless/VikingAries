@@ -1327,18 +1327,7 @@ function ChatWorkspace({ project, active = true }) {
                             : "Failed"}
                       </span>
                     )}
-                  {message.role === "assistant" && (
-                    <button
-                      className="copy-message-button"
-                      type="button"
-                      onClick={() => copyMessageText(message)}
-                      title={copiedMessageId === message.id ? "Copied" : "Copy response"}
-                      aria-label={copiedMessageId === message.id ? "Copied response" : "Copy response"}
-                    >
-                      {copiedMessageId === message.id ? <Check size={15} /> : <Copy size={15} />}
-                      <span>{copiedMessageId === message.id ? "Copied" : "Copy"}</span>
-                    </button>
-                  )}
+
                 </div>
                 <div
                   className={
