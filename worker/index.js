@@ -129,6 +129,287 @@ async function safeEqual(left, right) {
   return result === 0;
 }
 
+
+function utf8ToBase64(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToUtf8(value) {
+  const binary = atob(String(value || "").replace(/\n/g, ""));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+async function githubRequest(token, path, init = {}) {
+  const response = await fetch(`https://api.github.com${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "Viking-Aries",
+      ...(init.headers || {}),
+    },
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = payload?.message || `GitHub request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function normalizeRepository(value) {
+  const repository = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) return "";
+  return repository;
+}
+
+async function githubReadFile(token, repository, path, ref = "main") {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+  const safePath = String(path || "").replace(/^\/+/, "").trim();
+  if (!safePath) throw new Error("A repository file path is required.");
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref || "main")}`
+  );
+
+  if (Array.isArray(payload)) {
+    return {
+      type: "directory",
+      path: safePath,
+      ref,
+      entries: payload.slice(0, 200).map((item) => ({
+        name: item.name,
+        path: item.path,
+        type: item.type,
+        sha: item.sha,
+      })),
+    };
+  }
+
+  if (payload?.type !== "file") {
+    return {
+      type: payload?.type || "unknown",
+      path: payload?.path || safePath,
+      sha: payload?.sha || null,
+    };
+  }
+
+  const content = payload.encoding === "base64" ? base64ToUtf8(payload.content || "") : "";
+  return {
+    type: "file",
+    path: payload.path,
+    sha: payload.sha,
+    ref,
+    size: payload.size,
+    truncated: content.length > 220000,
+    content: content.slice(0, 220000),
+  };
+}
+
+async function githubListDirectory(token, repository, path = "", ref = "main") {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+  const cleanPath = String(path || "").replace(/^\/+|\/+$/g, "").trim();
+  const suffix = cleanPath
+    ? `/contents/${cleanPath.split("/").map(encodeURIComponent).join("/")}`
+    : "/contents";
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}${suffix}?ref=${encodeURIComponent(ref || "main")}`
+  );
+  if (!Array.isArray(payload)) {
+    throw new Error("The requested GitHub path is not a directory.");
+  }
+
+  return {
+    path: cleanPath || "/",
+    ref,
+    entries: payload.slice(0, 250).map((item) => ({
+      name: item.name,
+      path: item.path,
+      type: item.type,
+      sha: item.sha,
+      size: item.size,
+    })),
+  };
+}
+
+async function githubWriteFile(token, repository, { path, content, message, branch = "main" }) {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+  const safePath = String(path || "").replace(/^\/+/, "").trim();
+  const commitMessage = String(message || "").trim().slice(0, 240);
+  const fileContent = String(content ?? "");
+
+  if (!safePath) throw new Error("A repository file path is required.");
+  if (!commitMessage) throw new Error("A commit message is required.");
+  if (fileContent.length > 500000) throw new Error("File content is too large for this editor action.");
+
+  let sha;
+  try {
+    const existing = await githubRequest(
+      token,
+      `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch || "main")}`
+    );
+    if (existing?.type === "file") sha = existing.sha;
+  } catch (error) {
+    if (!/Not Found/i.test(error.message)) throw error;
+  }
+
+  const body = {
+    message: commitMessage,
+    content: utf8ToBase64(fileContent),
+    branch: branch || "main",
+  };
+  if (sha) body.sha = sha;
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+
+  return {
+    ok: true,
+    repository: safeRepo,
+    path: payload?.content?.path || safePath,
+    branch: branch || "main",
+    contentSha: payload?.content?.sha || null,
+    commitSha: payload?.commit?.sha || null,
+    commitUrl: payload?.commit?.html_url || null,
+  };
+}
+
+function githubToolsEnabled(authenticated, token, repository) {
+  return Boolean(authenticated && token && normalizeRepository(repository));
+}
+
+function buildGithubTools() {
+  return [
+    {
+      type: "function",
+      name: "github_list_directory",
+      description: "List files and folders in the currently selected project's mapped GitHub repository. The repository itself is fixed by the project mapping.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Directory path relative to repository root. Use an empty string for the root." },
+          ref: { type: "string", description: "Branch or ref. Defaults to the project's default branch." },
+        },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      strict: true,
+    },
+    {
+      type: "function",
+      name: "github_read_file",
+      description: "Read a file from the currently selected project's mapped GitHub repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path relative to repository root." },
+          ref: { type: "string", description: "Branch or ref. Defaults to the project's default branch." },
+        },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      strict: true,
+    },
+    {
+      type: "function",
+      name: "github_write_file",
+      description: "Create or replace one file in the currently selected project's mapped GitHub repository and commit the change. Use only when the user explicitly wants a repository edit.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path relative to repository root." },
+          content: { type: "string", description: "Complete new file content." },
+          message: { type: "string", description: "Concise Git commit message." },
+          branch: { type: "string", description: "Target branch. Defaults to the project's default branch." },
+        },
+        required: ["path", "content", "message"],
+        additionalProperties: false,
+      },
+      strict: true,
+    },
+  ];
+}
+
+function extractFunctionCalls(payload) {
+  return (payload?.output || []).filter((item) => item?.type === "function_call");
+}
+
+async function executeGithubTool(call, token, projectMetadata) {
+  let args = {};
+  try {
+    args = JSON.parse(call.arguments || "{}");
+  } catch {
+    throw new Error("The GitHub tool arguments were invalid JSON.");
+  }
+
+  const repository = projectMetadata.repository;
+  const defaultBranch = projectMetadata.defaultBranch || "main";
+
+  if (call.name === "github_list_directory") {
+    return githubListDirectory(token, repository, args.path || "", args.ref || defaultBranch);
+  }
+  if (call.name === "github_read_file") {
+    return githubReadFile(token, repository, args.path, args.ref || defaultBranch);
+  }
+  if (call.name === "github_write_file") {
+    return githubWriteFile(token, repository, {
+      path: args.path,
+      content: args.content,
+      message: args.message,
+      branch: args.branch || defaultBranch,
+    });
+  }
+
+  throw new Error(`Unsupported tool: ${call.name}`);
+}
+
+async function callOpenAI({ apiKey, model, instructions, input, tools, previousResponseId }) {
+  const body = {
+    model,
+    instructions,
+    input,
+    max_output_tokens: 3000,
+  };
+  if (tools?.length) body.tools = tools;
+  if (previousResponseId) body.previous_response_id = previousResponseId;
+
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(payload?.error?.message || "The AI service returned an error.");
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
 function extractResponseText(payload) {
   if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
     return payload.output_text.trim();
@@ -213,6 +494,58 @@ export default {
       );
     }
 
+    if (url.pathname === "/api/integrations/status") {
+      const auth = await ownerAuthConfig(env);
+      const authenticated = auth.configured
+        ? await verifyOwnerSession(request, auth.sessionSecret)
+        : false;
+      const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+
+      return json({
+        ownerAuth: {
+          configured: auth.configured,
+          authenticated,
+        },
+        providers: {
+          github: {
+            configured: Boolean(githubToken),
+            usable: Boolean(auth.configured && authenticated && githubToken),
+          },
+          cloudflare: { configured: false, usable: false },
+          convex: { configured: false, usable: false },
+          drive: { configured: false, usable: false },
+          gmail: { configured: false, usable: false },
+        },
+      });
+    }
+
+    if (url.pathname === "/api/github/verify") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+      if (!githubToken) {
+        return json({ error: "GITHUB_TOKEN is not configured in Cloudflare." }, { status: 503 });
+      }
+
+      try {
+        const profile = await githubRequest(githubToken, "/user");
+        return json({
+          ok: true,
+          login: profile?.login || null,
+          name: profile?.name || null,
+        });
+      } catch (error) {
+        return json({ error: error.message }, { status: 502 });
+      }
+    }
+
     if (url.pathname === "/api/health") {
       const binding = env.OPENAI_API_KEY;
       const diagnostics = {
@@ -246,7 +579,10 @@ export default {
     }
 
     const auth = await ownerAuthConfig(env);
-    if (auth.configured && !(await verifyOwnerSession(request, auth.sessionSecret))) {
+    const ownerAuthenticated = auth.configured
+      ? await verifyOwnerSession(request, auth.sessionSecret)
+      : false;
+    if (auth.configured && !ownerAuthenticated) {
       return json({ error: "Owner login required." }, { status: 401 });
     }
 
@@ -383,31 +719,61 @@ export default {
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
     ].filter(Boolean).join("\n");
 
-    let upstream;
-    try {
-      upstream = await fetch(OPENAI_RESPONSES_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          instructions,
-          input: messages,
-          max_output_tokens: 3000,
-        }),
-      });
-    } catch {
-      return json({ error: "Could not reach the AI service." }, { status: 502 });
+    const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+    const tools = githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
+      ? buildGithubTools()
+      : [];
+
+    if (tools.length) {
+      instructions.concat("\nGitHub tools are available for the selected project's mapped repository.");
     }
 
-    const payload = await upstream.json().catch(() => null);
+    let payload;
+    try {
+      payload = await callOpenAI({
+        apiKey,
+        model,
+        instructions,
+        input: messages,
+        tools,
+      });
 
-    if (!upstream.ok) {
-      const upstreamMessage =
-        payload?.error?.message || "The AI service returned an error.";
-      return json({ error: upstreamMessage }, { status: upstream.status });
+      for (let step = 0; step < 8; step += 1) {
+        const calls = extractFunctionCalls(payload);
+        if (!calls.length) break;
+
+        const outputs = [];
+        for (const call of calls) {
+          try {
+            const result = await executeGithubTool(call, githubToken, projectMetadata);
+            outputs.push({
+              type: "function_call_output",
+              call_id: call.call_id,
+              output: JSON.stringify({ ok: true, result }),
+            });
+          } catch (error) {
+            outputs.push({
+              type: "function_call_output",
+              call_id: call.call_id,
+              output: JSON.stringify({ ok: false, error: error.message }),
+            });
+          }
+        }
+
+        payload = await callOpenAI({
+          apiKey,
+          model,
+          instructions,
+          input: outputs,
+          tools,
+          previousResponseId: payload.id,
+        });
+      }
+    } catch (error) {
+      return json(
+        { error: error.message || "Could not reach the AI service." },
+        { status: error.status || 502 }
+      );
     }
 
     const text = extractResponseText(payload);
@@ -419,6 +785,7 @@ export default {
       text,
       model,
       responseId: payload?.id || null,
+      toolsAvailable: tools.map((tool) => tool.name),
     });
   },
 };
