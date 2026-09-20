@@ -550,7 +550,10 @@ function loadProjectThreads(projectId) {
     const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed) && parsed.length === 0) {
+        return [{ id: `chat-${Date.now()}`, title: "New Chat", messages: [] }];
+      }
     }
   } catch {
     // Fall back to starter threads if browser storage is unavailable.
@@ -917,12 +920,16 @@ function ChatWorkspace({ project, active = true }) {
     if (closingIndex < 0) return;
 
     const remaining = threads.filter((thread) => thread.id !== threadId);
-    setThreads(remaining);
+    const nextThreads = remaining.length
+      ? remaining
+      : [{ id: `chat-${Date.now()}`, title: "New Chat", messages: [] }];
 
-    if (activeThreadId === threadId) {
-      const nextIndex = Math.min(closingIndex, Math.max(0, remaining.length - 1));
-      const nextThread = remaining[nextIndex] || remaining[0] || null;
-      setActiveThreadId(nextThread?.id || "");
+    setThreads(nextThreads);
+
+    if (activeThreadId === threadId || !nextThreads.some((thread) => thread.id === activeThreadId)) {
+      const nextIndex = Math.min(closingIndex, Math.max(0, nextThreads.length - 1));
+      const nextThread = nextThreads[nextIndex] || nextThreads[0];
+      setActiveThreadId(nextThread.id);
       setDraft("");
       setAttachment(null);
       try {
@@ -932,7 +939,7 @@ function ChatWorkspace({ project, active = true }) {
       }
     }
 
-    setStatusText(remaining.length ? "Chat closed" : "No open chats");
+    setStatusText(remaining.length ? "Chat closed" : "New chat");
   };
 
   const sendMessage = async () => {
@@ -942,7 +949,14 @@ function ChatWorkspace({ project, active = true }) {
       attachment?.dataUrl ? `![Pasted image](${attachment.dataUrl})` : "",
     ].filter(Boolean).join("\n\n");
 
-    if (!content || !activeThread || submitGuardRef.current) return;
+    if (!content || submitGuardRef.current) return;
+    if (!activeThread) {
+      const id = `chat-${Date.now()}`;
+      setThreads([{ id, title: "New Chat", messages: [] }]);
+      setActiveThreadId(id);
+      setStatusText("New chat ready — press Send again");
+      return;
+    }
 
     submitGuardRef.current = true;
     setQueueing(true);
