@@ -1037,6 +1037,25 @@ body.resizing-preview * {
   color: #a33636;
   border-color: #e2c5c5;
 }
+.integration-config-panel {
+  display: grid;
+  gap: 9px;
+  margin-top: 11px;
+  padding: 11px;
+  border: 1px solid #d7e3ec;
+  border-radius: 6px;
+  background: #f7fafc;
+}
+.integration-config-panel > strong {
+  color: #253f54;
+  font-size: 12px;
+}
+.integration-config-panel > p {
+  margin: 0;
+  color: #647b8e;
+  font-size: 11px;
+  line-height: 1.45;
+}
 .secondary-action:disabled {
   opacity: .5;
   cursor: not-allowed;
