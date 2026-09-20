@@ -32,6 +32,14 @@ const PROJECT_RUNTIME_CONFIG = {
     backendUrl: "https://flippant-mandrill-487.convex.cloud",
     convexDashboardUrl: "https://dashboard.convex.dev/",
   },
+  "rez-lock": {
+    repository: "dakotawireless/rez-lock-and-key-staging",
+    defaultBranch: "main",
+    cloudflareWorker: "rez-lock-and-key-staging",
+    backend: "Cloudflare Worker",
+    backendDeployment: "rez-lock-and-key-staging",
+    backendUrl: "https://rez-lock-and-key-staging.erik-f2c.workers.dev",
+  },
 };
 
 function registeredProjectConfig(projectId) {
