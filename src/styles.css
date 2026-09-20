@@ -302,10 +302,13 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 
 .message-actions {
+  position: absolute;
+  left: 100%;
+  bottom: 0;
   display: flex;
-  justify-content: flex-end;
-  margin-top: -5px;
-  padding-right: 2px;
+  justify-content: flex-start;
+  margin: 0 0 0 8px;
+  padding: 0;
 }
 .copy-message-button {
   min-height: 25px;
