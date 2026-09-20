@@ -1604,6 +1604,9 @@ function OwnerLogin({ onAuthenticated }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Could not sign in.");
       setAccessCode("");
+      // A new login starts with the preview available, while ordinary browser
+      // refreshes preserve the saved visibility preference.
+      window.localStorage.setItem("viking-aries:preview-visible", "true");
       onAuthenticated();
     } catch (loginError) {
       setError(loginError.message || "Could not sign in.");
