@@ -137,7 +137,6 @@ export const completeJob = internalMutation({
     resultText: v.string(),
     model: v.optional(v.string()),
     responseId: v.optional(v.string()),
-    toolReceiptsJson: v.optional(v.string()),
     completedAt: v.number(),
   },
   handler: async (ctx, args) => {
@@ -147,25 +146,11 @@ export const completeJob = internalMutation({
       .unique();
     if (!row) return false;
 
-    let requestJson = row.requestJson;
-    if (args.toolReceiptsJson) {
-      try {
-        const requestBody = JSON.parse(row.requestJson);
-        const receipts = JSON.parse(args.toolReceiptsJson);
-        requestBody._verifiedActionReceipts = Array.isArray(receipts) ? receipts.slice(-40) : [];
-        requestJson = JSON.stringify(requestBody);
-      } catch {
-        // A malformed receipt must never prevent the completed job from being recorded.
-        requestJson = row.requestJson;
-      }
-    }
-
     await ctx.db.patch(row._id, {
       status: "completed",
       resultText: args.resultText,
       model: args.model || row.model,
       responseId: args.responseId,
-      requestJson,
       completedAt: args.completedAt,
       updatedAt: args.completedAt,
       error: undefined,
@@ -196,28 +181,6 @@ export const failJob = internalMutation({
     return true;
   },
 });
-
-function collectVerifiedActionHistory(priorJobs) {
-  const receipts = [];
-
-  for (const prior of priorJobs) {
-    if (prior.status !== "completed" || !prior.requestJson) continue;
-    try {
-      const requestBody = JSON.parse(prior.requestJson);
-      const priorReceipts = Array.isArray(requestBody?._verifiedActionReceipts)
-        ? requestBody._verifiedActionReceipts
-        : [];
-      for (const receipt of priorReceipts) {
-        if (!receipt || typeof receipt !== "object") continue;
-        receipts.push(receipt);
-      }
-    } catch {
-      // Old jobs or malformed request payloads simply contribute no receipts.
-    }
-  }
-
-  return receipts.slice(-40);
-}
 
 function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
   const messages = Array.isArray(requestBody?.messages)
@@ -317,7 +280,6 @@ export const processThread = internalAction({
       });
 
       enrichMessagesForQueuedJob(requestBody, job, priorJobs);
-      requestBody.verifiedActionHistory = collectVerifiedActionHistory(priorJobs);
 
       const response = await fetch(RUNNER_URL, {
         method: "POST",
@@ -338,9 +300,6 @@ export const processThread = internalAction({
         resultText: String(payload?.text || "The AI job completed without response text."),
         model: typeof payload?.model === "string" ? payload.model : undefined,
         responseId: typeof payload?.responseId === "string" ? payload.responseId : undefined,
-        toolReceiptsJson: Array.isArray(payload?.actionReceipts)
-          ? JSON.stringify(payload.actionReceipts)
-          : undefined,
         completedAt: Date.now(),
       });
     } catch (error) {
