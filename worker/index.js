@@ -659,12 +659,16 @@ async function convexManagementRequest(token, path, init = {}) {
 }
 
 async function convexVerifyToken(token) {
-  const payload = await convexManagementRequest(token, "/token_details");
+  const payload = await convexManagementRequest(token, "/list_personal_access_tokens");
+  const rows = Array.isArray(payload?.result)
+    ? payload.result
+    : Array.isArray(payload)
+      ? payload
+      : [];
   return {
     ok: true,
-    tokenType: payload?.tokenType || payload?.token_type || payload?.type || null,
-    teamId: payload?.teamId || payload?.team_id || null,
-    projectId: payload?.projectId || payload?.project_id || null,
+    tokenType: "personal_access_token",
+    tokenCount: rows.length,
   };
 }
 
@@ -920,6 +924,7 @@ export default {
           },
           convex: {
             configured: Boolean(convexToken),
+            mapped: Boolean(projectConfig?.backendDeployment),
             usable: Boolean(
               auth.configured &&
               authenticated &&
@@ -1009,8 +1014,7 @@ export default {
         return json({
           ok: true,
           tokenType: verification.tokenType,
-          teamId: verification.teamId,
-          projectId: verification.projectId,
+          tokenCount: verification.tokenCount,
         });
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
