@@ -1544,6 +1544,7 @@ function Metric({ icon: Icon, value, label }) {
 }
 
 function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
+  const [refreshKey, setRefreshKey] = useState(0);
   const widths = { Desktop: "100%", Mobile: "390px" };
   const integrationUrls = {
     github: project?.repository ? `https://github.com/${project.repository}` : "https://github.com/",
@@ -1592,7 +1593,14 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
             <span className="toolbar-divider" />
 
             <div className="preview-toolbar-actions">
-              <button type="button" title="Refresh"><RefreshCw size={17} /></button>
+              <button
+                type="button"
+                title="Refresh preview"
+                aria-label="Refresh preview"
+                onClick={() => setRefreshKey((value) => value + 1)}
+              >
+                <RefreshCw size={17} />
+              </button>
               <button type="button" title={expanded ? "Dock preview" : "Expand preview"} onClick={onExpand}>
                 {expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
               </button>
@@ -1613,7 +1621,7 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
           <div className="preview-device" style={{ maxWidth: widths[mode] }}>
             {project?.deploymentUrl ? (
               <iframe
-                key={project.deploymentUrl}
+                key={`${project.deploymentUrl}-${refreshKey}`}
                 src={project.deploymentUrl}
                 title={`${project.name} live preview`}
                 style={{ width: "100%", height: "100%", minHeight: "720px", border: 0, background: "#fff" }}
@@ -1630,7 +1638,9 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
 
 function VikingAriesApp({ onLogout, authConfigured }) {
   const [workspace, setWorkspace] = useState(() => {
-    const saved = window.localStorage.getItem("viking-aries:active-workspace");
+    const saved =
+      window.localStorage.getItem("va-local:active-workspace") ||
+      window.localStorage.getItem("viking-aries:active-workspace");
     return saved === "Contractor" ? "Contractor" : "Personal";
   });
   const [personalProjectsState, setPersonalProjectsState] = useState(() => {
@@ -1658,8 +1668,12 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     }
   });
   const [project, setProject] = useState(() => {
-    const savedWorkspace = window.localStorage.getItem("viking-aries:active-workspace");
-    const savedProjectId = window.localStorage.getItem("viking-aries:active-project");
+    const savedWorkspace =
+      window.localStorage.getItem("va-local:active-workspace") ||
+      window.localStorage.getItem("viking-aries:active-workspace");
+    const savedProjectId =
+      window.localStorage.getItem("va-local:active-project") ||
+      window.localStorage.getItem("viking-aries:active-project");
 
     const personalMatch = personalProjectsState.find((item) => item.id === savedProjectId);
     const contractorMatch = contractorsState
@@ -1734,12 +1748,12 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   }, [previewVisible]);
 
   useEffect(() => {
-    window.localStorage.setItem("viking-aries:active-workspace", workspace);
+    window.localStorage.setItem("va-local:active-workspace", workspace);
   }, [workspace]);
 
   useEffect(() => {
     if (project?.id) {
-      window.localStorage.setItem("viking-aries:active-project", project.id);
+      window.localStorage.setItem("va-local:active-project", project.id);
     }
   }, [project]);
 

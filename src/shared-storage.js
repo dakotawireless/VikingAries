@@ -6,6 +6,8 @@ function isSharedKey(key) {
   return (
     typeof key === "string" &&
     key.startsWith(PREFIX) &&
+    key !== "viking-aries:active-project" &&
+    key !== "viking-aries:active-workspace" &&
     !key.startsWith("viking-aries:audit:")
   );
 }
