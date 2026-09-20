@@ -64,13 +64,27 @@ export const usageSummary = internalQuery({
     const totals = blank();
     const today = blank();
     const modelMap = new Map();
+    const projectMap = new Map();
+    const providerMap = new Map();
 
     for (const row of rows) {
       add(totals, row);
       if (row.createdAt >= todayStart.getTime()) add(today, row);
-      const current = modelMap.get(row.model) || { model: row.model, ...blank() };
-      add(current, row);
-      modelMap.set(row.model, current);
+      const provider = row.provider || "OpenAI";
+      const modelKey = `${provider}:${row.model}`;
+      const modelCurrent = modelMap.get(modelKey) || { provider, model: row.model, ...blank() };
+      add(modelCurrent, row);
+      modelMap.set(modelKey, modelCurrent);
+      const projectCurrent = projectMap.get(row.projectId) || {
+        projectId: row.projectId,
+        projectName: row.projectName || row.projectId,
+        ...blank(),
+      };
+      add(projectCurrent, row);
+      projectMap.set(row.projectId, projectCurrent);
+      const providerCurrent = providerMap.get(provider) || { provider, ...blank() };
+      add(providerCurrent, row);
+      providerMap.set(provider, providerCurrent);
     }
 
     const recent = [...rows]
