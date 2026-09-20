@@ -81,6 +81,18 @@ Fifty earlier Dakota Wireless POS prototype/reference uploads have been consolid
 
 Do not rely on a chat attachment, temporary working directory, browser-only upload, or localStorage copy as the only copy of a Dakota Wireless POS project file. Before a POS upload is treated as part of the project record, preserve or register it in the durable Files & Media collection. When Erik asks to find or reference a prior POS upload, check this collection first.
 
+## Database snapshot baseline
+
+Dakota Wireless POS Files & Media contains a separate September 20, 2026 database snapshot:
+
+- `project-files/dw-pos/2026-09-20/1789899958061-f4822091-snapshot_1789860343992600854.zip`
+- size: 1,523,124 bytes
+- Git blob SHA: `74a6b1f72e940f7bcb4c49d88fb444d4ee1752c0`
+
+Treat this as a point-in-time backup/reference for migration and recovery. Do **not** restore it over the existing live Convex deployment `sleek-bear-647`.
+
+Immediately before final Hercules disconnection, archive a **fresh database snapshot** in Files & Media in addition to the mandatory fresh source export. The final cutover baseline must therefore include both current code and current data.
+
 ## Final Hercules cutover rule
 
 The September 20 import is a working migration baseline, not the final cutover snapshot.
