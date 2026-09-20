@@ -145,11 +145,13 @@ function projectIntegrationDefaults(project) {
     convex: {
       enabled: project?.backend === "Convex" || Boolean(project?.backendUrl),
       deployment:
-        project?.id === "timekeeper"
-          ? "aware-caiman-251"
-          : project?.id === "viking-aries"
-            ? "flippant-mandrill-487"
-            : "",
+        project?.id === "dw-pos"
+          ? "sleek-bear-647"
+          : project?.id === "timekeeper"
+            ? "aware-caiman-251"
+            : project?.id === "viking-aries"
+              ? "flippant-mandrill-487"
+              : "",
       url: project?.backendUrl || "",
       dashboardUrl: project?.convexDashboardUrl || "",
     },
@@ -380,7 +382,98 @@ function rezLockDefaults(project) {
   };
 }
 
+function dwPosDefaults(project) {
+  return {
+    features: [
+      { id: "sales", name: "POS Sales & Transactions", area: "Core", status: "Active", notes: "Current production sales, tenders, transaction history, returns, and receipt workflows." },
+      { id: "wireless", name: "Wireless Activations", area: "Core", status: "Active", notes: "Carrier plans, devices, activations, ports, service accounts, and line management." },
+      { id: "internet", name: "Home Internet", area: "Core", status: "Active", notes: "RevGen/Helix service accounts, billing, SIM inventory, activation and cancellation workflows." },
+      { id: "inventory", name: "Inventory & IMEI", area: "Core", status: "Active", notes: "Products, serialized units/IMEIs, stock changes, special orders, and website live-inventory foundation." },
+      { id: "billing", name: "Customers, Invoices & Payments", area: "Billing", status: "Active", notes: "Customer records, invoices, credits, online payments, AutoPay, Authorize.Net, Zoho, and Valor workflows." },
+      { id: "online-orders", name: "Website Online Orders & Customer Portal API", area: "Integration", status: "Active", notes: "POS HTTP endpoints are authoritative for quotes, order creation/status, customer portal data, payments, and AutoPay." },
+      { id: "commission", name: "Timekeeper Commission API", area: "Integration", status: "Active", notes: "Weekly commission endpoint used by Timekeeper; preserve the existing shared-secret contract." },
+    ],
+    access: [
+      { id: "staff-auth", role: "POS staff", method: "Hercules OIDC (migration pending)", scope: "POS application access", status: "Migration" },
+      { id: "owner", role: "Owner / developer", method: "Viking Aries shared GitHub + Convex connections", scope: "Source, backend, diagnostics, and migration", status: "Active" },
+    ],
+    files: [
+      { id: "source", name: "POS source", type: "Repository", location: "dakotawireless/Dakota-Wireless-POS---New", status: "In repository" },
+      { id: "convex", name: "Convex backend", type: "Backend source", location: "convex/", status: "In repository" },
+      { id: "http", name: "POS HTTP APIs", type: "Backend source", location: "convex/http.ts", status: "In repository" },
+      { id: "tests", name: "POS automated tests", type: "Vitest / convex-test", location: "convex/*.test.ts and src tests", status: "In repository" },
+    ],
+    integrations: [
+      { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New", purpose: "Source control", status: "Connected" },
+      { id: "convex", name: "Convex", provider: "sleek-bear-647", purpose: "Database, functions, HTTP actions, crons", status: "Connected" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Not deployed yet", purpose: "Target frontend hosting after Hercules runtime removal", status: "Migration" },
+      { id: "authorize-net", name: "Authorize.Net", provider: "Existing provider-managed configuration", purpose: "Online/card payments and CIM", status: "Existing / unknown" },
+      { id: "easypost", name: "EasyPost", provider: "Existing provider-managed configuration", purpose: "Shipping and webhook workflows", status: "Existing / unknown" },
+      { id: "zoho", name: "Zoho", provider: "Existing provider-managed configuration", purpose: "Invoice/balance synchronization", status: "Existing / unknown" },
+      { id: "valor", name: "Valor", provider: "Existing provider-managed configuration", purpose: "In-store terminal payments", status: "Existing / unknown" },
+      { id: "hercules", name: "Hercules runtime", provider: "Legacy", purpose: "OIDC, email SDK, CDN and current frontend hosting", status: "Migration" },
+    ],
+    tables: [
+      { name: "users / customers", type: "Convex schema", responsibility: "POS users and customer records", status: "Active" },
+      { name: "serviceAccounts / serviceLines", type: "Convex schema", responsibility: "Wireless and internet service relationships", status: "Active" },
+      { name: "inventoryProducts / inventoryUnits", type: "Convex schema", responsibility: "Catalog, stock and serialized IMEI inventory", status: "Active" },
+      { name: "invoices / invoiceLines / payments", type: "Convex schema", responsibility: "Billing and payment records", status: "Active" },
+      { name: "transactions / accountHistory / creditMemos", type: "Convex schema", responsibility: "POS history and billing adjustments", status: "Active" },
+    ],
+    backend: [
+      { name: "convex/http.ts", type: "Convex HTTP router", responsibility: "Payroll, online-order, portal, Zoho and webhook API routes", status: "Active" },
+      { name: "convex/onlineOrders.ts", type: "Convex module", responsibility: "Website order quote/create/status/fulfillment logic", status: "Active" },
+      { name: "convex/customerPortalApi.ts", type: "Convex module", responsibility: "Customer portal summary/profile/payment/AutoPay logic", status: "Active" },
+      { name: "convex/payments_processing.ts", type: "Convex module", responsibility: "Authorize.Net and Valor payment processing", status: "Active" },
+      { name: "convex/payrollWeeklyCommissions.ts", type: "Convex module", responsibility: "Timekeeper weekly commission API", status: "Active" },
+    ],
+    automations: [
+      { id: "billing", name: "Billing automation", trigger: "Scheduled / application events", action: "Existing Convex billing workflows", enabled: true },
+      { id: "zoho", name: "Zoho invoice poller", trigger: "Existing schedule/webhook", action: "Synchronize Zoho invoice/balance changes", enabled: true },
+      { id: "emails", name: "Customer / invoice / pickup email", trigger: "Existing POS workflows", action: "Currently uses Hercules email SDK; replace during migration", enabled: true },
+    ],
+    diagnostics: [
+      { id: "source-import", name: "Current source import", result: "Passed", detail: "September 20, 2026 Hercules export imported into dakotawireless/Dakota-Wireless-POS---New." },
+      { id: "github-map", name: "VA GitHub runtime mapping", result: "Configured", detail: "VA project maps to dakotawireless/Dakota-Wireless-POS---New on main." },
+      { id: "convex-map", name: "VA Convex runtime mapping", result: "Configured", detail: "VA project maps to existing deployment sleek-bear-647." },
+      { id: "data-preservation", name: "Convex data preservation", result: "Required", detail: "Migration must keep the existing sleek-bear-647 deployment and data." },
+      { id: "hercules-removal", name: "Hercules runtime removal", result: "Pending", detail: "Replace OIDC, email SDK, Vite/ESLint plugins, CDN assets, and onhercules.app links before final cutover." },
+      { id: "cloudflare", name: "Cloudflare deployment", result: "Pending", detail: "No Cloudflare Worker is registered until the Hercules-free frontend is ready to deploy." },
+    ],
+    versions: [
+      { id: "hercules-export-2026-09-20", label: "Current Hercules export imported", ref: "main", note: "Baseline source imported before Hercules-specific migration edits." },
+    ],
+    deployments: [
+      { id: "legacy-production", environment: "Legacy production", provider: "Hercules", status: "Active during migration", url: "https://dakota-wireless-pos-301249.onhercules.app/" },
+      { id: "cloudflare-target", environment: "Target production", provider: "Cloudflare Workers", status: "Pending", url: "" },
+    ],
+    domains: [
+      { id: "legacy", host: "dakota-wireless-pos-301249.onhercules.app", type: "Legacy Hercules host", status: "Active during migration", notes: "Do not cut over until the Cloudflare deployment passes end-to-end POS and website integration tests." },
+    ],
+    secrets: [
+      { id: "convex", name: "CONVEX_DEPLOY_KEY / VITE_CONVEX_URL", provider: "Cloudflare + Convex", purpose: "Future Cloudflare build/deploy connection to existing Convex deployment", status: "Migration" },
+      { id: "authnet", name: "AUTHNET_* / AUTHORIZE_NET_*", provider: "Convex environment", purpose: "Authorize.Net payments", status: "Existing / unknown" },
+      { id: "valor", name: "VALOR_*", provider: "Convex environment", purpose: "Valor terminal payments", status: "Existing / unknown" },
+      { id: "zoho", name: "ZOHO_*", provider: "Convex environment", purpose: "Zoho invoice integration", status: "Existing / unknown" },
+      { id: "easypost", name: "EASYPOST_*", provider: "Convex environment", purpose: "Shipping/webhooks", status: "Existing / unknown" },
+      { id: "api", name: "DAKOTA_WIRELESS_* / CUSTOMER_PORTAL_API_SECRET / COMMISSION_API_SECRET", provider: "Convex environment", purpose: "Website, portal, payroll and internal API authentication", status: "Existing / unknown" },
+      { id: "hercules", name: "HERCULES_API_KEY / HERCULES_OIDC_*", provider: "Legacy Hercules", purpose: "Legacy email/auth runtime to be removed", status: "Migration" },
+    ],
+    settings: {
+      displayName: project.name,
+      repository: "dakotawireless/Dakota-Wireless-POS---New",
+      defaultBranch: "main",
+      productionUrl: "https://dakota-wireless-pos-301249.onhercules.app/",
+      backendProvider: "Convex",
+      backendDeployment: "sleek-bear-647",
+      backendUrl: "https://sleek-bear-647.convex.cloud",
+      notes: "Current production Dakota Wireless POS migration. Preserve existing Convex data and business logic. The Dakota Wireless website depends on this POS backend. Do not rotate or guess provider-managed secret values. Cloudflare deployment will be registered after Hercules-specific runtime dependencies are replaced and staging passes end-to-end tests.",
+    },
+  };
+}
+
 function projectDefaults(project) {
+  if (project.id === "dw-pos") return dwPosDefaults(project);
   if (project.id === "timekeeper") return timekeeperDefaults();
   if (project.id === "viking-aries") return vikingAriesDefaults(project);
   if (project.id === "rez-lock") return rezLockDefaults(project);
