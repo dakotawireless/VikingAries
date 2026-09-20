@@ -953,6 +953,33 @@ function ChatWorkspace({ project, active = true }) {
     recognition.start();
   };
 
+  const handleComposerPaste = async (event) => {
+    const imageItem = Array.from(event.clipboardData?.items || []).find((item) =>
+      item.type.startsWith("image/")
+    );
+    if (!imageItem) return;
+
+    event.preventDefault();
+    const file = imageItem.getAsFile();
+    if (!file) {
+      setStatusText("That pasted image could not be read");
+      return;
+    }
+
+    setStatusText("Preparing pasted image…");
+    try {
+      const dataUrl = await prepareImageAttachment(file);
+      setAttachment({
+        dataUrl,
+        name: file.name || "Pasted image",
+        type: file.type || "image/jpeg",
+      });
+      setStatusText("Image attached");
+    } catch (error) {
+      setStatusText(error.message || "Could not attach image");
+    }
+  };
+
   const handleComposerKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
