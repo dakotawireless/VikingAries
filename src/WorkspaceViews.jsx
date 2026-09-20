@@ -186,9 +186,9 @@ function IntegrationsView({ project }) {
 
 function BackendView({ project }) {
   const [backend, setBackend] = useProjectStorage(project.id, "backend", {
-    provider: project.id === "viking-aries" ? "Supabase" : "Convex",
-    productionUrl: "",
-    notes: "",
+    provider: project.backend || (project.id === "viking-aries" ? "Supabase" : "Convex"),
+    productionUrl: project.backendUrl || "",
+    notes: project.repository ? `Source: ${project.repository}` : "",
   });
 
   return (
@@ -220,7 +220,13 @@ function BackendView({ project }) {
 
 function DeploymentsView({ project }) {
   const [deployments, setDeployments] = useProjectStorage(project.id, "deployments", [
-    { id: "prod", environment: "Production", provider: "Cloudflare", status: "Active", url: project.id === "viking-aries" ? "vikingaries.dakotawireless.net" : "" },
+    {
+      id: "prod",
+      environment: "Production",
+      provider: "Cloudflare",
+      status: project.status || "Active",
+      url: project.deploymentUrl || (project.id === "viking-aries" ? "https://vikingaries.dakotawireless.net" : ""),
+    },
   ]);
 
   const addDeployment = () => {
