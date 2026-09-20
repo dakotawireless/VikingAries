@@ -72,3 +72,29 @@ npm run build
 8. Add provider-backed integration management
 9. Make Viking Aries capable of editing its own repository through staging/preview deployments
 10. Migrate remaining Hercules-origin apps into the same independent GitHub + Cloudflare + Convex + VA pattern where appropriate
+
+
+## Owner security and GitHub runtime tools
+
+Viking Aries now has an owner-authenticated runtime layer for tool-backed provider actions.
+
+Runtime secrets are **not** committed to GitHub or stored in browser localStorage. During bootstrap they are supplied to the Cloudflare Worker as server-side secrets.
+
+Required runtime secrets:
+
+- `OWNER_ACCESS_CODE` — the owner login passphrase/code used by the Viking Aries login screen.
+- `OWNER_SESSION_SECRET` — a long random secret used only to sign the secure HttpOnly owner session cookie.
+- `GITHUB_TOKEN` — a GitHub credential with access only to the repositories Viking Aries is expected to manage.
+
+Security behavior:
+
+- Owner sessions are signed server-side and stored in an HttpOnly, Secure, SameSite=Strict cookie.
+- Sessions expire after 12 hours.
+- GitHub tools are exposed to the AI only when owner authentication is configured, the owner is actively authenticated, a GitHub credential exists, and the selected project has a valid mapped repository.
+- The GitHub tool layer is locked to the repository mapped to the currently selected project; the AI does not choose an arbitrary repository.
+- Current GitHub runtime tools support directory listing, file reads, and create/replace file commits.
+- Provider secrets are never sent as normal chat context.
+
+The Integrations screen can verify the configured GitHub credential and shows whether GitHub tools are currently available to Viking Aries.
+
+The longer-term vault remains the target for durable encrypted provider credential storage and rotation. Cloudflare server-side secrets are the secure bootstrap mechanism until that vault is online.
