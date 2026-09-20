@@ -162,15 +162,24 @@ const navItems = [
 const chatTabs = ["Migration", "Payroll", "Commission Sync"];
 
 function ToolButton({ icon: Icon, label, href }) {
+  const windowName = `viking-aries-helper-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
   if (href) {
+    const openHelperWindow = (event) => {
+      event.preventDefault();
+      const helperWindow = window.open(href, windowName);
+      helperWindow?.focus?.();
+    };
+
     return (
       <a
         className="tool-button"
         href={href}
-        target="_blank"
+        target={windowName}
         rel="noreferrer"
-        title={`Open ${label}`}
-        aria-label={`Open ${label}`}
+        onClick={openHelperWindow}
+        title={`Open ${label} (reuses its window)`}
+        aria-label={`Open ${label} (reuses its window)`}
       >
         <Icon size={16} />
         <span>{label}</span>
