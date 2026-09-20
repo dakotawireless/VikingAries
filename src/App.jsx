@@ -593,6 +593,7 @@ function ChatWorkspace({ project, active = true }) {
       : availableThreads[0]?.id || "migration";
   });
   const [draft, setDraft] = useState(() => loadProjectDraft(project.id));
+  const [attachment, setAttachment] = useState(null);
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
