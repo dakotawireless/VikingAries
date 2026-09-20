@@ -56,6 +56,50 @@ function setComposerStatus(message) {
   }, 2400);
 }
 
+function removeThumbnail(textarea) {
+  const composer = textarea.closest(".composer");
+  const preview = composer?.querySelector(".pasted-image-preview");
+  preview?.remove();
+  composer?.classList.remove("has-pasted-image");
+}
+
+function showThumbnail(textarea, dataUrl) {
+  const composer = textarea.closest(".composer");
+  if (!composer) return;
+
+  removeThumbnail(textarea);
+  composer.classList.add("has-pasted-image");
+
+  const preview = document.createElement("div");
+  preview.className = "pasted-image-preview";
+  preview.setAttribute("role", "status");
+  preview.setAttribute("aria-label", "Pasted image attached");
+
+  const image = document.createElement("img");
+  image.src = dataUrl;
+  image.alt = "Pasted image thumbnail";
+
+  const label = document.createElement("span");
+  label.textContent = "Image attached";
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "pasted-image-remove";
+  remove.setAttribute("aria-label", "Remove pasted image");
+  remove.title = "Remove pasted image";
+  remove.textContent = "×";
+  remove.addEventListener("click", () => {
+    const marker = /!\\[Pasted image\\]\\([^)]*\\)/g;
+    textarea.value = textarea.value.replace(marker, "").replace(/\\s{2,}/g, " ").trim();
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    removeThumbnail(textarea);
+    textarea.focus();
+  });
+
+  preview.append(image, label, remove);
+  composer.appendChild(preview);
+}
+
 function enablePastedImages() {
   document.addEventListener("paste", async (event) => {
     const textarea = event.target?.closest?.(".composer textarea");
@@ -68,11 +112,26 @@ function enablePastedImages() {
     try {
       const dataUrl = await resizeImage(imageItem.getAsFile());
       insertAtCursor(textarea, `![Pasted image](${dataUrl})`);
+      showThumbnail(textarea, dataUrl);
       setComposerStatus("Image attached");
     } catch (error) {
       setComposerStatus(error.message || "Could not attach image");
     }
   });
+
+  document.addEventListener("input", (event) => {
+    const textarea = event.target?.closest?.(".composer textarea");
+    if (textarea && !/!\[Pasted image\]\(/.test(textarea.value)) removeThumbnail(textarea);
+  });
+
+  document.addEventListener("submit", (event) => {
+    if (event.target?.matches?.(".composer")) {
+      window.setTimeout(() => {
+        const textarea = event.target.querySelector("textarea");
+        if (textarea && !textarea.value) removeThumbnail(textarea);
+      }, 0);
+    }
+  }, true);
 }
 
 enablePastedImages();
