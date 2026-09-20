@@ -58,6 +58,15 @@ export async function startSharedStorageSync() {
       if (updatedAt < known) continue;
 
       knownServerTime.set(entry.key, updatedAt);
+
+      if (entry.deleted) {
+        localSnapshot.delete(entry.key);
+        if (window.localStorage.getItem(entry.key) !== null) {
+          window.localStorage.removeItem(entry.key);
+        }
+        continue;
+      }
+
       localSnapshot.set(entry.key, entry.value);
       if (window.localStorage.getItem(entry.key) !== entry.value) {
         window.localStorage.setItem(entry.key, entry.value);
