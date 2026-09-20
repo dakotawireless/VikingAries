@@ -412,6 +412,7 @@ function dwPosDefaults(project) {
     integrations: [
       { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New", purpose: "Source control", status: "Connected" },
       { id: "convex", name: "Convex", provider: "sleek-bear-647", purpose: "Database, functions, HTTP actions, crons", status: "Connected" },
+      { id: "preview", name: "Live Preview", provider: "Legacy Hercules production URL", purpose: "Temporary in-VA live preview until Cloudflare staging is available", status: "Active during migration" },
       { id: "cloudflare", name: "Cloudflare", provider: "Not deployed yet", purpose: "Target frontend hosting after Hercules runtime removal", status: "Migration" },
       { id: "authorize-net", name: "Authorize.Net", provider: "Existing provider-managed configuration", purpose: "Online/card payments and CIM", status: "Existing / unknown" },
       { id: "easypost", name: "EasyPost", provider: "Existing provider-managed configuration", purpose: "Shipping and webhook workflows", status: "Existing / unknown" },
@@ -444,13 +445,15 @@ function dwPosDefaults(project) {
       { id: "convex-map", name: "VA Convex runtime mapping", result: "Configured", detail: "VA project maps to existing deployment sleek-bear-647." },
       { id: "data-preservation", name: "Convex data preservation", result: "Required", detail: "Migration must keep the existing sleek-bear-647 deployment and data." },
       { id: "hercules-removal", name: "Hercules runtime removal", result: "Pending", detail: "Replace OIDC, email SDK, Vite/ESLint plugins, CDN assets, and onhercules.app links before final cutover." },
+      { id: "live-preview", name: "VA live preview", result: "Configured", detail: "VA currently previews the live Hercules POS at https://dakota-wireless-pos-301249.onhercules.app/. Switch this to Cloudflare staging when the staging Worker exists." },
       { id: "cloudflare", name: "Cloudflare deployment", result: "Pending", detail: "No Cloudflare Worker is registered until the Hercules-free frontend is ready to deploy." },
     ],
     versions: [
       { id: "hercules-export-2026-09-20", label: "Current Hercules export imported", ref: "main", note: "Baseline source imported before Hercules-specific migration edits." },
     ],
     deployments: [
-      { id: "legacy-production", environment: "Legacy production", provider: "Hercules", status: "Active during migration", url: "https://dakota-wireless-pos-301249.onhercules.app/" },
+      { id: "legacy-production", environment: "Legacy production / VA live preview", provider: "Hercules", status: "Active during migration", url: "https://dakota-wireless-pos-301249.onhercules.app/" },
+      { id: "cloudflare-staging", environment: "Migration staging / future VA preview", provider: "Cloudflare Workers", status: "Pending", url: "" },
       { id: "cloudflare-target", environment: "Target production", provider: "Cloudflare Workers", status: "Pending", url: "" },
     ],
     domains: [
