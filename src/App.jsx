@@ -539,9 +539,9 @@ function renderChatContent(content) {
 function loadProjectThreads(projectId) {
   try {
     const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch {
     // Fall back to starter threads if browser storage is unavailable.
@@ -671,7 +671,7 @@ function ChatWorkspace({ project, active = true }) {
     const savedThreadId = window.localStorage.getItem(`viking-aries:active-chat:${project.id}`);
     return availableThreads.some((thread) => thread.id === savedThreadId)
       ? savedThreadId
-      : availableThreads[0]?.id || "migration";
+      : availableThreads[0]?.id || "";
   });
   const [draft, setDraft] = useState(() => loadProjectDraft(project.id));
   const [attachment, setAttachment] = useState(null);
@@ -901,6 +901,29 @@ function ChatWorkspace({ project, active = true }) {
     }
     setStatusText("New chat");
     window.setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const closeChat = (threadId) => {
+    const closingIndex = threads.findIndex((thread) => thread.id === threadId);
+    if (closingIndex < 0) return;
+
+    const remaining = threads.filter((thread) => thread.id !== threadId);
+    setThreads(remaining);
+
+    if (activeThreadId === threadId) {
+      const nextIndex = Math.min(closingIndex, Math.max(0, remaining.length - 1));
+      const nextThread = remaining[nextIndex] || remaining[0] || null;
+      setActiveThreadId(nextThread?.id || "");
+      setDraft("");
+      setAttachment(null);
+      try {
+        window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
+      } catch {
+        // Ignore browser storage failures.
+      }
+    }
+
+    setStatusText(remaining.length ? "Chat closed" : "No open chats");
   };
 
   const sendMessage = async () => {
@@ -1192,18 +1215,32 @@ function ChatWorkspace({ project, active = true }) {
 
       <div className="chat-tab-row">
         {threads.map((thread) => (
-          <button
-            type="button"
+          <div
             key={thread.id}
             className={activeThreadId === thread.id ? "chat-tab active" : "chat-tab"}
-            onClick={() => {
-              setActiveThreadId(thread.id);
-              setStatusText("Ready");
-            }}
             title={thread.title}
           >
-            {thread.title}
-          </button>
+            <button
+              type="button"
+              className="chat-tab-main"
+              onClick={() => {
+                setActiveThreadId(thread.id);
+                setStatusText("Ready");
+              }}
+              title={thread.title}
+            >
+              {thread.title}
+            </button>
+            <button
+              type="button"
+              className="chat-tab-close"
+              onClick={() => closeChat(thread.id)}
+              title={`Close ${thread.title}`}
+              aria-label={`Close ${thread.title}`}
+            >
+              <X size={13} />
+            </button>
+          </div>
         ))}
         <button className="chat-tab new-chat" type="button" onClick={createNewChat}>
           <span>+</span> New Chat
