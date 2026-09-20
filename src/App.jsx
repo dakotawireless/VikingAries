@@ -35,6 +35,7 @@ import {
   Monitor,
   MoreHorizontal,
   PackageCheck,
+  Paperclip,
   Plus,
   RefreshCw,
   Rocket,
