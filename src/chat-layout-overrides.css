@@ -15,3 +15,56 @@
   /* Keep Latest clear of the composer/send control. */
   bottom: 128px;
 }
+
+/* Keep the image data in the submitted message, but present it as a compact
+   visual attachment instead of exposing the long data URL in the composer. */
+.composer {
+  position: relative;
+}
+
+.pasted-image-preview {
+  position: absolute;
+  left: 48px;
+  bottom: calc(100% + 8px);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--border, #d9e1ea);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+  color: var(--text-muted, #64748b);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.pasted-image-preview img {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.pasted-image-remove {
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pasted-image-remove:hover,
+.pasted-image-remove:focus-visible {
+  background: rgba(15, 23, 42, 0.08);
+  outline: none;
+}
