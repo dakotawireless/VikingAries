@@ -42,7 +42,16 @@ import {
 } from "lucide-react";
 
 const personalProjects = [
-  { id: "timekeeper", name: "Timekeeper", icon: Clock3 },
+  {
+    id: "timekeeper",
+    name: "Timekeeper",
+    icon: Clock3,
+    repository: "dakotawireless/TimeKeeper-App",
+    deploymentUrl: "https://timekeeper-app.erik-f2c.workers.dev",
+    backend: "Convex",
+    backendUrl: "https://aware-caiman-251.convex.cloud",
+    status: "Active",
+  },
   { id: "dw-pos", name: "Dakota Wireless POS", icon: Monitor },
   { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
   { id: "dw-site", name: "DW Website", icon: Cloud },
@@ -772,7 +781,7 @@ function Metric({ icon: Icon, value, label }) {
   );
 }
 
-function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
+function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand, onToggleVisibility }) {
   const widths = { Desktop: "100%", Mobile: "390px" };
 
   return (
@@ -832,7 +841,16 @@ function PreviewPane({ mode, onModeChange, expanded, visible, onExpand, onToggle
       {visible && (
         <div className="preview-stage">
           <div className="preview-device" style={{ maxWidth: widths[mode] }}>
-            <PreviewDashboard />
+            {project?.deploymentUrl ? (
+              <iframe
+                key={project.deploymentUrl}
+                src={project.deploymentUrl}
+                title={`${project.name} live preview`}
+                style={{ width: "100%", height: "100%", minHeight: "720px", border: 0, background: "#fff" }}
+              />
+            ) : (
+              <PreviewDashboard />
+            )}
           </div>
         </div>
       )}
@@ -845,7 +863,15 @@ export default function App() {
   const [personalProjectsState, setPersonalProjectsState] = useState(() => {
     try {
       const saved = window.localStorage.getItem("viking-aries:personal-projects");
-      return saved ? JSON.parse(saved) : personalProjects;
+      if (!saved) return personalProjects;
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return personalProjects;
+      const known = personalProjects.map((base) => ({
+        ...(parsed.find((item) => item.id === base.id) || {}),
+        ...base,
+      }));
+      const custom = parsed.filter((item) => !personalProjects.some((base) => base.id === item.id));
+      return [...known, ...custom];
     } catch {
       return personalProjects;
     }
@@ -1032,6 +1058,7 @@ export default function App() {
             </div>
           )}
           <PreviewPane
+            project={project}
             mode={previewMode}
             onModeChange={setPreviewMode}
             expanded={previewExpanded}
