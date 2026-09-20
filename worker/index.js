@@ -1054,6 +1054,47 @@ async function deleteVAState(env, key, updatedAt) {
   return payload;
 }
 
+async function createVAJob(env, entry) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/jobs/create`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(entry),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Job store returned status ${response.status}`);
+  }
+  return payload;
+}
+
+async function listVAJobs(env, projectId, limit = 50) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(
+    `${VA_CONVEX_SITE_URL}/jobs/list?projectId=${encodeURIComponent(projectId)}&limit=${encodeURIComponent(limit)}`,
+    { headers: { Authorization: `Bearer ${secret}` } }
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Job store returned status ${response.status}`);
+  }
+  return payload;
+}
+
+async function internalJobAuthorized(request, env) {
+  const expected = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!expected) return false;
+  return safeEqual(request.headers.get("X-VA-Internal-Job-Secret") || "", expected);
+}
+
+
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -1328,6 +1369,90 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/jobs") {
+      const auth = await ownerAuthConfig(env);
+      const ownerAuthenticated = auth.configured
+        ? await verifyOwnerSession(request, auth.sessionSecret)
+        : true;
+
+      if (auth.configured && !ownerAuthenticated) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      try {
+        if (request.method === "POST") {
+          const body = await request.json();
+          const projectId =
+            typeof body?.project?.id === "string" ? body.project.id.trim().slice(0, 120) : "";
+          const projectName =
+            typeof body?.project?.name === "string" ? body.project.name.trim().slice(0, 160) : projectId;
+          const threadId =
+            typeof body?.thread?.id === "string" ? body.thread.id.trim().slice(0, 160) : "";
+          const threadTitle =
+            typeof body?.thread?.title === "string" ? body.thread.title.trim().slice(0, 200) : "Untitled chat";
+          const messages = Array.isArray(body?.messages) ? body.messages : [];
+          const lastUserMessage = [...messages].reverse().find(
+            (message) => message?.role === "user" && typeof message?.content === "string"
+          );
+          const requestedJobId =
+            typeof body?.jobId === "string" ? body.jobId.trim().slice(0, 120) : "";
+          const jobId = requestedJobId || crypto.randomUUID();
+
+          if (!projectId || !threadId || !lastUserMessage) {
+            return json(
+              { error: "A project, thread, and user message are required." },
+              { status: 400 }
+            );
+          }
+
+          const userMessageId =
+            typeof lastUserMessage.id === "string" && lastUserMessage.id
+              ? lastUserMessage.id.slice(0, 180)
+              : `user-${jobId}`;
+
+          const normalizedBody = {
+            ...body,
+            jobId,
+            messages: messages.map((message) => ({ ...message })),
+          };
+          const currentUserIndex = normalizedBody.messages.lastIndexOf(lastUserMessage);
+          if (currentUserIndex >= 0) {
+            normalizedBody.messages[currentUserIndex] = {
+              ...normalizedBody.messages[currentUserIndex],
+              id: userMessageId,
+              jobId,
+            };
+          }
+
+          const created = await createVAJob(env, {
+            jobId,
+            projectId,
+            projectName,
+            threadId,
+            threadTitle,
+            requestJson: JSON.stringify(normalizedBody),
+            userMessageId,
+            userMessageContent: String(lastUserMessage.content).slice(0, 20000),
+            model: typeof body?.model === "string" ? body.model.slice(0, 120) : undefined,
+          });
+
+          return json(created, { status: 202 });
+        }
+
+        if (request.method === "GET") {
+          const projectId = (url.searchParams.get("projectId") || "").trim().slice(0, 120);
+          if (!projectId) {
+            return json({ error: "projectId is required." }, { status: 400 });
+          }
+          return json(await listVAJobs(env, projectId, 100));
+        }
+
+        return json({ error: "Method not allowed." }, { status: 405 });
+      } catch (error) {
+        return json({ error: error.message || "AI job request failed." }, { status: 502 });
+      }
+    }
+
     if (url.pathname === "/api/health") {
       const binding = env.OPENAI_API_KEY;
       const diagnostics = {
@@ -1361,9 +1486,12 @@ export default {
     }
 
     const auth = await ownerAuthConfig(env);
-    const ownerAuthenticated = auth.configured
-      ? await verifyOwnerSession(request, auth.sessionSecret)
-      : false;
+    const internalJobRequest = await internalJobAuthorized(request, env);
+    const ownerAuthenticated = internalJobRequest
+      ? true
+      : auth.configured
+        ? await verifyOwnerSession(request, auth.sessionSecret)
+        : false;
     if (auth.configured && !ownerAuthenticated) {
       return json({ error: "Owner login required." }, { status: 401 });
     }
