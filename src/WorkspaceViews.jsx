@@ -400,6 +400,9 @@ function dwPosDefaults(project) {
       { id: "owner", role: "Owner / developer", method: "Viking Aries shared GitHub + Convex connections", scope: "Source, backend, diagnostics, and migration", status: "Active" },
     ],
     files: [
+      { id: "durable-library", name: "Dakota Wireless POS durable Files & Media", type: "ChatGPT Library collection", location: "/Viking Aries/Dakota Wireless POS/Files & Media", status: "Durable" },
+      { id: "current-export", name: "Current POS source export · 2026-09-20", type: "Source archive", location: "/Viking Aries/Dakota Wireless POS/Files & Media/Source Exports/dwposviking-2026-09-20.gz", status: "Archived" },
+      { id: "historical-prototypes", name: "Historical POS prototypes", type: "Reference archive · 50 files", location: "/Viking Aries/Dakota Wireless POS/Files & Media/Historical Prototypes", status: "Archived" },
       { id: "source", name: "POS source", type: "Repository", location: "dakotawireless/Dakota-Wireless-POS---New", status: "In repository" },
       { id: "convex", name: "Convex backend", type: "Backend source", location: "convex/", status: "In repository" },
       { id: "http", name: "POS HTTP APIs", type: "Backend source", location: "convex/http.ts", status: "In repository" },
@@ -703,7 +706,9 @@ function FilesMediaView({ project }) {
   return (
     <WorkspacePage>
       <PageHeader icon={FileImage} title="Files & Media" description="Upload hardcopies of screenshots, mockups, logos, documents, and other project assets." />
-      <InfoBanner text="Uploaded hardcopies are kept in this browser's project library for now. Use the download button to retrieve them; durable shared storage can be connected without changing the library format." />
+      <InfoBanner text={project.id === "dw-pos"
+        ? "Dakota Wireless POS durable files are archived under /Viking Aries/Dakota Wireless POS/Files & Media. Registered archive references below are the authoritative file locations. Browser hardcopies remain temporary and should be archived to the durable collection before they are treated as project records."
+        : "Uploaded hardcopies are kept in this browser's project library for now. Use the download button to retrieve them; durable shared storage can be connected without changing the library format."} />
       {uploadMessage && <div className="integration-feedback">{uploadMessage}</div>}
       <section className="workspace-card upload-dropzone">
         <input ref={fileInputRef} type="file" multiple onChange={uploadFiles} hidden />
