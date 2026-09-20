@@ -1628,3 +1628,7 @@ body.resizing-preview * {
   .usage-table-row { grid-template-columns: 1.3fr .7fr 1fr 1fr; }
   .usage-table-row > :nth-child(4) { display: none; }
 }
+
+.chat-workspace-host.background {
+  display: none;
+}
