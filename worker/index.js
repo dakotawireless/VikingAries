@@ -1496,7 +1496,7 @@ export default {
       });
       chatUsage = addUsageTotals(chatUsage, openAIUsageForResponse(model, payload));
 
-      for (let step = 0; step < 8; step += 1) {
+      for (let step = 0; step < 16; step += 1) {
         const calls = extractFunctionCalls(payload);
         if (!calls.length) break;
 
@@ -1581,6 +1581,7 @@ export default {
           typeof body?.thread?.id === "string"
             ? body.thread.id.trim().slice(0, 180)
             : "",
+        provider: "OpenAI",
         model,
         responseId: payload?.id || "",
         ...chatUsage,
