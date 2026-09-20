@@ -65,6 +65,37 @@ The imported source still contains Hercules-specific runtime dependencies that m
 - hard-coded `onhercules.app` payment/application links
 - Hercules metadata in `index.html`
 
+## Durable Files & Media policy
+
+All Dakota Wireless POS uploads, exports, screenshots, prototypes, source archives, and migration reference files must be preserved in the durable project collection:
+
+- Root: `/Viking Aries/Dakota Wireless POS/Files & Media`
+- Source exports: `/Viking Aries/Dakota Wireless POS/Files & Media/Source Exports`
+- Historical prototypes: `/Viking Aries/Dakota Wireless POS/Files & Media/Historical Prototypes`
+
+The September 20, 2026 POS source export is archived as:
+
+- `dwposviking-2026-09-20.gz`
+
+Fifty earlier Dakota Wireless POS prototype/reference uploads have been consolidated into the Historical Prototypes folder.
+
+Do not rely on a chat attachment, temporary working directory, browser-only upload, or localStorage copy as the only copy of a Dakota Wireless POS project file. Before a POS upload is treated as part of the project record, preserve or register it in the durable Files & Media collection. When Erik asks to find or reference a prior POS upload, check this collection first.
+
+## Final Hercules cutover rule
+
+The September 20 import is a working migration baseline, not the final cutover snapshot.
+
+Immediately before Dakota Wireless POS is disconnected from Hercules:
+
+1. Export the **fresh current POS source** from Hercules.
+2. Archive that fresh export in the durable `Source Exports` folder with its cutover date.
+3. Compare it with the migration branch/current GitHub source so no Hercules-side changes are lost.
+4. Import/reconcile the fresh source.
+5. Re-run build and end-to-end integration tests.
+6. Only then disconnect/cut over from Hercules.
+
+This fresh-export step is mandatory unless Erik explicitly changes the migration plan.
+
 ## Migration sequence
 
 1. Import the current source into GitHub. **Completed September 20, 2026.**
