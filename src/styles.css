@@ -1597,3 +1597,34 @@ body.resizing-preview * {
   background: #f1f8fd;
   font-size: 12px;
 }
+
+
+.usage-header-actions { display: flex; align-items: center; gap: 7px; }
+.usage-header-actions select {
+  height: 32px; padding: 0 8px; border: 1px solid #cbd8e3; border-radius: 4px; background: white; color: #34495c; font-size: 11px;
+}
+.usage-metric-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px;
+}
+.usage-metric-card {
+  border: 1px solid var(--line); background: white; padding: 13px; border-radius: 5px;
+}
+.usage-metric-card span, .usage-metric-card small { display: block; color: #708396; font-size: 10px; }
+.usage-metric-card strong { display: block; margin: 5px 0 2px; color: #1f3a50; font-size: 21px; }
+.usage-table { display: grid; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.usage-table-row { display: grid; grid-template-columns: 1.6fr .7fr 1fr 1fr 1fr; gap: 10px; align-items: center; padding: 9px 10px; border-top: 1px solid var(--line); font-size: 11px; }
+.usage-table-row:first-child { border-top: 0; }
+.usage-table-head { background: #f3f7fa; color: #667b8e; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.usage-recent-list { display: grid; }
+.usage-recent-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.usage-recent-row:first-child { border-top: 0; }
+.usage-recent-row strong, .usage-recent-row small { display: block; }
+.usage-recent-row small { margin-top: 2px; color: #74879a; font-size: 9px; }
+.usage-recent-row > span, .usage-recent-row > strong { font-size: 11px; }
+.usage-error-card { border-color: #efc3c3; background: #fff7f7; }
+.usage-error-card p { margin-bottom: 0; color: #7f3535; }
+@media (max-width: 900px) {
+  .usage-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .usage-table-row { grid-template-columns: 1.3fr .7fr 1fr 1fr; }
+  .usage-table-row > :nth-child(4) { display: none; }
+}
