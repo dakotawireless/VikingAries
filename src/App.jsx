@@ -517,6 +517,14 @@ function loadSelectedModel() {
   return VA_MODEL_OPTIONS.some((item) => item.id === saved) ? saved : "gpt-5.6-luna";
 }
 
+function loadProjectDraft(projectId) {
+  try {
+    return window.localStorage.getItem(`viking-aries-draft:${projectId}`) || "";
+  } catch {
+    return "";
+  }
+}
+
 function ChatWorkspace({ project }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
@@ -526,7 +534,7 @@ function ChatWorkspace({ project }) {
       ? savedThreadId
       : availableThreads[0]?.id || "migration";
   });
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => loadProjectDraft(project.id));
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
@@ -546,6 +554,19 @@ function ChatWorkspace({ project }) {
   useEffect(() => {
     window.localStorage.setItem(`viking-aries:active-chat:${project.id}`, activeThreadId);
   }, [project.id, activeThreadId]);
+
+  useEffect(() => {
+    const key = `viking-aries-draft:${project.id}`;
+    try {
+      if (draft) {
+        window.localStorage.setItem(key, draft);
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // Keep the in-memory draft usable even if browser storage is unavailable.
+    }
+  }, [project.id, draft]);
 
   useEffect(() => {
     window.localStorage.setItem("viking-aries:selected-model", selectedModel);
@@ -598,6 +619,11 @@ function ChatWorkspace({ project }) {
     ]);
     setActiveThreadId(id);
     setDraft("");
+    try {
+      window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
+    } catch {
+      // Ignore browser storage failures.
+    }
     setStatusText("New chat");
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
@@ -632,6 +658,11 @@ function ChatWorkspace({ project }) {
     }));
 
     setDraft("");
+    try {
+      window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
+    } catch {
+      // Ignore browser storage failures.
+    }
     setSending(true);
     setStatusText("Viking Aries is thinking…");
 
