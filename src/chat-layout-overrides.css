@@ -68,3 +68,40 @@
   background: rgba(15, 23, 42, 0.08);
   outline: none;
 }
+
+/* Keep the hidden-preview toolbar reachable on desktop. Previously its
+   auto-sized pane could collapse behind the workspace, leaving no visible
+   control for restoring the preview. */
+.preview-hidden .preview-pane {
+  width: min(430px, calc(100vw - 20px));
+  min-width: 300px;
+}
+
+.preview-hidden .preview-toolbar {
+  min-width: 300px;
+}
+
+/* The preview container intentionally hides helper labels in a narrow pane,
+   but the helper-app icon buttons must remain available. */
+@container previewpane (max-width: 430px) {
+  .preview-integrations {
+    display: flex !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .preview-integrations .tool-button {
+    display: inline-flex;
+    flex: 0 0 28px;
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .preview-integrations .tool-button span {
+    display: none;
+  }
+}
