@@ -469,6 +469,11 @@ export default {
         configured: auth.configured,
         authenticated,
         sessionHours: OWNER_SESSION_SECONDS / 3600,
+        diagnostics: {
+          ownerAccessCodeBinding: Boolean(env.OWNER_ACCESS_CODE),
+          ownerSessionSecretBinding: Boolean(env.OWNER_SESSION_SECRET),
+          githubTokenBinding: Boolean(env.GITHUB_TOKEN),
+        },
       });
     }
 
