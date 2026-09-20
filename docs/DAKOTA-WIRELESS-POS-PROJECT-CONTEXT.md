@@ -164,6 +164,19 @@ The branch differs from main only in:
 
 Do not merge this branch into main until runtime staging verifies employee sign-in, callback handling, Convex authentication, existing-user identity matching, access control, and logout.
 
+## Production protection rule
+
+The Hercules-hosted Dakota Wireless POS is the live production system currently used by Erik and staff.
+
+During migration:
+
+- Do **not** use the live Hercules POS as the Viking Aries preview target.
+- Do **not** deploy migration code to the live Hercules POS.
+- Do **not** replace, reset, migrate, or overwrite the live Convex production data merely to create a preview.
+- Viking Aries Preview must show only a separate migration/staging build.
+- The migration/staging build may connect to production APIs only when the interaction is explicitly read-only or otherwise proven safe; payment, order, suspension, cancellation, reactivation, billing, and email actions require controlled staging verification.
+- Hercules remains the operational POS until the migration passes full end-to-end verification and Erik explicitly authorizes final cutover.
+
 ## Hosting target
 
 The target frontend host is Cloudflare Workers, consistent with the current Viking Aries migration architecture.
