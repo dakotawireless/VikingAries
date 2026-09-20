@@ -1261,7 +1261,10 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   });
   const [activeView, setActiveView] = useState("AI Builder");
   const [previewMode, setPreviewMode] = useState("Desktop");
-  const [previewVisible, setPreviewVisible] = useState(true);
+  const [previewVisible, setPreviewVisible] = useState(() => {
+    const saved = window.localStorage.getItem("viking-aries:preview-visible");
+    return saved === null ? true : saved === "true";
+  });
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(window.localStorage.getItem("viking-aries-preview-width"));
