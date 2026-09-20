@@ -14,6 +14,7 @@ import {
   Code2,
   Copy,
   Check,
+  ChartNoAxesCombined,
   Database,
   Eye,
   EyeOff,
@@ -83,6 +84,9 @@ const personalProjects = [
     icon: Boxes,
     repository: "dakotawireless/VikingAries",
     deploymentUrl: "https://vikingaries.dakotawireless.net/",
+    backend: "Convex",
+    backendUrl: "https://flippant-mandrill-487.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/",
     status: "Active",
   },
 ];
@@ -124,6 +128,7 @@ const navItems = [
   { label: "Database", icon: Database, group: "DATA & LOGIC" },
   { label: "Backend", icon: Code2, group: "DATA & LOGIC" },
   { label: "Automations", icon: Zap, group: "DATA & LOGIC" },
+  { label: "API Usage", icon: ChartNoAxesCombined, group: "DATA & LOGIC" },
 
   { label: "Tests & Diagnostics", icon: FlaskConical, group: "TEST & RELEASE" },
   { label: "Versions", icon: RefreshCw, group: "TEST & RELEASE" },
