@@ -105,3 +105,43 @@
     display: none;
   }
 }
+
+/* Keep the chat composer reachable on phones. The desktop flex layout can
+   otherwise place the sticky composer below the mobile viewport after the
+   top bar changes the available height. */
+@media (max-width: 900px) {
+  .chat-workspace-host {
+    position: relative;
+    height: calc(100dvh - 56px);
+    min-height: calc(100dvh - 56px);
+  }
+
+  .chat-workspace-host .workspace-scroll {
+    padding-bottom: 116px;
+  }
+
+  .chat-workspace-host .composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    flex: 0 0 auto;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    background: rgba(247, 249, 251, 0.98);
+  }
+
+  .chat-workspace-host .composer textarea {
+    min-width: 0;
+    width: 100%;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 620px) {
+  .chat-workspace-host .composer {
+    grid-template-columns: 31px 31px minmax(0, 1fr) 42px;
+  }
+
+  .chat-workspace-host .send-button {
+    min-width: 42px;
+  }
+}
