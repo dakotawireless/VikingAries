@@ -1404,3 +1404,119 @@ body.resizing-preview * {
     justify-content: space-between;
   }
 }
+
+
+/* Owner authentication */
+.owner-login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(8,120,223,.10), transparent 42%),
+    #eef3f8;
+}
+.owner-login-card {
+  width: min(430px, 100%);
+  padding: 28px;
+  border: 1px solid #cfdae4;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, .10);
+}
+.owner-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e3eaf0;
+}
+.owner-login-brand h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.owner-login-brand p {
+  margin: 3px 0 0;
+  color: #6d8193;
+  font-size: 12px;
+}
+.owner-login-shield {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin: 24px 0 13px;
+  border: 1px solid #cfe5f7;
+  border-radius: 7px;
+  color: #0878df;
+  background: #edf7ff;
+}
+.owner-login-card h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.owner-login-copy {
+  margin: 7px 0 18px;
+  color: #607588;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.owner-login-card form {
+  display: grid;
+  gap: 11px;
+}
+.owner-login-card label {
+  display: grid;
+  gap: 6px;
+}
+.owner-login-card label > span {
+  color: #344c60;
+  font-size: 12px;
+  font-weight: 600;
+}
+.owner-login-card input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #c9d7e2;
+  border-radius: 5px;
+  color: #172b3c;
+  background: white;
+  font-size: 14px;
+}
+.owner-login-card input:focus {
+  outline: 2px solid #b9ddf8;
+  border-color: #69afe3;
+}
+.owner-login-error {
+  padding: 8px 10px;
+  border: 1px solid #f1c3bf;
+  border-radius: 5px;
+  color: #a3342d;
+  background: #fff3f2;
+  font-size: 12px;
+}
+.owner-login-submit {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 2px;
+  font-size: 13px;
+}
+.owner-login-card > small {
+  display: block;
+  margin-top: 14px;
+  color: #8092a1;
+  font-size: 11px;
+  text-align: center;
+}
+.owner-login-loading {
+  text-align: center;
+}
+.owner-login-loading .owner-login-shield {
+  margin-left: auto;
+  margin-right: auto;
+}
+.logout-link:disabled {
+  opacity: .65;
+  cursor: default;
+}
