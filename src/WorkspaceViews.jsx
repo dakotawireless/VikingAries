@@ -669,67 +669,131 @@ function FilesMediaView({ project }) {
     const files = Array.from(event.target.files || []);
     event.target.value = "";
     if (!files.length) return;
-    setUploadMessage("Reading hardcopy…");
+
     const uploaded = [];
-    for (const file of files) {
+    const failures = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
       if (file.size > 3 * 1024 * 1024) {
-        setUploadMessage(`${file.name} is larger than 3 MB and was skipped.`);
+        failures.push(`${file.name}: larger than 3 MB`);
         continue;
       }
+
+      setUploadMessage(`Saving ${file.name} to durable storage (${index + 1}/${files.length})…`);
+
       try {
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.onerror = () => reject(new Error("File could not be read."));
-          reader.readAsDataURL(file);
+        const form = new FormData();
+        form.append("projectId", project.id);
+        form.append("file", file);
+
+        const response = await fetch("/api/files/upload", {
+          method: "POST",
+          body: form,
         });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.file?.storagePath) {
+          throw new Error(payload?.error || "The durable file store did not confirm the upload.");
+        }
+
         uploaded.push({
-          id: `upload-${Date.now()}-${uploaded.length}`,
-          name: file.name,
-          type: file.type || "application/octet-stream",
-          location: "Browser hardcopy",
-          status: "Uploaded",
-          dataUrl,
-          size: file.size,
-          uploadedAt: Date.now(),
+          ...payload.file,
+          location: `Durable VA storage · ${payload.file.storagePath}`,
         });
-      } catch {
-        setUploadMessage(`${file.name} could not be read.`);
+      } catch (error) {
+        failures.push(`${file.name}: ${error.message || "upload failed"}`);
       }
     }
+
     if (uploaded.length) {
       setItems((current) => [...current, ...uploaded]);
-      setUploadMessage(`${uploaded.length} hardcopy file${uploaded.length === 1 ? "" : "s"} uploaded to this project library.`);
     }
+
+    if (failures.length) {
+      setUploadMessage(
+        `${uploaded.length} stored, ${failures.length} failed. ${failures.join(" · ")}`
+      );
+    } else if (uploaded.length) {
+      setUploadMessage(
+        `${uploaded.length} hardcopy file${uploaded.length === 1 ? "" : "s"} safely stored. The cards were added only after durable storage confirmed each upload.`
+      );
+    } else {
+      setUploadMessage("No files were stored.");
+    }
+  };
+
+  const deleteFile = async (item) => {
+    const durable = item.storage === "github" && item.storagePath && item.storageSha;
+    if (durable) {
+      const confirmed = window.confirm(`Permanently delete ${item.name} from durable project storage?`);
+      if (!confirmed) return;
+
+      setUploadMessage(`Deleting ${item.name} from durable storage…`);
+      try {
+        const response = await fetch("/api/files/delete", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: project.id,
+            path: item.storagePath,
+            sha: item.storageSha,
+            name: item.name,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || "Delete failed.");
+
+        setItems((current) => current.filter((row) => row.id !== item.id));
+        setUploadMessage(`${item.name} was deleted from durable storage.`);
+      } catch (error) {
+        setUploadMessage(`${item.name} was not deleted: ${error.message}`);
+      }
+      return;
+    }
+
+    setItems((current) => current.filter((row) => row.id !== item.id));
   };
 
   return (
     <WorkspacePage>
       <PageHeader icon={FileImage} title="Files & Media" description="Upload hardcopies of screenshots, mockups, logos, documents, and other project assets." />
-      <InfoBanner text={project.id === "dw-pos"
-        ? "Dakota Wireless POS durable files are archived under /Viking Aries/Dakota Wireless POS/Files & Media. Registered archive references below are the authoritative file locations. Browser hardcopies remain temporary and should be archived to the durable collection before they are treated as project records."
-        : "Uploaded hardcopies are kept in this browser's project library for now. Use the download button to retrieve them; durable shared storage can be connected without changing the library format."} />
+      <InfoBanner text="New hardcopy uploads are stored durably before they appear here. The actual file bytes live in VA's private file-storage branch; this view keeps only lightweight synced references. A successful upload therefore survives refreshes and other browsers." />
       {uploadMessage && <div className="integration-feedback">{uploadMessage}</div>}
       <section className="workspace-card upload-dropzone">
         <input ref={fileInputRef} type="file" multiple onChange={uploadFiles} hidden />
         <Upload size={24} />
-        <div><strong>Upload hardcopies</strong><p>Select one or more files from your device. Images, PDFs, text files, and office exports are supported up to 3 MB each.</p></div>
+        <div><strong>Upload hardcopies</strong><p>Select one or more files from your device. Files are written to durable private storage first and are shown here only after storage confirms success. Maximum 3 MB each.</p></div>
         <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}><Upload size={15} /> Choose files</button>
       </section>
       <div className="workspace-grid two-column">
         {items.map((item) => {
-          const isUpload = Boolean(item.dataUrl);
+          const durableUpload = item.storage === "github" && Boolean(item.storagePath);
+          const legacyUpload = Boolean(item.dataUrl);
+          const isUpload = durableUpload || legacyUpload;
           const isImage = String(item.type || "").startsWith("image/");
           const Icon = isImage ? FileImage : FileText;
+          const durableQuery = durableUpload
+            ? `projectId=${encodeURIComponent(project.id)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name || "file")}&type=${encodeURIComponent(item.type || "application/octet-stream")}`
+            : "";
+          const downloadHref = durableUpload
+            ? `/api/files/download?${durableQuery}`
+            : item.dataUrl || "";
+          const previewHref = durableUpload
+            ? `/api/files/download?${durableQuery}&inline=1`
+            : item.dataUrl || "";
+
           return (
             <section className="workspace-card media-card" key={item.id}>
-              <div className="media-icon">{isImage && isUpload ? <img className="media-thumb" src={item.dataUrl} alt="" /> : <Icon size={20} />}</div>
+              <div className="media-icon">{isImage && isUpload ? <img className="media-thumb" src={previewHref} alt="" /> : <Icon size={20} />}</div>
               <div>
                 <div className="card-heading-row compact"><h2>{item.name}</h2><StatusPill status={item.status} /></div>
                 <p>{isUpload ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
-                {isUpload ? <a className="media-download" href={item.dataUrl} download={item.name}><Download size={14} /> Download hardcopy</a> : <input value={item.location || ""} onChange={(e) => setItems((current) => current.map((row) => row.id === item.id ? { ...row, location: e.target.value } : row))} placeholder="File, repo, Drive, or URL reference" />}
+                {isUpload
+                  ? <a className="media-download" href={downloadHref} download={item.name}><Download size={14} /> Download hardcopy</a>
+                  : <input value={item.location || ""} onChange={(e) => setItems((current) => current.map((row) => row.id === item.id ? { ...row, location: e.target.value } : row))} placeholder="File, repo, Drive, or URL reference" />}
+                {durableUpload && <small>Durable storage · {item.storagePath}</small>}
               </div>
-              <button className="icon-action danger" type="button" onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}><Trash2 size={15} /></button>
+              <button className="icon-action danger" type="button" onClick={() => deleteFile(item)}><Trash2 size={15} /></button>
             </section>
           );
         })}
