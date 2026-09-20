@@ -421,6 +421,55 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   max-height: 180px;
   object-fit: contain;
 }
+.chat-pasted-image-link {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: zoom-in;
+}
+.chat-pasted-image-link:focus-visible {
+  outline: 2px solid #4aa7f3;
+  outline-offset: 3px;
+}
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 42px;
+  background: rgba(2, 13, 24, .86);
+  cursor: zoom-out;
+}
+.image-lightbox img {
+  display: block;
+  max-width: min(1200px, 100%);
+  max-height: calc(100vh - 84px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 5px;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .35);
+  cursor: default;
+}
+.image-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 50%;
+  color: white;
+  background: rgba(0,0,0,.35);
+}
+.image-lightbox-close:hover { background: rgba(255,255,255,.16); }
 .attach-button, .voice-button, .send-button { height: 42px; border-radius: 5px; }
 .attach-button,
 .voice-button {
