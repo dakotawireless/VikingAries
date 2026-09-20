@@ -595,6 +595,9 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [providerMessage, setProviderMessage] = useState("");
   const [providerBusy, setProviderBusy] = useState("");
+  const [configureProviderId, setConfigureProviderId] = useState("");
+  const [cloudflareTokenDraft, setCloudflareTokenDraft] = useState("");
+  const [configureBusy, setConfigureBusy] = useState(false);
 
   const icons = {
     GitHub: Github,
@@ -673,6 +676,62 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
       updateProvider(providerId, { status: "Needs attention" });
     } finally {
       setProviderBusy("");
+    }
+  };
+
+  const configureProvider = (providerId) => {
+    setProviderMessage("");
+
+    if (providerId === "cloudflare") {
+      if (runtimeStatus?.providers?.cloudflare?.configured) {
+        verifyProvider("cloudflare");
+        return;
+      }
+      setConfigureProviderId("cloudflare");
+      return;
+    }
+
+    if (["github", "convex"].includes(providerId)) {
+      verifyProvider(providerId);
+      return;
+    }
+
+    setProviderMessage("This provider uses its project-specific mapping below.");
+  };
+
+  const connectCloudflare = async () => {
+    const token = cloudflareTokenDraft.trim();
+    if (!token) {
+      setProviderMessage("Enter a Cloudflare API token.");
+      return;
+    }
+
+    setConfigureBusy(true);
+    setProviderMessage("");
+    try {
+      const response = await fetch("/api/cloudflare/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not connect Cloudflare.");
+      }
+
+      setCloudflareTokenDraft("");
+      setConfigureProviderId("");
+      updateProvider("cloudflare", {
+        account: payload.accountId ? `Account ${String(payload.accountId).slice(0, 8)}…` : "Connected Cloudflare account",
+        status: "Connected",
+      });
+      setProviderMessage("Cloudflare connected. The API token is stored only as a Cloudflare Worker secret.");
+      await refreshRuntimeStatus();
+    } catch (error) {
+      setProviderMessage(error.message || "Could not connect Cloudflare.");
+    } finally {
+      setCloudflareTokenDraft("");
+      setConfigureBusy(false);
     }
   };
 
@@ -785,9 +844,10 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   <button
                     type="button"
                     className="secondary-action"
-                    onClick={() => updateProvider(item.id, { status: item.status === "Connected" ? "Needs attention" : "Needs connection" })}
+                    disabled={configureBusy && item.id === "cloudflare"}
+                    onClick={() => configureProvider(item.id)}
                   >
-                    Configure
+                    {configureBusy && item.id === "cloudflare" ? "Connecting…" : "Configure"}
                   </button>
                   <button
                     type="button"
@@ -823,6 +883,51 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     Disconnect
                   </button>
                 </div>
+                {item.id === "cloudflare" && configureProviderId === "cloudflare" && (
+                  <div className="integration-config-panel">
+                    <strong>Connect Cloudflare</strong>
+                    <p>
+                      Paste a Cloudflare API token that can manage the Viking Aries Worker.
+                      VA verifies it first, then stores it only as the server-side
+                      CLOUDFLARE_API_TOKEN secret.
+                    </p>
+                    <label className="compact-field">
+                      <span>Cloudflare API token</span>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={cloudflareTokenDraft}
+                        placeholder="Paste token"
+                        onChange={(e) => setCloudflareTokenDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !configureBusy) connectCloudflare();
+                        }}
+                      />
+                    </label>
+                    <div className="integration-actions">
+                      <button
+                        type="button"
+                        className="primary-action"
+                        disabled={configureBusy || !cloudflareTokenDraft.trim()}
+                        onClick={connectCloudflare}
+                      >
+                        {configureBusy ? "Connecting…" : "Save & connect"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={configureBusy}
+                        onClick={() => {
+                          setCloudflareTokenDraft("");
+                          setConfigureProviderId("");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {["github", "cloudflare", "convex"].includes(item.id) && runtimeStatus && (
                   <div className="integration-runtime-state">
                     <strong>Runtime:</strong>
