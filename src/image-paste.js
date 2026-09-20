@@ -89,8 +89,8 @@ function showThumbnail(textarea, dataUrl) {
   remove.title = "Remove pasted image";
   remove.textContent = "×";
   remove.addEventListener("click", () => {
-    const marker = /!\\[Pasted image\\]\\([^)]*\\)/g;
-    textarea.value = textarea.value.replace(marker, "").replace(/\\s{2,}/g, " ").trim();
+    const marker = /!\[Pasted image\]\([^)]*\)/g;
+    textarea.value = textarea.value.replace(marker, "").replace(/\s{2,}/g, " ").trim();
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     removeThumbnail(textarea);
     textarea.focus();
