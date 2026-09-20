@@ -163,6 +163,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 
 .workspace {
+  position: relative;
   min-width: 0;
   min-height: 0;
   height: 100vh;
@@ -243,17 +244,16 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .copy-message-button:active { transform: translateY(1px); }
 
 .jump-to-bottom-button {
-  position: sticky;
-  left: 50%;
-  bottom: 14px;
-  z-index: 8;
+  position: absolute;
+  right: 18px;
+  bottom: 66px;
+  z-index: 12;
   width: max-content;
-  margin: 0 auto;
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid #bfd3e3;
   border-radius: 17px;
-  background: rgba(255,255,255,.97);
+  background: rgba(255,255,255,.98);
   color: #1e5f8f;
   box-shadow: 0 4px 14px rgba(15, 23, 42, .12);
   display: flex;
