@@ -137,7 +137,12 @@ function projectIntegrationDefaults(project) {
     },
     convex: {
       enabled: project?.backend === "Convex" || Boolean(project?.backendUrl),
-      deployment: project?.id === "timekeeper" ? "aware-caiman-251" : "",
+      deployment:
+        project?.id === "timekeeper"
+          ? "aware-caiman-251"
+          : project?.id === "viking-aries"
+            ? "flippant-mandrill-487"
+            : "",
       url: project?.backendUrl || "",
       dashboardUrl: project?.convexDashboardUrl || "",
     },
