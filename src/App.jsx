@@ -1556,8 +1556,9 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobileUi, setMobileUi] = useState(() => {
     if (typeof window === "undefined") return false;
+    const embeddedPreview = window.self !== window.top;
     return (
-      window.innerWidth <= 900 ||
+      (!embeddedPreview && window.innerWidth <= 900) ||
       window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches
     );
   });
@@ -1565,9 +1566,13 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   useEffect(() => {
     const widthQuery = window.matchMedia("(max-width: 900px)");
     const touchQuery = window.matchMedia("(hover: none) and (pointer: coarse)");
+    const embeddedPreview = window.self !== window.top;
 
     const updateMobileUi = () => {
-      const nextMobileUi = widthQuery.matches || touchQuery.matches;
+      // A narrow desktop preview iframe is not a phone. Keep its typography at
+      // the same scale as the adjacent chat while retaining mobile UI on actual
+      // narrow top-level windows and touch devices.
+      const nextMobileUi = (!embeddedPreview && widthQuery.matches) || touchQuery.matches;
       setMobileUi(nextMobileUi);
       if (nextMobileUi) {
         setPreviewExpanded(false);
