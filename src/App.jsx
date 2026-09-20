@@ -554,6 +554,7 @@ function ChatWorkspace({ project }) {
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
+  const recognitionSessionRef = useRef(0);
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
 
@@ -611,7 +612,9 @@ function ChatWorkspace({ project }) {
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.stop?.();
+      recognitionSessionRef.current += 1;
+      recognitionRef.current?.abort?.();
+      recognitionRef.current = null;
     };
   }, []);
 
@@ -641,6 +644,20 @@ function ChatWorkspace({ project }) {
   const sendMessage = async () => {
     const content = draft.trim();
     if (!content || sending || !activeThread) return;
+
+    // Invalidate the current speech-recognition session before clearing the
+    // composer so a late onresult callback cannot repopulate a sent draft.
+    recognitionSessionRef.current += 1;
+    const activeRecognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (activeRecognition) {
+      try {
+        activeRecognition.abort?.();
+      } catch {
+        activeRecognition.stop?.();
+      }
+      setListening(false);
+    }
 
     const threadId = activeThread.id;
     const userMessage = {
@@ -791,17 +808,21 @@ function ChatWorkspace({ project }) {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = navigator.language || "en-US";
+    const recognitionSession = recognitionSessionRef.current + 1;
+    recognitionSessionRef.current = recognitionSession;
 
     let baseDraft = draft;
     let finalTranscript = "";
 
     recognition.onstart = () => {
+      if (recognitionSessionRef.current !== recognitionSession) return;
       recognitionRef.current = recognition;
       setListening(true);
       setStatusText("Listening…");
     };
 
     recognition.onresult = (event) => {
+      if (recognitionSessionRef.current !== recognitionSession) return;
       let interimTranscript = "";
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const transcript = event.results[index][0]?.transcript || "";
@@ -818,12 +839,14 @@ function ChatWorkspace({ project }) {
     };
 
     recognition.onerror = (event) => {
+      if (recognitionSessionRef.current !== recognitionSession) return;
       if (event.error !== "aborted") {
         setStatusText(`Voice input error: ${event.error}`);
       }
     };
 
     recognition.onend = () => {
+      if (recognitionSessionRef.current !== recognitionSession) return;
       recognitionRef.current = null;
       setListening(false);
       setStatusText("Ready");
