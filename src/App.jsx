@@ -77,7 +77,26 @@ const personalProjects = [
       "Preserve existing data and working behavior unless Erik explicitly requests a change."
     ].join("\n"),
   },
-  { id: "dw-pos", name: "Dakota Wireless POS", icon: Monitor },
+  {
+    id: "dw-pos",
+    name: "Dakota Wireless POS",
+    icon: Monitor,
+    repository: "dakotawireless/Dakota-Wireless-POS---New",
+    backend: "Convex",
+    backendUrl: "https://sleek-bear-647.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/",
+    status: "Migration",
+    contextSummary: [
+      "Dakota Wireless POS is the current production POS being migrated out of Hercules without changing business logic or existing Convex data.",
+      "Source repository: dakotawireless/Dakota-Wireless-POS---New on main. The current September 20, 2026 Hercules export has been imported there.",
+      "Existing Convex deployment: sleek-bear-647. Preserve its data, functions, HTTP endpoints, and provider-managed secrets during migration.",
+      "Legacy production URL during migration: https://dakota-wireless-pos-301249.onhercules.app/.",
+      "The POS is the authoritative backend for the Dakota Wireless website online-order flow, customer portal, pricing, payments, order status, and planned live inventory.",
+      "Hercules-specific dependencies still to replace include OIDC authentication, Hercules email SDK, Hercules Vite/ESLint plugins, Hercules CDN asset URLs, and hard-coded onhercules.app links.",
+      "Keep Authorize.Net, EasyPost, Zoho, Valor, payroll/commission APIs, and existing POS business logic unchanged unless Erik explicitly requests a change.",
+      "Do not rotate, replace, expose, or guess existing secret values during migration. Unknown values remain provider-managed."
+    ].join("\n"),
+  },
   { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
   { id: "dw-site", name: "DW Website", icon: Cloud },
   {
@@ -590,11 +609,13 @@ function loadProjectIntegrationMappings(project) {
     convex: {
       enabled: project.backend === "Convex" || Boolean(project.backendUrl),
       deployment:
-        project.id === "timekeeper"
-          ? "aware-caiman-251"
-          : project.id === "viking-aries"
-            ? "flippant-mandrill-487"
-            : "",
+        project.id === "dw-pos"
+          ? "sleek-bear-647"
+          : project.id === "timekeeper"
+            ? "aware-caiman-251"
+            : project.id === "viking-aries"
+              ? "flippant-mandrill-487"
+              : "",
       url: project.backendUrl || "",
       dashboardUrl: project.convexDashboardUrl || "",
     },
