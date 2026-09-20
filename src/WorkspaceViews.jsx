@@ -410,10 +410,10 @@ function dwPosDefaults(project) {
       { id: "tests", name: "POS automated tests", type: "Vitest / convex-test", location: "convex/*.test.ts and src tests", status: "In repository" },
     ],
     integrations: [
-      { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New", purpose: "Source control", status: "Connected" },
+      { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New · migration-staging", purpose: "Source control for the merging POS", status: "Connected" },
       { id: "convex", name: "Convex", provider: "sleek-bear-647", purpose: "Database, functions, HTTP actions, crons", status: "Connected" },
       { id: "preview", name: "Migration Preview", provider: "Cloudflare staging target", purpose: "Preview only the migrated POS build inside VA; never embed the live Hercules production POS", status: "Pending staging deployment" },
-      { id: "cloudflare", name: "Cloudflare", provider: "Not deployed yet", purpose: "Target frontend hosting after Hercules runtime removal", status: "Migration" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Worker: dakota-wireless-pos-migration", purpose: "Isolated migration/staging frontend and VA preview target", status: "Configured / deployment pending" },
       { id: "authorize-net", name: "Authorize.Net", provider: "Existing provider-managed configuration", purpose: "Online/card payments and CIM", status: "Existing / unknown" },
       { id: "easypost", name: "EasyPost", provider: "Existing provider-managed configuration", purpose: "Shipping and webhook workflows", status: "Existing / unknown" },
       { id: "zoho", name: "Zoho", provider: "Existing provider-managed configuration", purpose: "Invoice/balance synchronization", status: "Existing / unknown" },
@@ -471,7 +471,7 @@ function dwPosDefaults(project) {
     settings: {
       displayName: project.name,
       repository: "dakotawireless/Dakota-Wireless-POS---New",
-      defaultBranch: "main",
+      defaultBranch: "migration-staging",
       productionUrl: "https://dakota-wireless-pos-301249.onhercules.app/",
       backendProvider: "Convex",
       backendDeployment: "sleek-bear-647",
