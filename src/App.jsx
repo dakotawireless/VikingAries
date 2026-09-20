@@ -471,6 +471,13 @@ function formatChatTime() {
   }).format(new Date());
 }
 
+function formatChatTimestamp(value) {
+  return new Intl.DateTimeFormat([], {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(Number(value) || Date.now()));
+}
+
 function renderChatContent(content) {
   const text = String(content || "");
   // Match any markdown image backed by an inline image data URL. Keeping this
@@ -637,6 +644,7 @@ function ChatWorkspace({ project, active = true }) {
   const [draft, setDraft] = useState(() => loadProjectDraft(project.id));
   const [attachment, setAttachment] = useState(null);
   const [sending, setSending] = useState(false);
+  const [queueing, setQueueing] = useState(false);
   const [listening, setListening] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -646,6 +654,7 @@ function ChatWorkspace({ project, active = true }) {
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
   const recognitionSessionRef = useRef(0);
+  const submitGuardRef = useRef(false);
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
 
@@ -724,6 +733,127 @@ function ChatWorkspace({ project, active = true }) {
     );
   };
 
+  const reconcileThreadJobs = (messages, jobs) => {
+    const next = [...messages];
+    const sortedJobs = [...jobs].sort(
+      (left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0)
+    );
+
+    for (const job of sortedJobs) {
+      let userIndex = next.findIndex(
+        (message) =>
+          message.role === "user" &&
+          (message.jobId === job.jobId ||
+            (job.userMessageId && message.id === job.userMessageId))
+      );
+
+      if (userIndex < 0 && job.userMessageContent) {
+        next.push({
+          id: job.userMessageId || `user-${job.jobId}`,
+          jobId: job.jobId,
+          role: "user",
+          content: job.userMessageContent,
+          timestamp: formatChatTimestamp(job.createdAt),
+          queueStatus: job.status,
+        });
+        userIndex = next.length - 1;
+      } else if (userIndex >= 0) {
+        next[userIndex] = {
+          ...next[userIndex],
+          jobId: job.jobId,
+          queueStatus: job.status,
+        };
+      }
+
+      const assistantId = `assistant-${job.jobId}`;
+      for (let index = next.length - 1; index >= 0; index -= 1) {
+        const message = next[index];
+        if (
+          message.role === "assistant" &&
+          (message.jobId === job.jobId || message.id === assistantId)
+        ) {
+          next.splice(index, 1);
+        }
+      }
+
+      if ((job.status === "completed" || job.status === "failed") && userIndex >= 0) {
+        userIndex = next.findIndex(
+          (message) =>
+            message.role === "user" &&
+            (message.jobId === job.jobId ||
+              (job.userMessageId && message.id === job.userMessageId))
+        );
+        const content =
+          job.status === "failed"
+            ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
+            : job.resultText || "The background job completed without response text.";
+
+        next.splice(userIndex + 1, 0, {
+          id: assistantId,
+          jobId: job.jobId,
+          role: "assistant",
+          content,
+          timestamp: formatChatTimestamp(job.completedAt || job.updatedAt),
+          error: job.status === "failed",
+        });
+      }
+    }
+
+    return next;
+  };
+
+  const syncProjectJobs = async () => {
+    try {
+      const response = await fetch(
+        `/api/jobs?projectId=${encodeURIComponent(project.id)}`,
+        { cache: "no-store" }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load background jobs.");
+      }
+
+      const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+      setThreads((current) =>
+        current.map((thread) => ({
+          ...thread,
+          messages: reconcileThreadJobs(
+            thread.messages,
+            jobs.filter((job) => job.threadId === thread.id)
+          ),
+        }))
+      );
+
+      const activeJobs = jobs.filter((job) => job.threadId === activeThreadId);
+      const running = activeJobs.filter((job) => job.status === "running");
+      const queued = activeJobs.filter((job) => job.status === "queued");
+      const hasPending = running.length > 0 || queued.length > 0;
+      setSending(hasPending);
+
+      if (running.length) {
+        setStatusText(
+          queued.length
+            ? `Viking Aries is working · ${queued.length} queued`
+            : "Viking Aries is working in the background…"
+        );
+      } else if (queued.length) {
+        setStatusText(`${queued.length} message${queued.length === 1 ? "" : "s"} queued`);
+      } else if (!listening && !queueing) {
+        setStatusText("Ready");
+      }
+    } catch (error) {
+      setStatusText(error.message || "Background job sync needs attention");
+    }
+  };
+
+  useEffect(() => {
+    syncProjectJobs();
+    const timer = window.setInterval(() => {
+      if (active || sending) syncProjectJobs();
+    }, 1800);
+    return () => window.clearInterval(timer);
+  }, [project.id, activeThreadId, active, sending]);
+
   const createNewChat = () => {
     const id = `chat-${Date.now()}`;
     setThreads((current) => [
@@ -747,10 +877,12 @@ function ChatWorkspace({ project, active = true }) {
       typedContent,
       attachment?.dataUrl ? `![Pasted image](${attachment.dataUrl})` : "",
     ].filter(Boolean).join("\n\n");
-    if (!content || sending || !activeThread) return;
 
-    // Invalidate the current speech-recognition session before clearing the
-    // composer so a late onresult callback cannot repopulate a sent draft.
+    if (!content || !activeThread || submitGuardRef.current) return;
+
+    submitGuardRef.current = true;
+    setQueueing(true);
+
     recognitionSessionRef.current += 1;
     const activeRecognition = recognitionRef.current;
     recognitionRef.current = null;
@@ -763,19 +895,32 @@ function ChatWorkspace({ project, active = true }) {
       setListening(false);
     }
 
+    const jobId = crypto.randomUUID();
     const threadId = activeThread.id;
     const userMessage = {
-      id: `user-${Date.now()}`,
+      id: `user-${jobId}`,
+      jobId,
       role: "user",
       content,
       timestamp: formatChatTime(),
+      queueStatus: "queued",
     };
 
-    const requestMessages = [...activeThread.messages, userMessage].map(({ role, content: text }) => ({
-      role,
-      content: text,
-    }));
+    const requestMessages = [...activeThread.messages, userMessage]
+      .filter(
+        (message) =>
+          (message.role === "user" || message.role === "assistant") &&
+          typeof message.content === "string"
+      )
+      .map(({ id, jobId: messageJobId, role, content: text }) => ({
+        id,
+        jobId: messageJobId,
+        role,
+        content: text,
+      }));
+
     const integrationMappings = loadProjectIntegrationMappings(project);
+    const alreadyWorking = sending;
 
     updateThread(threadId, (thread) => ({
       ...thread,
@@ -797,14 +942,16 @@ function ChatWorkspace({ project, active = true }) {
     } catch {
       // Ignore browser storage failures.
     }
+
     setSending(true);
-    setStatusText("Viking Aries is thinking…");
+    setStatusText(alreadyWorking ? "Message queued…" : "Viking Aries is starting…");
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          jobId,
           project: {
             id: project.id,
             name: project.name,
@@ -837,39 +984,39 @@ function ChatWorkspace({ project, active = true }) {
       });
 
       const payload = await response.json().catch(() => ({}));
-
       if (!response.ok) {
-        throw new Error(payload.error || "The AI service did not return a response.");
+        throw new Error(payload.error || "Could not queue the AI job.");
       }
 
-      const assistantMessage = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        content: payload.text || "I’m connected, but I didn’t receive any text back.",
-        timestamp: formatChatTime(),
-      };
-
+      setStatusText(alreadyWorking ? "Message queued…" : "Viking Aries is working in the background…");
+      window.setTimeout(syncProjectJobs, 250);
+    } catch (error) {
       updateThread(threadId, (thread) => ({
         ...thread,
-        messages: [...thread.messages, assistantMessage],
+        messages: thread.messages.map((message) =>
+          message.jobId === jobId
+            ? { ...message, queueStatus: "failed" }
+            : message
+        ),
       }));
-      setStatusText(payload.model ? `Connected · ${payload.model}` : "Connected");
-    } catch (error) {
+
       const errorMessage = {
-        id: `error-${Date.now()}`,
+        id: `error-${jobId}`,
+        jobId,
         role: "assistant",
-        content: `I couldn’t complete that request. ${error.message}`,
+        content: `I couldn’t queue that request. ${error.message}`,
         timestamp: formatChatTime(),
         error: true,
       };
-
       updateThread(threadId, (thread) => ({
         ...thread,
         messages: [...thread.messages, errorMessage],
       }));
-      setStatusText("Connection needs attention");
+      setStatusText("Queue needs attention");
+      window.setTimeout(syncProjectJobs, 250);
     } finally {
-      setSending(false);
+      submitGuardRef.current = false;
+      setQueueing(false);
       window.setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
@@ -1055,6 +1202,18 @@ function ChatWorkspace({ project, active = true }) {
                 <div className="message-meta">
                   <strong>{message.role === "user" ? "Erik" : "Viking Aries"}</strong>
                   <span>{message.timestamp}</span>
+                  {message.role === "user" &&
+                    (message.queueStatus === "queued" ||
+                      message.queueStatus === "running" ||
+                      message.queueStatus === "failed") && (
+                      <span className={`message-queue-status ${message.queueStatus}`}>
+                        {message.queueStatus === "queued"
+                          ? "Queued"
+                          : message.queueStatus === "running"
+                            ? "Working"
+                            : "Failed"}
+                      </span>
+                    )}
                   {message.role === "assistant" && (
                     <button
                       className="copy-message-button"
@@ -1127,7 +1286,6 @@ function ChatWorkspace({ project, active = true }) {
           aria-label={listening ? "Stop voice input" : "Start voice input"}
           aria-pressed={listening}
           onClick={toggleVoiceInput}
-          disabled={sending}
         >
           <Mic size={18} />
         </button>
@@ -1149,7 +1307,6 @@ function ChatWorkspace({ project, active = true }) {
           <textarea
             ref={textareaRef}
             value={draft}
-            disabled={sending}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
             onPaste={handleComposerPaste}
@@ -1157,15 +1314,14 @@ function ChatWorkspace({ project, active = true }) {
             rows={1}
           />
         </div>
-        <button className="send-button" type="submit" disabled={sending || (!draft.trim() && !attachment)}>
-          <Send size={17} /> {sending ? "Working" : "Send"}
+        <button className="send-button" type="submit" disabled={queueing || (!draft.trim() && !attachment)}>
+          <Send size={17} /> {queueing ? "Queuing…" : sending ? "Queue" : "Send"}
         </button>
         <label className="model-picker">
           <span>Model</span>
           <select
             value={selectedModel}
             onChange={(event) => setSelectedModel(event.target.value)}
-            disabled={sending}
             title="Choose the AI model for the next message"
           >
             {VA_MODEL_OPTIONS.map((option) => (
