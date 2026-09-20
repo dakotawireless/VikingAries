@@ -773,7 +773,7 @@ function ChatWorkspace({ project, active = true }) {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [project.id, activeThreadId, activeThread?.messages?.length, sending]);
+  }, [project.id, activeThreadId, activeThread?.messages?.length, sending, active]);
 
   useEffect(() => {
     if (!active && recognitionRef.current) {
