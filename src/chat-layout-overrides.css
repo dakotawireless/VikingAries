@@ -1,0 +1,17 @@
+/* Chat action layout refinements */
+.message-stack:has(.copy-message-button) {
+  position: relative;
+  padding-bottom: 34px;
+}
+
+.copy-message-button {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  margin-left: 0;
+}
+
+.jump-to-bottom-button {
+  /* Keep Latest clear of the composer/send control. */
+  bottom: 128px;
+}
