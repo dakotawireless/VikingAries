@@ -29,6 +29,7 @@ import {
   Link2,
   Logs,
   Maximize2,
+  Menu,
   MessageSquare,
   Mic,
   Minimize2,
@@ -1267,6 +1268,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     return Number.isFinite(saved) && saved >= 26 && saved <= 65 ? saved : 36;
   });
   const [resizingPreview, setResizingPreview] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem("viking-aries:personal-projects", JSON.stringify(personalProjectsState));
@@ -1450,7 +1452,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   };
 
   return (
-    <div className={layoutClass}>
+    <div className={`${layoutClass}${mobileSidebarOpen ? " mobile-sidebar-open" : ""}`}>
       <Sidebar
         project={project}
         workspace={workspace}
@@ -1458,9 +1460,13 @@ function VikingAriesApp({ onLogout, authConfigured }) {
         onProjectChange={(nextProject) => {
           setProject(nextProject);
           setActiveView("AI Builder");
+          setMobileSidebarOpen(false);
         }}
         activeView={activeView}
-        onViewChange={setActiveView}
+        onViewChange={(nextView) => {
+          setActiveView(nextView);
+          setMobileSidebarOpen(false);
+        }}
         personalProjectsState={personalProjectsState}
         onAddPersonalProject={addPersonalProject}
         contractorsState={contractorsState}
@@ -1470,16 +1476,45 @@ function VikingAriesApp({ onLogout, authConfigured }) {
         authConfigured={authConfigured}
       />
 
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
       <div className="main-column">
         <header className="mobile-topbar">
-          <div className="mobile-brand"><span className="brand-mark">VA</span><strong>Viking Aries</strong></div>
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label="Open navigation"
+            title="Projects and tools"
+            onClick={() => setMobileSidebarOpen(true)}
+          >
+            <Menu size={21} />
+          </button>
+
+          <div className="mobile-current-project">
+            <strong>{project.name}</strong>
+            <small>{previewExpanded ? "Preview" : activeView}</small>
+          </div>
+
           <div className="mobile-topbar-actions">
-            {!previewVisible && (
-              <button type="button" className="restore-preview" onClick={() => setPreviewVisible(true)}>
-                <Monitor size={16} /> Preview
-              </button>
-            )}
-            <button className="topbar-avatar" type="button">EE</button>
+            <button
+              type="button"
+              className={previewExpanded ? "mobile-view-button active" : "mobile-view-button"}
+              onClick={() => {
+                setPreviewVisible(true);
+                setPreviewExpanded((value) => !value);
+              }}
+              title={previewExpanded ? "Back to workspace" : "Show preview"}
+            >
+              {previewExpanded ? <MessageSquare size={17} /> : <Monitor size={17} />}
+              <span>{previewExpanded ? "Chat" : "Preview"}</span>
+            </button>
           </div>
         </header>
 
