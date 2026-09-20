@@ -217,16 +217,33 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 
 .composer {
   position: sticky; bottom: 0; margin-top: auto; padding: 10px 12px 14px; background: rgba(247,249,251,.97);
-  border-top: 1px solid var(--line); display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 7px; align-items: end;
+  border-top: 1px solid var(--line); display: grid; grid-template-columns: 34px 34px minmax(0,1fr) auto; gap: 7px; align-items: end;
 }
 .composer textarea {
   resize: none; min-height: 42px; max-height: 110px; padding: 11px 12px; border: 1px solid #cbd8e3;
   border-radius: 5px; color: var(--text); background: white; font-size: 13px;
 }
-.attach-button, .send-button { height: 42px; border-radius: 5px; }
-.attach-button { width: 34px; border: 1px solid #cbd8e3; background: white; color: #60778a; }
+.attach-button, .voice-button, .send-button { height: 42px; border-radius: 5px; }
+.attach-button,
+.voice-button {
+  width: 34px;
+  border: 1px solid #cbd8e3;
+  background: white;
+  color: #60778a;
+  display: grid;
+  place-items: center;
+}
+.attach-button:hover,
+.voice-button:hover { background: #f5f9fc; color: #0878df; }
+.voice-button.active {
+  color: #b42318;
+  border-color: #f1a7a1;
+  background: #fff1f0;
+  box-shadow: 0 0 0 2px rgba(180,35,24,.08);
+}
+.voice-button:disabled { opacity: .55; cursor: not-allowed; }
 .send-button { border: 0; padding: 0 15px; background: #0878df; color: white; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
-.composer-hint { grid-column: 2 / 4; justify-self: end; color: #77899a; font-size: 9px; }
+.composer-hint { grid-column: 3 / 5; justify-self: end; color: #77899a; font-size: 9px; }
 
 .preview-resize-handle {
   position: relative;
@@ -448,7 +465,7 @@ body.resizing-preview * {
   .context-node { min-width: 180px; }
   .message-row { grid-template-columns: 32px minmax(0, 1fr); gap: 7px; }
   .message-stack { max-width: 100%; }
-  .composer { grid-template-columns: 31px minmax(0,1fr) 42px; padding: 8px; }
+  .composer { grid-template-columns: 31px 31px minmax(0,1fr) 42px; padding: 8px; }
   .send-button { width: 42px; padding: 0; justify-content: center; font-size: 0; }
   .composer-hint { display: none; }
   .metrics-grid { grid-template-columns: 1fr 1fr; }
