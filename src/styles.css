@@ -99,12 +99,12 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   box-shadow: 0 14px 30px rgba(1, 15, 28, .22); color: var(--text);
 }
 .workspace-switch-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 7px; background: #f3f7fa; border-bottom: 1px solid #e0e7ee; }
-.workspace-chip { border: 0; border-radius: 5px; background: transparent; color: #64748b; padding: 7px 5px; font-size: 11px; font-weight: 600; }
+.workspace-chip { border: 0; border-radius: 5px; background: transparent; color: #64748b; padding: 7px 5px; font-size: 13px; font-weight: 600; }
 .workspace-chip.active { background: white; color: var(--blue-600); box-shadow: 0 0 0 1px #d8e3ec; }
 .project-menu-list { padding: 5px; }
 .project-option {
   width: 100%; display: grid; grid-template-columns: 20px 1fr 20px; align-items: center; gap: 7px;
-  padding: 8px; color: #274056; background: transparent; border: 0; border-radius: 5px; text-align: left; font-size: 12px;
+  padding: 8px; color: #274056; background: transparent; border: 0; border-radius: 5px; text-align: left; font-size: 14px;
 }
 .project-option:hover, .project-option.selected { background: #edf6ff; color: #0878df; }
 
@@ -572,13 +572,13 @@ body.resizing-preview * {
 }
 .workspace-page-heading h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   letter-spacing: -.02em;
 }
 .workspace-page-heading p {
   margin: 4px 0 0;
   color: #667b8e;
-  font-size: 10px;
+  font-size: 12px;
 }
 .workspace-card {
   background: white;
@@ -604,13 +604,13 @@ body.resizing-preview * {
 .card-heading-row h2,
 .workspace-card h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 .card-heading-row p,
 .workspace-card p {
   margin: 4px 0 0;
   color: #6d8193;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.45;
 }
 .count-badge {
@@ -621,7 +621,7 @@ body.resizing-preview * {
   place-items: center;
   background: #edf5fb;
   color: #49667e;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
 }
 .primary-action,
@@ -633,7 +633,7 @@ body.resizing-preview * {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 .primary-action {
@@ -666,7 +666,7 @@ body.resizing-preview * {
   gap: 4px;
   padding: 4px 7px;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -690,7 +690,7 @@ body.resizing-preview * {
   padding: 9px 10px;
   border: 1px solid #e0e7ed;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 12px;
   background: #fbfcfd;
 }
 .relationship-row > span { color: #708394; text-align: center; }
@@ -715,7 +715,7 @@ body.resizing-preview * {
   color: #172b3c;
   min-height: 34px;
   padding: 7px 9px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .settings-form {
   display: grid;
@@ -727,7 +727,7 @@ body.resizing-preview * {
 }
 .settings-form label > span:first-child {
   color: #42586c;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
 }
 .settings-form textarea {
@@ -740,7 +740,7 @@ body.resizing-preview * {
   align-items: center;
   gap: 5px;
   color: #25895c;
-  font-size: 9px;
+  font-size: 11px;
 }
 .form-actions { display: flex; align-items: center; gap: 10px; }
 .toggle-setting {
@@ -752,8 +752,8 @@ body.resizing-preview * {
 .toggle-setting input { min-height: auto; margin-top: 2px; }
 .toggle-setting span strong,
 .toggle-setting span small { display: block; }
-.toggle-setting span strong { font-size: 10px; }
-.toggle-setting span small { margin-top: 3px; color: #718496; font-size: 9px; }
+.toggle-setting span strong { font-size: 12px; }
+.toggle-setting span small { margin-top: 3px; color: #718496; font-size: 11px; }
 
 .integration-card {
   display: grid;
@@ -804,16 +804,16 @@ body.resizing-preview * {
 .deployment-row strong,
 .secret-row strong,
 .automation-row strong,
-.activity-feed-row strong { font-size: 10px; }
+.activity-feed-row strong { font-size: 12px; }
 .deployment-row small,
 .secret-row small,
 .automation-row small,
 .activity-feed-row small {
   margin-top: 3px;
   color: #758899;
-  font-size: 8px;
+  font-size: 10px;
 }
-.activity-feed-row time { color: #8797a5; font-size: 8px; }
+.activity-feed-row time { color: #8797a5; font-size: 10px; }
 
 .log-search { margin-bottom: 10px; }
 .log-row {
@@ -824,11 +824,11 @@ body.resizing-preview * {
   min-height: 31px;
   padding: 6px 8px;
   border-bottom: 1px solid #edf1f4;
-  font-size: 9px;
+  font-size: 11px;
 }
 .log-level {
   text-transform: uppercase;
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: .05em;
 }
@@ -846,14 +846,14 @@ body.resizing-preview * {
   background: #edf7ff;
   border: 1px solid #d4e8f8;
   border-radius: 6px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.45;
 }
 .utility-empty {
   padding: 28px 12px;
   text-align: center;
   color: #7d8f9e;
-  font-size: 10px;
+  font-size: 12px;
 }
 .mini-toggle {
   position: relative;
@@ -916,13 +916,13 @@ body.resizing-preview * {
 }
 .contractor-trigger small {
   color: #8193a3;
-  font-size: 8px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: .06em;
 }
 .contractor-trigger strong {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .contractor-list {
   padding: 0 6px 6px;
@@ -941,12 +941,12 @@ body.resizing-preview * {
   text-align: left;
 }
 .contractor-option span {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 .contractor-option small {
   color: #8293a2;
-  font-size: 8px;
+  font-size: 10px;
 }
 .contractor-option:hover,
 .contractor-option.selected {
@@ -957,7 +957,7 @@ body.resizing-preview * {
 .project-menu-label {
   padding: 5px 8px 4px;
   color: #8a9aa8;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .08em;
@@ -976,7 +976,7 @@ body.resizing-preview * {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
 }
 .project-add-button:hover,
@@ -1013,7 +1013,7 @@ body.resizing-preview * {
 .va-data-row.va-data-head {
   padding: 0 3px 4px;
   color: #738799;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .055em;
@@ -1033,7 +1033,7 @@ body.resizing-preview * {
   border-radius: 5px;
   background: #fff;
   color: #22384b;
-  font-size: 9px;
+  font-size: 11px;
 }
 .va-entry-panel { margin-top: 14px; }
 .va-entry-title {
@@ -1042,7 +1042,7 @@ body.resizing-preview * {
   gap: 6px;
   margin-bottom: 10px;
   color: #2d465a;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
 }
 .va-entry-grid {
@@ -1059,7 +1059,7 @@ body.resizing-preview * {
 .va-entry-grid label > span,
 .compact-field > span {
   color: #617588;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 600;
 }
 
