@@ -532,7 +532,7 @@ function PageHeader({ icon: Icon, title, description, action }) {
 
 function StatusPill({ status }) {
   const normalized = String(status || "").toLowerCase();
-  const good = ["connected", "active", "configured", "healthy", "success", "passed", "in repository"].includes(normalized);
+  const good = ["connected", "active", "configured", "healthy", "success", "passed", "in repository", "stored", "durable", "archived"].includes(normalized);
   return (
     <span className={good ? "status-pill good" : "status-pill neutral"}>
       {good ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
@@ -658,6 +658,39 @@ function FilesMediaView({ project }) {
   const [draft, setDraft] = useState({ name: "", type: "Screenshot", location: "", status: "Reference" });
   const [uploadMessage, setUploadMessage] = useState("");
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const recoverDurableFiles = async () => {
+      try {
+        const response = await fetch(
+          `/api/files/list?projectId=${encodeURIComponent(project.id)}`,
+          { cache: "no-store" }
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || cancelled || !Array.isArray(payload?.files)) return;
+
+        setItems((current) => {
+          const byPath = new Map(
+            current
+              .filter((item) => item?.storagePath)
+              .map((item) => [item.storagePath, item])
+          );
+          const recovered = payload.files
+            .filter((item) => item?.storagePath && !byPath.has(item.storagePath));
+          return recovered.length ? [...current, ...recovered] : current;
+        });
+      } catch {
+        // A temporary provider outage should not hide already-synced file references.
+      }
+    };
+
+    recoverDurableFiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, setItems]);
 
   const add = () => {
     if (!draft.name.trim()) return;
