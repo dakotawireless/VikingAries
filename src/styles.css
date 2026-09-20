@@ -2134,22 +2134,7 @@ body.resizing-preview * {
   font-size: 11px;
 }
 
-@media (max-width: 620px) {
-  .project-title-row h1 {
-    font-size: 22px;
-  }
-
-  .message-meta strong {
-    font-size: 14px;
-  }
-
-  .user-message,
-  .assistant-message {
-    font-size: 17px;
-    line-height: 1.52;
-  }
-
-  .composer textarea {
-    font-size: 16px;
-  }
-}
+/* Do not enlarge text merely because a viewport is narrow. Desktop preview
+   iframes are narrow too, and applying phone typography there made the
+   preview visibly larger than the adjacent chat. Actual touch/mobile UI keeps
+   its readable sizing through the scoped .app-shell.mobile-ui rules above. */
