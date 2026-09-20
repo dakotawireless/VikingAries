@@ -798,7 +798,7 @@ function FilesMediaView({ project }) {
         <div><strong>Upload hardcopies</strong><p>Select one or more files from your device. Files are written to durable private storage first and are shown here only after storage confirms success. Maximum 3 MB each.</p></div>
         <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}><Upload size={15} /> Choose files</button>
       </section>
-      <div className="workspace-grid two-column">
+      <div className="media-grid">
         {items.map((item) => {
           const durableUpload = item.storage === "github" && Boolean(item.storagePath);
           const legacyUpload = Boolean(item.dataUrl);
