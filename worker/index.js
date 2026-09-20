@@ -9,6 +9,126 @@ async function resolveSecret(binding) {
   return null;
 }
 
+
+const OWNER_SESSION_COOKIE = "va_owner_session";
+const OWNER_SESSION_SECONDS = 60 * 60 * 12;
+
+function parseCookies(request) {
+  const header = request.headers.get("Cookie") || "";
+  return Object.fromEntries(
+    header
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const index = part.indexOf("=");
+        if (index < 0) return [part, ""];
+        return [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+      })
+  );
+}
+
+function base64UrlEncode(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function hmacSign(secret, value) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)));
+}
+
+async function hmacVerify(secret, value, signature) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+  return crypto.subtle.verify("HMAC", key, signature, new TextEncoder().encode(value));
+}
+
+async function ownerAuthConfig(env) {
+  const [accessCode, sessionSecret] = await Promise.all([
+    resolveSecret(env.OWNER_ACCESS_CODE),
+    resolveSecret(env.OWNER_SESSION_SECRET),
+  ]);
+  return {
+    configured: Boolean(accessCode && sessionSecret),
+    accessCode,
+    sessionSecret,
+  };
+}
+
+async function createOwnerSession(sessionSecret) {
+  const payload = JSON.stringify({
+    role: "owner",
+    exp: Math.floor(Date.now() / 1000) + OWNER_SESSION_SECONDS,
+    nonce: crypto.randomUUID(),
+  });
+  const payloadBytes = new TextEncoder().encode(payload);
+  const encodedPayload = base64UrlEncode(payloadBytes);
+  const signature = await hmacSign(sessionSecret, encodedPayload);
+  return `${encodedPayload}.${base64UrlEncode(signature)}`;
+}
+
+async function verifyOwnerSession(request, sessionSecret) {
+  if (!sessionSecret) return false;
+  const token = parseCookies(request)[OWNER_SESSION_COOKIE];
+  if (!token || !token.includes(".")) return false;
+
+  try {
+    const [encodedPayload, encodedSignature] = token.split(".");
+    const verified = await hmacVerify(
+      sessionSecret,
+      encodedPayload,
+      base64UrlDecode(encodedSignature)
+    );
+    if (!verified) return false;
+
+    const payload = JSON.parse(
+      new TextDecoder().decode(base64UrlDecode(encodedPayload))
+    );
+    return payload?.role === "owner" && Number(payload?.exp) > Math.floor(Date.now() / 1000);
+  } catch {
+    return false;
+  }
+}
+
+function ownerCookie(value, maxAge = OWNER_SESSION_SECONDS) {
+  return `${OWNER_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+}
+
+function clearOwnerCookie() {
+  return `${OWNER_SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+}
+
+async function safeEqual(left, right) {
+  const leftBytes = new TextEncoder().encode(String(left || ""));
+  const rightBytes = new TextEncoder().encode(String(right || ""));
+  if (leftBytes.length !== rightBytes.length) return false;
+  let result = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    result |= leftBytes[index] ^ rightBytes[index];
+  }
+  return result === 0;
+}
+
 function extractResponseText(payload) {
   if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
     return payload.output_text.trim();
@@ -37,6 +157,61 @@ function json(data, init = {}) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/auth/status") {
+      const auth = await ownerAuthConfig(env);
+      const authenticated = auth.configured
+        ? await verifyOwnerSession(request, auth.sessionSecret)
+        : false;
+      return json({
+        configured: auth.configured,
+        authenticated,
+        sessionHours: OWNER_SESSION_SECONDS / 3600,
+      });
+    }
+
+    if (url.pathname === "/api/auth/login") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured) {
+        return json(
+          { error: "Owner authentication has not been configured in Cloudflare yet." },
+          { status: 503 }
+        );
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Invalid login request." }, { status: 400 });
+      }
+
+      const accepted = await safeEqual(body?.accessCode, auth.accessCode);
+      if (!accepted) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        return json({ error: "Incorrect owner access code." }, { status: 401 });
+      }
+
+      const session = await createOwnerSession(auth.sessionSecret);
+      return json(
+        { ok: true, authenticated: true },
+        { headers: { "Set-Cookie": ownerCookie(session) } }
+      );
+    }
+
+    if (url.pathname === "/api/auth/logout") {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+      return json(
+        { ok: true, authenticated: false },
+        { headers: { "Set-Cookie": clearOwnerCookie() } }
+      );
+    }
 
     if (url.pathname === "/api/health") {
       const binding = env.OPENAI_API_KEY;
@@ -68,6 +243,11 @@ export default {
 
     if (url.pathname !== "/api/chat") {
       return new Response("Not found", { status: 404 });
+    }
+
+    const auth = await ownerAuthConfig(env);
+    if (auth.configured && !(await verifyOwnerSession(request, auth.sessionSecret))) {
+      return json({ error: "Owner login required." }, { status: 401 });
     }
 
     if (request.method !== "POST") {
