@@ -177,6 +177,16 @@ During migration:
 - The migration/staging build may connect to production APIs only when the interaction is explicitly read-only or otherwise proven safe; payment, order, suspension, cancellation, reactivation, billing, and email actions require controlled staging verification.
 - Hercules remains the operational POS until the migration passes full end-to-end verification and Erik explicitly authorizes final cutover.
 
+## Existing Cloudflare migration project
+
+Use the existing Cloudflare Worker/project:
+
+- Worker/project: `dakota-wireless-pos---new`
+- Connected GitHub repository: `dakotawireless/Dakota-Wireless-POS---New`
+- Migration source branch: `migration-staging`
+- No URLs are enabled on the Cloudflare Worker yet. Keep it non-public until the separate staging Convex backend and safe staging configuration are ready.
+- This Worker is the future Viking Aries preview target for the **merging POS**, never the live Hercules production POS.
+
 ## Hosting target
 
 The target frontend host is Cloudflare Workers, consistent with the current Viking Aries migration architecture.
