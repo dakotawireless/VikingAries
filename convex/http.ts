@@ -40,7 +40,10 @@ http.route({
     }
 
     const url = new URL(request.url);
-    const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days") || 30)));
+    const requestedDays = Number(url.searchParams.get("days") || 30);
+    const days = Number.isFinite(requestedDays)
+      ? Math.min(365, Math.max(1, Math.floor(requestedDays)))
+      : 30;
     const summary = await ctx.runQuery(internal.usage.usageSummary, { days });
     return Response.json(summary);
   }),
