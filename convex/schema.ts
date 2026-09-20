@@ -5,6 +5,7 @@ export default defineSchema({
   sharedState: defineTable({
     key: v.string(),
     value: v.string(),
+    deleted: v.optional(v.boolean()),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
