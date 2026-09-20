@@ -559,7 +559,12 @@ function prepareImageAttachment(file) {
         return;
       }
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.72));
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.55);
+      if (dataUrl.length > 9000) {
+        reject(new Error("That image is too large after resizing. Try a smaller photo."));
+        return;
+      }
+      resolve(dataUrl);
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
