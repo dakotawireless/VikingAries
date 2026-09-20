@@ -1272,6 +1272,35 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   });
   const [resizingPreview, setResizingPreview] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileUi, setMobileUi] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      window.innerWidth <= 900 ||
+      window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches
+    );
+  });
+
+  useEffect(() => {
+    const widthQuery = window.matchMedia("(max-width: 900px)");
+    const touchQuery = window.matchMedia("(hover: none) and (pointer: coarse)");
+
+    const updateMobileUi = () => {
+      const nextMobileUi = widthQuery.matches || touchQuery.matches;
+      setMobileUi(nextMobileUi);
+      if (nextMobileUi) {
+        setPreviewExpanded(false);
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    updateMobileUi();
+    widthQuery.addEventListener?.("change", updateMobileUi);
+    touchQuery.addEventListener?.("change", updateMobileUi);
+    return () => {
+      widthQuery.removeEventListener?.("change", updateMobileUi);
+      touchQuery.removeEventListener?.("change", updateMobileUi);
+    };
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem("viking-aries:personal-projects", JSON.stringify(personalProjectsState));
@@ -1459,7 +1488,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   };
 
   return (
-    <div className={`${layoutClass}${mobileSidebarOpen ? " mobile-sidebar-open" : ""}`}>
+    <div className={`${layoutClass}${mobileSidebarOpen ? " mobile-sidebar-open" : ""}${mobileUi ? " mobile-ui" : ""}`}>
       <Sidebar
         project={project}
         workspace={workspace}
@@ -1514,8 +1543,12 @@ function VikingAriesApp({ onLogout, authConfigured }) {
               type="button"
               className={previewExpanded ? "mobile-view-button active" : "mobile-view-button"}
               onClick={() => {
-                setPreviewVisible(true);
-                setPreviewExpanded((value) => !value);
+                if (previewExpanded) {
+                  setPreviewExpanded(false);
+                } else {
+                  setPreviewVisible(true);
+                  setPreviewExpanded(true);
+                }
               }}
               title={previewExpanded ? "Back to workspace" : "Show preview"}
             >
