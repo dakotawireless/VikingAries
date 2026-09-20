@@ -70,7 +70,21 @@
 }
 
 /* Render pasted photos in the conversation as images, never as their
-   underlying data-URL/markdown source. */
+   underlying data-URL/markdown source. The surrounding link opens the
+   original image at full size in a new tab. */
+.chat-pasted-image-link {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 10px;
+  cursor: zoom-in;
+}
+
+.chat-pasted-image-link:focus-visible {
+  outline: 2px solid #4aa7f3;
+  outline-offset: 3px;
+}
+
 .chat-pasted-image {
   display: block;
   width: min(100%, 280px);
@@ -80,6 +94,11 @@
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 10px;
   background: #fff;
+}
+
+.chat-pasted-image-link:hover .chat-pasted-image {
+  border-color: #79b7e6;
+  box-shadow: 0 0 0 2px rgba(8, 120, 223, 0.1);
 }
 
 /* Keep the hidden-preview toolbar reachable on desktop. Previously its
