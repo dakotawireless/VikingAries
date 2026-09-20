@@ -1349,7 +1349,7 @@ function ChatWorkspace({ project, active = true }) {
                         : "assistant-message"
                   }
                 >
-                  {renderChatContent(message.content)}
+                  {renderChatContent(message.content, setFullSizeImage)}
                 </div>
               </div>
             </article>
