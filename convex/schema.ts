@@ -13,7 +13,7 @@ export default defineSchema({
     projectId: v.string(),
     projectName: v.string(),
     threadId: v.optional(v.string()),
-    provider: v.string(),
+    provider: v.optional(v.string()),
     model: v.string(),
     responseId: v.optional(v.string()),
     requests: v.number(),
