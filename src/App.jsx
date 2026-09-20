@@ -80,7 +80,24 @@ const personalProjects = [
   { id: "dw-pos", name: "Dakota Wireless POS", icon: Monitor },
   { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
   { id: "dw-site", name: "DW Website", icon: Cloud },
-  { id: "rez-lock", name: "Rez Lock & Key", icon: KeyRound },
+  {
+    id: "rez-lock",
+    name: "Rez Lock & Key",
+    icon: KeyRound,
+    repository: "dakotawireless/rez-lock-and-key-staging",
+    deploymentUrl: "https://rez-lock-and-key-staging.erik-f2c.workers.dev",
+    backend: "Cloudflare Worker",
+    status: "Active",
+    contextSummary: [
+      "Rez Lock & Key is an existing website project imported into Viking Aries without redesigning or changing website behavior.",
+      "Source repository: dakotawireless/rez-lock-and-key-staging on main.",
+      "Hosting/runtime: Cloudflare Worker rez-lock-and-key-staging with static assets from public and /api/* handled by src/worker.js.",
+      "Cloudflare Workers Builds deploys commits from main using npm run build and npm run deploy.",
+      "The website lead/estimate API forwards to the existing RLK_EMAIL_WEBHOOK_URL integration and uses the provider-managed RLK_WEBHOOK_SECRET.",
+      "Do not rotate, replace, or expose existing secret values during project migration. Unknown secret values remain provider-managed.",
+      "Preserve the current website design and behavior unless Erik explicitly requests a website change."
+    ].join("\n"),
+  },
   {
     id: "viking-aries",
     name: "Viking Aries",
@@ -548,7 +565,14 @@ function loadProjectIntegrationMappings(project) {
     },
     cloudflare: {
       enabled: Boolean(project.deploymentUrl),
-      worker: project.id === "timekeeper" ? "timekeeper-app" : project.id === "viking-aries" ? "vikingaries" : "",
+      worker:
+        project.id === "timekeeper"
+          ? "timekeeper-app"
+          : project.id === "viking-aries"
+            ? "vikingaries"
+            : project.id === "rez-lock"
+              ? "rez-lock-and-key-staging"
+              : "",
       deploymentUrl: project.deploymentUrl || "",
     },
     convex: {
