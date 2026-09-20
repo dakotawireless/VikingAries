@@ -744,14 +744,6 @@ function PreviewPane({ project, mode, onModeChange, expanded, visible, onExpand,
         </div>
 
         <div className="preview-header-controls">
-          <div className="preview-integrations">
-            <ToolButton icon={Github} label="GitHub" />
-            <ToolButton icon={Cloud} label="Cloudflare" />
-            <ToolButton icon={Boxes} label="Convex" />
-            <ToolButton icon={FileImage} label="Drive" />
-            <ToolButton icon={Send} label="Gmail" />
-          </div>
-
           <div className="preview-control-strip">
             <div className="device-icon-switcher" aria-label="Preview device">
               {[
