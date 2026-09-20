@@ -711,6 +711,7 @@ function ChatWorkspace({ project, active = true }) {
   const [queueing, setQueueing] = useState(false);
   const [listening, setListening] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
+  const [fullSizeImage, setFullSizeImage] = useState("");
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const [selectedModel, setSelectedModel] = useState(loadSelectedModel);
