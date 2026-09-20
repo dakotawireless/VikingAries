@@ -1540,8 +1540,9 @@ body.resizing-preview * {
 @media (max-width: 620px) {
   .va-entry-grid,
   .diagnostic-grid { grid-template-columns: 1fr; }
-  .media-card { grid-template-columns: 34px minmax(0, 1fr); }
-  .media-card > .icon-action { grid-column: 2; justify-self: end; }
+  .media-card { grid-template-columns: 52px minmax(0, 1fr) 30px; gap: 8px; padding: 7px 8px; }
+  .media-icon { width: 52px; height: 38px; }
+  .media-card > .icon-action { grid-column: auto; justify-self: end; }
 }
 
 
