@@ -869,19 +869,20 @@ function ChatWorkspace({ project }) {
             </article>
           )}
         </section>
-        {showJumpToBottom && (
-          <button
-            type="button"
-            className="jump-to-bottom-button"
-            onClick={() => scrollToChatBottom("smooth")}
-            title="Jump to latest message"
-            aria-label="Jump to latest message"
-          >
-            <ArrowDown size={17} />
-            <span>Latest</span>
-          </button>
-        )}
       </div>
+
+      {showJumpToBottom && (
+        <button
+          type="button"
+          className="jump-to-bottom-button"
+          onClick={() => scrollToChatBottom("smooth")}
+          title="Jump to latest message"
+          aria-label="Jump to latest message"
+        >
+          <ArrowDown size={17} />
+          <span>Latest</span>
+        </button>
+      )}
 
       <form
         className="composer"
