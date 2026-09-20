@@ -537,6 +537,47 @@ function loadProjectDraft(projectId) {
   }
 }
 
+function formatAttachmentSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${bytes || 0} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function prepareImageAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, 900 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Your browser could not prepare that image."));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("That image could not be read."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function readTextAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").slice(0, 12000));
+    reader.onerror = () => reject(new Error("That file could not be read."));
+    reader.readAsText(file);
+  });
+}
+
 function ChatWorkspace({ project, active = true }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
