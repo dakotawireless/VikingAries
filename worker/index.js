@@ -14,6 +14,14 @@ async function resolveSecret(binding) {
 
 
 const PROJECT_RUNTIME_CONFIG = {
+  "dw-pos": {
+    repository: "dakotawireless/Dakota-Wireless-POS---New",
+    defaultBranch: "main",
+    backend: "Convex",
+    backendDeployment: "sleek-bear-647",
+    backendUrl: "https://sleek-bear-647.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/",
+  },
   timekeeper: {
     repository: "dakotawireless/TimeKeeper-App",
     defaultBranch: "main",
