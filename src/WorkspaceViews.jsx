@@ -856,6 +856,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const [providerMessage, setProviderMessage] = useState("");
   const [providerBusy, setProviderBusy] = useState("");
   const [configureProviderId, setConfigureProviderId] = useState("");
+  const [githubTokenDraft, setGithubTokenDraft] = useState("");
   const [cloudflareTokenDraft, setCloudflareTokenDraft] = useState("");
   const [configureBusy, setConfigureBusy] = useState(false);
 
@@ -889,7 +890,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
     try {
       const endpoint =
         providerId === "github"
-          ? "/api/github/verify"
+          ? `/api/github/verify?projectId=${encodeURIComponent(project.id)}`
           : providerId === "cloudflare"
             ? "/api/cloudflare/verify"
             : "/api/convex/verify";
@@ -911,7 +912,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
           account: payload.login || payload.name || "Connected GitHub account",
           status: "Connected",
         });
-        setProviderMessage(`GitHub verified as ${payload.login || payload.name || "connected account"}.`);
+        setProviderMessage(
+          payload.repository
+            ? `GitHub verified as ${payload.login || payload.name || "connected account"} with access to ${payload.repository}.`
+            : `GitHub verified as ${payload.login || payload.name || "connected account"}.`
+        );
       } else if (providerId === "cloudflare") {
         updateProvider("cloudflare", {
           account: `Account ${String(payload.accountId || "").slice(0, 8)}…`,
@@ -942,6 +947,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const configureProvider = (providerId) => {
     setProviderMessage("");
 
+    if (providerId === "github") {
+      setConfigureProviderId("github");
+      return;
+    }
+
     if (providerId === "cloudflare") {
       if (runtimeStatus?.providers?.cloudflare?.configured) {
         verifyProvider("cloudflare");
@@ -951,12 +961,53 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
       return;
     }
 
-    if (["github", "convex"].includes(providerId)) {
+    if (providerId === "convex") {
       verifyProvider(providerId);
       return;
     }
 
     setProviderMessage("This provider uses its project-specific mapping below.");
+  };
+
+  const connectGithub = async () => {
+    const token = githubTokenDraft.trim();
+    if (!token) {
+      setProviderMessage("Enter a GitHub token.");
+      return;
+    }
+
+    setConfigureBusy(true);
+    setProviderMessage("");
+    try {
+      const response = await fetch("/api/github/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, projectId: project.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not connect GitHub.");
+      }
+
+      setGithubTokenDraft("");
+      setConfigureProviderId("");
+      updateProvider("github", {
+        account: payload.login || payload.name || "Connected GitHub account",
+        status: "Connected",
+      });
+      setProviderMessage(
+        payload.repository
+          ? `GitHub connected with access to ${payload.repository}.`
+          : "GitHub connected."
+      );
+      await refreshRuntimeStatus();
+    } catch (error) {
+      setProviderMessage(error.message || "Could not connect GitHub.");
+      updateProvider("github", { status: "Needs attention" });
+    } finally {
+      setGithubTokenDraft("");
+      setConfigureBusy(false);
+    }
   };
 
   const connectCloudflare = async () => {
@@ -1143,6 +1194,51 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     Disconnect
                   </button>
                 </div>
+                {item.id === "github" && configureProviderId === "github" && (
+                  <div className="integration-config-panel">
+                    <strong>Connect GitHub</strong>
+                    <p>
+                      Paste a GitHub token that can read and write this project's mapped repository.
+                      VA verifies access to {runtimeStatus?.project?.repository || mappings.github?.repository || "the mapped repository"} before saving it.
+                      The token is stored only as the server-side GITHUB_TOKEN secret.
+                    </p>
+                    <label className="compact-field">
+                      <span>GitHub token</span>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={githubTokenDraft}
+                        placeholder="Paste token"
+                        onChange={(e) => setGithubTokenDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !configureBusy) connectGithub();
+                        }}
+                      />
+                    </label>
+                    <div className="integration-actions">
+                      <button
+                        type="button"
+                        className="primary-action"
+                        disabled={configureBusy || !githubTokenDraft.trim()}
+                        onClick={connectGithub}
+                      >
+                        {configureBusy ? "Connecting…" : "Save & connect"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={configureBusy}
+                        onClick={() => {
+                          setGithubTokenDraft("");
+                          setConfigureProviderId("");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {item.id === "cloudflare" && configureProviderId === "cloudflare" && (
                   <div className="integration-config-panel">
                     <strong>Connect Cloudflare</strong>
@@ -1202,6 +1298,10 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                               : item.id === "cloudflare"
                                 ? " CLOUDFLARE_API_TOKEN not configured"
                                 : " CONVEX_PERSONAL_ACCESS_TOKEN not configured"
+                            : item.id === "github" &&
+                              runtimeStatus.providers?.github?.configured &&
+                              !runtimeStatus.providers?.github?.repositoryAccessible
+                                ? ` GitHub token loaded, but mapped repository access failed: ${runtimeStatus.providers?.github?.repositoryError || "Not Found"}`
                             : runtimeStatus.providers?.[item.id]?.usable
                               ? item.id === "github"
                                 ? " GitHub tools available to VA"
