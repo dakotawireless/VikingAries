@@ -108,17 +108,41 @@ export default {
         typeof body?.project?.repository === "string"
           ? body.project.repository.trim().slice(0, 240)
           : "",
+      defaultBranch:
+        typeof body?.project?.defaultBranch === "string"
+          ? body.project.defaultBranch.trim().slice(0, 120)
+          : "",
       deploymentUrl:
         typeof body?.project?.deploymentUrl === "string"
           ? body.project.deploymentUrl.trim().slice(0, 500)
+          : "",
+      cloudflareWorker:
+        typeof body?.project?.cloudflareWorker === "string"
+          ? body.project.cloudflareWorker.trim().slice(0, 240)
           : "",
       backend:
         typeof body?.project?.backend === "string"
           ? body.project.backend.trim().slice(0, 120)
           : "",
+      backendDeployment:
+        typeof body?.project?.backendDeployment === "string"
+          ? body.project.backendDeployment.trim().slice(0, 240)
+          : "",
       backendUrl:
         typeof body?.project?.backendUrl === "string"
           ? body.project.backendUrl.trim().slice(0, 500)
+          : "",
+      convexDashboardUrl:
+        typeof body?.project?.convexDashboardUrl === "string"
+          ? body.project.convexDashboardUrl.trim().slice(0, 500)
+          : "",
+      driveFolderUrl:
+        typeof body?.project?.driveFolderUrl === "string"
+          ? body.project.driveFolderUrl.trim().slice(0, 500)
+          : "",
+      gmailIdentity:
+        typeof body?.project?.gmailIdentity === "string"
+          ? body.project.gmailIdentity.trim().slice(0, 240)
           : "",
       status:
         typeof body?.project?.status === "string"
@@ -152,9 +176,15 @@ export default {
     const model = env.OPENAI_MODEL || "gpt-5.6-luna";
     const projectFacts = [
       projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
+      projectMetadata.defaultBranch ? `Default branch: ${projectMetadata.defaultBranch}` : "",
       projectMetadata.deploymentUrl ? `Production URL: ${projectMetadata.deploymentUrl}` : "",
+      projectMetadata.cloudflareWorker ? `Cloudflare worker/project: ${projectMetadata.cloudflareWorker}` : "",
       projectMetadata.backend ? `Backend: ${projectMetadata.backend}` : "",
+      projectMetadata.backendDeployment ? `Backend deployment: ${projectMetadata.backendDeployment}` : "",
       projectMetadata.backendUrl ? `Backend URL: ${projectMetadata.backendUrl}` : "",
+      projectMetadata.convexDashboardUrl ? `Convex dashboard: ${projectMetadata.convexDashboardUrl}` : "",
+      projectMetadata.driveFolderUrl ? `Drive folder: ${projectMetadata.driveFolderUrl}` : "",
+      projectMetadata.gmailIdentity ? `Gmail identity/purpose: ${projectMetadata.gmailIdentity}` : "",
       projectMetadata.status ? `Project status: ${projectMetadata.status}` : "",
       projectMetadata.contextSummary ? `Known project context:\n${projectMetadata.contextSummary}` : "",
     ].filter(Boolean).join("\n");
@@ -170,7 +200,7 @@ export default {
       "Project records should either be stored in Viking Aries or point to a durable retrievable source such as a repository file, commit, deployment, provider record, or Drive item.",
       "Never expose secret values to the AI layer unless the owner explicitly requests that exact value for an immediate task. Secret values belong in the secure vault; normal project context should include only names, providers, purposes, and configuration status.",
       "Do not claim that you changed code, deployed an app, accessed a repository, or called an external service unless the Viking Aries runtime actually supplied a tool result proving that action occurred.",
-      "At this stage, chat can advise, plan, debug, and discuss implementation. Tool-backed editing and deployment actions will be added separately.",
+      "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
     ].filter(Boolean).join("\n");
 
     let upstream;
