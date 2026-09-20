@@ -1529,6 +1529,7 @@ export default {
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
       "When the owner explicitly asks you to make, fix, implement, update, commit, deploy, or otherwise carry out a project change, do the work with the available tools rather than stopping at diagnosis or giving instructions. Inspect the necessary files, make the requested change, commit it, and report the actual tool result. Only stop without executing when a required capability is genuinely unavailable, the request is ambiguous in a way that blocks safe execution, or the requested action would violate a safety constraint.",
       "GitHub editing supports both full-file replacement and targeted exact-text replacement. Prefer github_replace_text for focused edits to existing large files: first read the latest file, choose a unique oldText block, replace only that block, and commit. Use github_write_file when creating a file or when a full-file rewrite is genuinely appropriate. File size alone is never a reason to refuse a requested change. If a targeted replacement does not match exactly as expected, re-read the file and retry with a more specific block.",
+      "For multi-file implementation work, batch independent read or inspection tool calls in the same model turn whenever safe instead of serializing every small step. Complete the requested implementation before returning a final answer.",
     ].filter(Boolean).join("\n");
 
     const [githubToken, cloudflareToken, convexToken] = await Promise.all([
@@ -1584,7 +1585,7 @@ export default {
       });
       chatUsage = addUsageTotals(chatUsage, openAIUsageForResponse(model, payload));
 
-      for (let step = 0; step < 16; step += 1) {
+      for (let step = 0; step < 40; step += 1) {
         const calls = extractFunctionCalls(payload);
         if (!calls.length) break;
 
