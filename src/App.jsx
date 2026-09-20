@@ -1344,7 +1344,9 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   const [activeView, setActiveView] = useState("AI Builder");
   const [previewMode, setPreviewMode] = useState("Desktop");
   const [previewVisible, setPreviewVisible] = useState(() => {
-    const saved = window.localStorage.getItem("viking-aries:preview-visible");
+    // Keep this browser preference outside the shared "viking-aries" namespace.
+    // Ignore the legacy shared key, which could restore another session's hidden state.
+    const saved = window.localStorage.getItem("va-local:preview-visible");
     return saved === null ? true : saved === "true";
   });
   const [previewExpanded, setPreviewExpanded] = useState(false);
@@ -1393,7 +1395,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   }, [contractorsState]);
 
   useEffect(() => {
-    window.localStorage.setItem("viking-aries:preview-visible", String(previewVisible));
+    window.localStorage.setItem("va-local:preview-visible", String(previewVisible));
   }, [previewVisible]);
 
   useEffect(() => {
@@ -1721,7 +1723,7 @@ function OwnerLogin({ onAuthenticated }) {
       setAccessCode("");
       // A new login starts with the preview available, while ordinary browser
       // refreshes preserve the saved visibility preference.
-      window.localStorage.setItem("viking-aries:preview-visible", "true");
+      window.localStorage.setItem("va-local:preview-visible", "true");
       onAuthenticated();
     } catch (loginError) {
       setError(loginError.message || "Could not sign in.");
