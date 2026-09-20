@@ -1030,7 +1030,7 @@ function ChatWorkspace({ project, active = true }) {
                         : "assistant-message"
                   }
                 >
-                  {message.content}
+                  {renderChatContent(message.content)}
                 </div>
               </div>
             </article>
