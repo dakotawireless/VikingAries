@@ -981,7 +981,7 @@ function ChatWorkspace({ project, active = true }) {
     const typedContent = draft.trim();
     const content = [
       typedContent,
-      attachment?.dataUrl ? `![Pasted image](${attachment.dataUrl})` : "",
+      attachment?.thumbnailDataUrl ? `![Pasted image](${attachment.thumbnailDataUrl})` : "",
     ].filter(Boolean).join("\n\n");
 
     if (!content || submitGuardRef.current) return;
