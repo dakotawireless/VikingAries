@@ -187,6 +187,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .chat-tab.new-chat { border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 
 .workspace-scroll {
+  position: relative;
   min-height: 0;
   flex: 1 1 auto;
   padding: 14px 18px 100px;
@@ -240,6 +241,35 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   border-color: #d8e5ef;
 }
 .copy-message-button:active { transform: translateY(1px); }
+
+.jump-to-bottom-button {
+  position: sticky;
+  left: 50%;
+  bottom: 14px;
+  z-index: 8;
+  width: max-content;
+  margin: 0 auto;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #bfd3e3;
+  border-radius: 17px;
+  background: rgba(255,255,255,.97);
+  color: #1e5f8f;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .12);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.jump-to-bottom-button:hover {
+  background: #f3f8fc;
+  border-color: #8ebce0;
+  color: #0878df;
+}
+.jump-to-bottom-button:active {
+  transform: translateY(1px);
+}
 .user-message, .assistant-message {
   border: 1px solid var(--line); border-radius: 7px; padding: 11px 13px; font-size: 13px; line-height: 1.5;
 }
