@@ -673,12 +673,25 @@ function prepareImageAttachment(file) {
         return;
       }
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.55);
-      if (dataUrl.length > 9000) {
+      const thumbnailDataUrl = canvas.toDataURL("image/jpeg", 0.55);
+      if (thumbnailDataUrl.length > 9000) {
         reject(new Error("That image is too large after resizing. Try a smaller photo."));
         return;
       }
-      resolve(dataUrl);
+
+      // Keep the compact version in the chat request, but retain the original
+      // pasted file locally so the viewer can show its real resolution.
+      const reader = new FileReader();
+      reader.onload = () => {
+        const fullDataUrl = String(reader.result || "");
+        if (!fullDataUrl.startsWith("data:image/")) {
+          reject(new Error("That image could not be read."));
+          return;
+        }
+        resolve({ thumbnailDataUrl, fullDataUrl });
+      };
+      reader.onerror = () => reject(new Error("That image could not be read."));
+      reader.readAsDataURL(file);
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
