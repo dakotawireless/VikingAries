@@ -226,6 +226,32 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .message-meta { display: flex; align-items: center; gap: 7px; margin: 1px 0 6px; font-size: 12px; }
 .message-meta strong { font-size: 13px; }
 .message-meta > span { color: #758699; }
+.message-queue-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.message-queue-status.queued {
+  color: #775f00;
+  background: #fff7cc;
+  border: 1px solid #ecd96c;
+}
+.message-queue-status.running {
+  color: #075e9f;
+  background: #e7f4ff;
+  border: 1px solid #9ed1f8;
+}
+.message-queue-status.failed {
+  color: #9a2f29;
+  background: #fff1f0;
+  border: 1px solid #efb3ae;
+}
+
 .copy-message-button {
   margin-left: auto;
   min-height: 27px;
