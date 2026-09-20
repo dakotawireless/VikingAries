@@ -471,6 +471,34 @@ function formatChatTime() {
   }).format(new Date());
 }
 
+function renderChatContent(content) {
+  const imagePattern = /!\\[Pasted image\\]\\((data:image\\/[^)]+)\\)/g;
+  const parts = [];
+  let cursor = 0;
+  let match;
+  let imageIndex = 0;
+
+  while ((match = imagePattern.exec(content)) !== null) {
+    const textBefore = content.slice(cursor, match.index);
+    if (textBefore) parts.push(<span key={`text-${match.index}`}>{textBefore}</span>);
+    parts.push(
+      <img
+        key={`pasted-image-${imageIndex}`}
+        className="chat-pasted-image"
+        src={match[1]}
+        alt="Pasted image"
+      />
+    );
+    imageIndex += 1;
+    cursor = match.index + match[0].length;
+  }
+
+  if (!parts.length) return content;
+  const trailingText = content.slice(cursor);
+  if (trailingText) parts.push(<span key="text-trailing">{trailingText}</span>);
+  return parts;
+}
+
 function loadProjectThreads(projectId) {
   try {
     const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
