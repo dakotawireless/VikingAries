@@ -25,18 +25,17 @@ export const recordUsage = internalMutation({
 });
 
 export const usageSummary = internalQuery({
-  args: {
-    startAt: v.number(),
-    endAt: v.number(),
-    periodLabel: v.string(),
-  },
-  handler: async (ctx, { startAt, endAt, periodLabel }) => {
+  args: { days: v.number() },
+  handler: async (ctx, { days }) => {
     const now = Date.now();
+    const safeDays = Math.min(365, Math.max(1, Math.floor(days)));
+    const startAt = now - safeDays * 86400000;
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+
     const rows = await ctx.db
       .query("apiUsage")
-      .withIndex("by_createdAt", (q) => q.gte("createdAt", startAt).lt("createdAt", endAt))
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", startAt))
       .collect();
 
     const blank = () => ({
@@ -70,11 +69,13 @@ export const usageSummary = internalQuery({
     for (const row of rows) {
       add(totals, row);
       if (row.createdAt >= todayStart.getTime()) add(today, row);
+
       const provider = row.provider || "OpenAI";
       const modelKey = `${provider}:${row.model}`;
       const modelCurrent = modelMap.get(modelKey) || { provider, model: row.model, ...blank() };
       add(modelCurrent, row);
       modelMap.set(modelKey, modelCurrent);
+
       const projectCurrent = projectMap.get(row.projectId) || {
         projectId: row.projectId,
         projectName: row.projectName || row.projectId,
@@ -82,6 +83,7 @@ export const usageSummary = internalQuery({
       };
       add(projectCurrent, row);
       projectMap.set(row.projectId, projectCurrent);
+
       const providerCurrent = providerMap.get(provider) || { provider, ...blank() };
       add(providerCurrent, row);
       providerMap.set(provider, providerCurrent);
@@ -105,10 +107,12 @@ export const usageSummary = internalQuery({
 
     return {
       generatedAt: now,
-      days,
+      days: safeDays,
       totals,
       today,
       byModel: [...modelMap.values()].sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd),
+      byProject: [...projectMap.values()].sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd),
+      byProvider: [...providerMap.values()].sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd),
       recent,
     };
   },
