@@ -18,7 +18,7 @@ const PROJECT_RUNTIME_CONFIG = {
   "dw-pos": {
     repository: "dakotawireless/Dakota-Wireless-POS---New",
     defaultBranch: "migration-staging",
-    cloudflareWorker: "dakota-wireless-pos-migration",
+    cloudflareWorker: "dakota-wireless-pos---new",
     backend: "Convex",
     backendDeployment: "sleek-bear-647",
     backendUrl: "https://sleek-bear-647.convex.cloud",
