@@ -252,8 +252,58 @@ function timekeeperDefaults() {
   };
 }
 
+function vikingAriesDefaults(project) {
+  return {
+    features: [],
+    access: [],
+    files: [],
+    integrations: [
+      { id: "github", name: "GitHub", provider: "dakotawireless/VikingAries", purpose: "Source control", status: "Connected" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Workers", purpose: "Hosting / deployment", status: "Connected" },
+      { id: "convex", name: "Convex", provider: "flippant-mandrill-487", purpose: "Database / backend", status: "Connected" },
+      { id: "drive", name: "Google Drive", provider: "Not configured", purpose: "Files / documents", status: "Available" },
+      { id: "gmail", name: "Gmail", provider: "Not configured", purpose: "Email", status: "Available" },
+    ],
+    tables: [
+      { name: "apiUsage", purpose: "OpenAI request/token/cost telemetry", indexes: "by_createdAt, by_project_createdAt, by_model_createdAt" },
+    ],
+    backend: [],
+    automations: [],
+    diagnostics: [],
+    versions: [],
+    deployments: [
+      { id: "prod", environment: "Production", provider: "Cloudflare Workers", status: "Active", url: "https://vikingaries.dakotawireless.net/" },
+    ],
+    domains: [
+      { id: "prod-domain", host: "vikingaries.dakotawireless.net", type: "Cloudflare", status: "Active", notes: "Production domain" },
+    ],
+    secrets: [
+      { id: "openai-api-key", name: "OPENAI_API_KEY", provider: "Cloudflare Secrets Store", purpose: "OpenAI Responses API", status: "Configured" },
+      { id: "owner-access-code", name: "OWNER_ACCESS_CODE", provider: "Cloudflare Runtime Secret", purpose: "Owner login access code", status: "Configured" },
+      { id: "owner-session-secret", name: "OWNER_SESSION_SECRET", provider: "Cloudflare Runtime Secret", purpose: "Signs owner session cookies", status: "Configured" },
+      { id: "github-token", name: "GITHUB_TOKEN", provider: "Cloudflare Runtime Secret", purpose: "GitHub read/write integration", status: "Configured" },
+      { id: "cloudflare-api-token", name: "CLOUDFLARE_API_TOKEN", provider: "Cloudflare Runtime Secret", purpose: "Cloudflare status, builds, and deployments", status: "Needs verification" },
+      { id: "convex-personal-access-token", name: "CONVEX_PERSONAL_ACCESS_TOKEN", provider: "Cloudflare Runtime Secret", purpose: "Shared Convex management integration", status: "Configured" },
+      { id: "convex-deploy-key", name: "CONVEX_DEPLOY_KEY", provider: "Cloudflare Build Secret", purpose: "Deploy Viking Aries Convex backend during Cloudflare build", status: "Needs configuration" },
+      { id: "va-usage-ingest-secret-cloudflare", name: "VA_USAGE_INGEST_SECRET", provider: "Cloudflare Runtime Secret", purpose: "Authenticates Worker writes/reads to the Viking Aries usage store", status: "Needs configuration" },
+      { id: "va-usage-ingest-secret-convex", name: "VA_USAGE_INGEST_SECRET", provider: "Convex Environment Variable", purpose: "Authenticates Viking Aries usage HTTP endpoints; must match Cloudflare value", status: "Needs configuration" },
+    ],
+    settings: {
+      displayName: project.name,
+      repository: project.repository || "dakotawireless/VikingAries",
+      defaultBranch: "main",
+      productionUrl: project.deploymentUrl || "https://vikingaries.dakotawireless.net/",
+      backendProvider: "Convex",
+      backendDeployment: "flippant-mandrill-487",
+      backendUrl: "https://flippant-mandrill-487.convex.cloud",
+      notes: "Viking Aries command center. Keep secret values in provider-managed secret stores; the Secrets tab tracks names, locations, purposes, and status only.",
+    },
+  };
+}
+
 function projectDefaults(project) {
   if (project.id === "timekeeper") return timekeeperDefaults();
+  if (project.id === "viking-aries") return vikingAriesDefaults(project);
   return {
     features: [],
     access: [],
@@ -970,6 +1020,15 @@ function SecretsView({ project }) {
   const defaults = projectDefaults(project).secrets;
   const [items, setItems] = useProjectStorage(project.id, "secrets-v2", defaults);
   const [draft, setDraft] = useState({ name: "", provider: "", purpose: "", status: "Configured" });
+
+  useEffect(() => {
+    if (!defaults.length) return;
+    setItems((current) => {
+      const existing = new Set(current.map((item) => `${item.name}|${item.provider}`));
+      const missing = defaults.filter((item) => !existing.has(`${item.name}|${item.provider}`));
+      return missing.length ? [...current, ...missing] : current;
+    });
+  }, [project.id]);
 
   const add = () => {
     if (!draft.name.trim()) return;
