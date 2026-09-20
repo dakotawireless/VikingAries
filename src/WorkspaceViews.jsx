@@ -132,7 +132,14 @@ function projectIntegrationDefaults(project) {
     cloudflare: {
       enabled: Boolean(project?.deploymentUrl),
       project: "",
-      worker: project?.id === "timekeeper" ? "timekeeper-app" : project?.id === "viking-aries" ? "vikingaries" : "",
+      worker:
+        project?.id === "timekeeper"
+          ? "timekeeper-app"
+          : project?.id === "viking-aries"
+            ? "vikingaries"
+            : project?.id === "rez-lock"
+              ? "rez-lock-and-key-staging"
+              : "",
       deploymentUrl: project?.deploymentUrl || "",
     },
     convex: {
@@ -301,9 +308,79 @@ function vikingAriesDefaults(project) {
   };
 }
 
+function rezLockDefaults(project) {
+  return {
+    features: [
+      { id: "public-site", name: "Public Rez Lock & Key website", area: "Website", status: "Active", notes: "Existing responsive customer-facing site; preserve design and behavior during VA migration." },
+      { id: "estimate", name: "Online estimate request", area: "Website", status: "Active", notes: "Customer estimate form posts to /api/send-estimate." },
+      { id: "contact", name: "Contact request", area: "Website", status: "Active", notes: "Customer contact form posts to /api/send-contact." },
+      { id: "health", name: "Worker health endpoint", area: "Backend", status: "Active", notes: "/api/health reports lead-email and optional Twilio configuration status." },
+    ],
+    access: [
+      { id: "public", role: "Public visitor", method: "No login", scope: "Public website and customer request forms", status: "Active" },
+      { id: "owner", role: "Owner / developer", method: "Viking Aries shared provider connections", scope: "Source, deployment, and project maintenance", status: "Active" },
+    ],
+    files: [
+      { id: "source", name: "Website source", type: "Repository", location: "dakotawireless/rez-lock-and-key-staging", status: "In repository" },
+      { id: "assets", name: "Website assets", type: "Brand / site assets", location: "public/assets", status: "In repository" },
+      { id: "worker", name: "Cloudflare Worker", type: "Backend source", location: "src/worker.js", status: "In repository" },
+      { id: "config", name: "Cloudflare configuration", type: "Deployment config", location: "wrangler.jsonc", status: "In repository" },
+    ],
+    integrations: [
+      { id: "github", name: "GitHub", provider: "dakotawireless/rez-lock-and-key-staging", purpose: "Source control", status: "Connected" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Worker: rez-lock-and-key-staging", purpose: "Hosting, builds, static assets, and /api/* runtime", status: "Connected" },
+      { id: "google-script", name: "Google Apps Script", provider: "RLK_EMAIL_WEBHOOK_URL", purpose: "Existing estimate/contact lead email webhook", status: "Configured" },
+      { id: "twilio", name: "Twilio", provider: "Cloudflare environment bindings", purpose: "Optional alert configuration detected by /api/health", status: "Existing / unknown" },
+    ],
+    tables: [],
+    backend: [
+      { name: "/api/health", type: "Cloudflare Worker route", responsibility: "Health/configuration status for lead email and optional Twilio bindings", status: "Active" },
+      { name: "/api/send-estimate", type: "Cloudflare Worker route", responsibility: "Validate and forward estimate requests to the existing lead webhook", status: "Active" },
+      { name: "/api/send-contact", type: "Cloudflare Worker route", responsibility: "Validate and forward contact requests to the existing lead webhook", status: "Active" },
+      { name: "RLK_EMAIL_WEBHOOK_URL", type: "Cloudflare variable", responsibility: "Destination for the existing lead/email webhook", status: "Configured" },
+    ],
+    automations: [
+      { id: "build-deploy", name: "Cloudflare Workers Build", trigger: "Commit to main", action: "Run npm run build and npm run deploy", enabled: true },
+    ],
+    diagnostics: [
+      { id: "source-map", name: "GitHub project mapping", result: "Configured", detail: "VA project maps to dakotawireless/rez-lock-and-key-staging on main." },
+      { id: "hosting-map", name: "Cloudflare Worker mapping", result: "Configured", detail: "VA project maps to Worker rez-lock-and-key-staging." },
+      { id: "health-route", name: "Worker health route", result: "Configured", detail: "/api/health exists in src/worker.js." },
+      { id: "lead-route", name: "Lead request routes", result: "Configured", detail: "/api/send-estimate and /api/send-contact forward to the existing lead webhook." },
+    ],
+    versions: [
+      { id: "current-main", label: "Current imported project", ref: "main", note: "Existing RLK website imported into Viking Aries without redesign or behavior changes." },
+    ],
+    deployments: [
+      { id: "staging", environment: "Current", provider: "Cloudflare Workers", status: "Active", url: "https://rez-lock-and-key-staging.erik-f2c.workers.dev" },
+    ],
+    domains: [
+      { id: "worker", host: "rez-lock-and-key-staging.erik-f2c.workers.dev", type: "Cloudflare Workers", status: "Active", notes: "Current Worker deployment URL." },
+    ],
+    secrets: [
+      { id: "webhook-secret", name: "RLK_WEBHOOK_SECRET", provider: "Cloudflare Worker secret", purpose: "Authenticates the existing lead/email webhook", status: "Existing / unknown" },
+      { id: "twilio-sid", name: "TWILIO_ACCOUNT_SID", provider: "Cloudflare Worker environment", purpose: "Optional Twilio account configuration detected by the Worker", status: "Existing / unknown" },
+      { id: "twilio-token", name: "TWILIO_AUTH_TOKEN", provider: "Cloudflare Worker secret", purpose: "Optional Twilio authentication detected by the Worker", status: "Existing / unknown" },
+      { id: "twilio-from", name: "TWILIO_FROM_NUMBER", provider: "Cloudflare Worker environment", purpose: "Optional Twilio sender number detected by the Worker", status: "Existing / unknown" },
+      { id: "alert-phone", name: "RLK_ALERT_PHONE", provider: "Cloudflare Worker environment", purpose: "Optional RLK alert destination detected by the Worker", status: "Existing / unknown" },
+    ],
+    settings: {
+      displayName: project.name,
+      repository: "dakotawireless/rez-lock-and-key-staging",
+      defaultBranch: "main",
+      productionUrl: "https://rez-lock-and-key-staging.erik-f2c.workers.dev",
+      backendProvider: "Cloudflare Worker",
+      backendDeployment: "rez-lock-and-key-staging",
+      backendUrl: "https://rez-lock-and-key-staging.erik-f2c.workers.dev",
+      notes: "Existing Rez Lock & Key website project. Preserve the current website design, content, estimator behavior, and deployment. Viking Aries is the editing/control workspace only. Do not rotate or replace provider-managed secrets merely because their values are unknown.",
+    },
+  };
+}
+
 function projectDefaults(project) {
   if (project.id === "timekeeper") return timekeeperDefaults();
   if (project.id === "viking-aries") return vikingAriesDefaults(project);
+  if (project.id === "rez-lock") return rezLockDefaults(project);
   return {
     features: [],
     access: [],
