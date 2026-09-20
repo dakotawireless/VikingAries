@@ -83,6 +83,8 @@ const personalProjects = [
     name: "Dakota Wireless POS",
     icon: Monitor,
     repository: "dakotawireless/Dakota-Wireless-POS---New",
+    defaultBranch: "migration-staging",
+    cloudflareWorker: "dakota-wireless-pos-migration",
     backend: "Convex",
     backendUrl: "https://sleek-bear-647.convex.cloud",
     convexDashboardUrl: "https://dashboard.convex.dev/",
@@ -596,18 +598,19 @@ function loadProjectIntegrationMappings(project) {
     github: {
       enabled: Boolean(project.repository),
       repository: project.repository || (project.id === "viking-aries" ? "dakotawireless/VikingAries" : ""),
-      branch: "main",
+      branch: project.defaultBranch || "main",
     },
     cloudflare: {
-      enabled: Boolean(project.deploymentUrl),
+      enabled: Boolean(project.cloudflareWorker || project.deploymentUrl),
       worker:
-        project.id === "timekeeper"
+        project.cloudflareWorker ||
+        (project.id === "timekeeper"
           ? "timekeeper-app"
           : project.id === "viking-aries"
             ? "vikingaries"
             : project.id === "rez-lock"
               ? "rez-lock-and-key-staging"
-              : "",
+              : ""),
       deploymentUrl: project.deploymentUrl || "",
     },
     convex: {
