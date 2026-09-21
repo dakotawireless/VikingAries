@@ -540,7 +540,7 @@ function PageHeader({ icon: Icon, title, description, action }) {
 
 function StatusPill({ status }) {
   const normalized = String(status || "").toLowerCase();
-  const good = ["connected", "active", "configured", "healthy", "success", "passed", "in repository", "stored", "durable", "archived"].includes(normalized);
+  const good = ["connected", "active", "configured", "destination mapped", "healthy", "success", "passed", "in repository", "stored", "durable", "archived"].includes(normalized);
   return (
     <span className={good ? "status-pill good" : "status-pill neutral"}>
       {good ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
