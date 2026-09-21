@@ -1262,7 +1262,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     {providerBusy === item.id
                       ? "Checking…"
                       : item.status === "Connected" || runtimeStatus?.providers?.[item.id]?.usable
-                        ? "Reconnect"
+                        ? "Verify"
                         : "Connect"}
                   </button>
                   <button
