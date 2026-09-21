@@ -779,8 +779,9 @@ body.resizing-preview * {
   .context-node { min-width: 180px; }
   .message-row { grid-template-columns: 32px minmax(0, 1fr); gap: 7px; }
   .message-stack { max-width: 100%; }
-  .composer { grid-template-columns: 31px 31px minmax(0,1fr) 42px; padding: 8px; }
-  .send-button { width: 42px; padding: 0; justify-content: center; font-size: 0; }
+  .composer { grid-template-columns: 31px 31px minmax(0,1fr) 42px 42px; padding: 8px; }
+  .send-button,
+  .stop-button { width: 42px; padding: 0; justify-content: center; font-size: 0; }
   .composer-hint { display: none; }
   .metrics-grid { grid-template-columns: 1fr 1fr; }
   .preview-bottom-grid { grid-template-columns: 1fr; }
