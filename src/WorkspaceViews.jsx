@@ -1075,7 +1075,9 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     status={
                       runtimeStatus?.providers?.[item.id]?.usable || item.status === "Connected"
                         ? "Connected"
-                        : item.status
+                        : item.id === "cloudflare" && mappings?.cloudflare?.enabled && mappings?.cloudflare?.worker
+                          ? "Destination mapped"
+                          : item.status
                     }
                   />
                 </div>
