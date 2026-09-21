@@ -45,3 +45,18 @@ test('Smoke Signals has exactly one authoritative project registration', () => {
   assert.equal(matches.length, 1);
   assert.equal(MIGRATED_PROJECTS['smoke-pos'].convexDashboardUrl, 'https://dashboard.convex.dev/t/erik-2df00/smoke-signals-pos-new/benevolent-bulldog-176');
 });
+
+test('Viking Aries registration repairs stale blank project mappings', () => {
+  const project = MIGRATED_PROJECTS['viking-aries'];
+  const result = migrateProjectMappings('viking-aries', {
+    github: { enabled: true, repository: 'dakotawireless/VikingAries', branch: 'main' },
+    cloudflare: { enabled: true, worker: 'vikingaries', deploymentUrl: 'https://vikingaries.dakotawireless.net/' },
+    convex: { enabled: true, deployment: '', url: '', dashboardUrl: '' },
+  });
+  assert.equal(project.backendDeployment, 'flippant-mandrill-487');
+  assert.equal(project.backendUrl, 'https://flippant-mandrill-487.convex.cloud');
+  assert.equal(result.convex.deployment, 'flippant-mandrill-487');
+  assert.equal(result.convex.url, 'https://flippant-mandrill-487.convex.cloud');
+  assert.equal(result.cloudflare.worker, 'vikingaries');
+  assert.equal(result.github.repository, 'dakotawireless/VikingAries');
+});
