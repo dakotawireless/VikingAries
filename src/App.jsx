@@ -1261,6 +1261,31 @@ function ChatWorkspace({ project, active = true }) {
     }
   };
 
+  const stopAiJobs = async () => {
+    if (!activeThread || !sending) return;
+
+    setStatusText("Stopping Viking Aries…");
+    try {
+      const response = await fetch("/api/jobs/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          threadId: activeThread.id,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not stop the AI job.");
+      }
+      await syncProjectJobs();
+      setStatusText(payload.canceled ? "Stopped" : "No active AI job to stop");
+    } catch (error) {
+      setStatusText(error.message || "Could not stop the AI job");
+      await syncProjectJobs();
+    }
+  };
+
   const copyMessageText = async (message) => {
     try {
       if (navigator.clipboard?.writeText) {
