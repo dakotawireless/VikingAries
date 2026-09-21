@@ -23,15 +23,6 @@ test('later user edits and unrelated projects are retained', () => {
 });
 
 
-test('Smoke Signals registration maps the migration repo and Convex backend without inventing Cloudflare', () => {
-  const result = migrateProjectMappings('smoke-pos');
-  assert.equal(result.github.repository, 'dakotawireless/Smoke-Signals-POS---New');
-  assert.equal(result.github.branch, 'migration/remove-hercules');
-  assert.equal(result.convex.deployment, 'benevolent-bulldog-176');
-  assert.equal(result.convex.url, 'https://benevolent-bulldog-176.convex.cloud');
-  assert.equal(result.cloudflare.enabled, false);
-  assert.equal(result.cloudflare.worker, '');
-});
 
 test('Smoke Signals migration registration exposes isolated repo, Convex and Cloudflare targets', () => {
   const project = MIGRATED_PROJECTS['smoke-pos'];
