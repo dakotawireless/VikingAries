@@ -485,8 +485,95 @@ function dwPosDefaults(project) {
   };
 }
 
+function smokePosDefaults(project) {
+  return {
+    features: [
+      { id: "sale", name: "POS Sale Screen", area: "Core", status: "Migration", notes: "Preserve cart, customer selection, discounts, split payment, held carts, barcode scanning, and current register behavior." },
+      { id: "inventory", name: "Inventory & Products", area: "Core", status: "Migration", notes: "Shared Convex product/inventory data, quick picks, search, stock changes, archive/unarchive, and barcode lookup." },
+      { id: "customers", name: "Customers", area: "Core", status: "Migration", notes: "Shared customer records, DOB/age verification, loyalty points, and customer selection." },
+      { id: "transactions", name: "Transactions / Returns", area: "Core", status: "Migration", notes: "Shared transactions, line-item snapshots, payments/tenders, voids, and returns." },
+      { id: "valor", name: "Valor VP550 Payments", area: "Payments", status: "Migration", notes: "Valor Connect Cloud integration is preserved in source; credentials must be configured only in the new migration backend before live payment testing." },
+      { id: "recovery", name: "Recovery / Production Diagnostics", area: "Diagnostics", status: "Ready", notes: "Recovery Tool and production diagnostics are present in the migrated source." },
+      { id: "employees", name: "Employee PIN / Time Clock", area: "Access", status: "Migration", notes: "Native POS employee/PIN access remains part of the POS. Timekeeper itself is separate and must not be modified." },
+    ],
+    access: [
+      { id: "owner", role: "Owner", method: "Existing POS employee/PIN flow", scope: "Owner/admin POS functions", status: "Preserved" },
+      { id: "staff", role: "Staff", method: "Existing POS employee/PIN flow", scope: "Register access by existing role rules", status: "Preserved" },
+      { id: "hercules-auth", role: "Legacy Hercules wrapper", method: "Hercules OIDC", scope: "Removed from migration branch", status: "Removed" },
+    ],
+    files: [
+      { id: "source", name: "Smoke Signals POS source", type: "Repository", location: "dakotawireless/Smoke-Signals-POS---New", status: "In repository" },
+      { id: "baseline", name: "Verified imported source baseline", type: "Git commit", location: "d62120d7215817f216d11c9b4379c7cde8e6cd09", status: "Preserved" },
+      { id: "migration-branch", name: "Hercules-free migration branch", type: "Git branch", location: "migration/remove-hercules", status: "Active" },
+    ],
+    integrations: [
+      { id: "github", name: "GitHub", provider: "dakotawireless/Smoke-Signals-POS---New", purpose: "Source control, migration branch, PRs, CI/CD", status: "Connected" },
+      { id: "convex", name: "Convex — migration", provider: "benevolent-bulldog-176", purpose: "Isolated migration database/functions", status: "Deployed" },
+      { id: "convex-production", name: "Convex — legacy production", provider: "moonlit-mallard-698", purpose: "Current live Hercules POS backend; read/protect during migration", status: "Protected" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Matching migration project created", purpose: "Future staging/production hosting", status: "Worker registration pending" },
+      { id: "valor", name: "Valor", provider: "Valor Connect Cloud / VP550", purpose: "Card payment processing", status: "Credentials pending migration backend configuration" },
+    ],
+    tables: [
+      { name: "products", purpose: "Products, inventory and quick-pick data", indexes: "Convex schema" },
+      { name: "customers", purpose: "Customer and loyalty records", indexes: "Convex schema" },
+      { name: "transactions", purpose: "Completed sales and transaction snapshots", indexes: "Convex schema" },
+      { name: "returns", purpose: "Return/void-related records", indexes: "Convex schema" },
+      { name: "recoveryBatches", purpose: "Recovery/import audit trail", indexes: "Convex schema" },
+    ],
+    backend: [
+      { name: "products", type: "Convex module", responsibility: "Product and inventory persistence", status: "Ready to deploy" },
+      { name: "customers", type: "Convex module", responsibility: "Customer persistence", status: "Ready to deploy" },
+      { name: "transactions", type: "Convex module", responsibility: "Sales and payments/tenders", status: "Ready to deploy" },
+      { name: "returns", type: "Convex module", responsibility: "Return/void data", status: "Ready to deploy" },
+      { name: "diagnostics", type: "Convex module", responsibility: "Backend/data verification", status: "Ready to deploy" },
+      { name: "valor", type: "Convex actions/modules", responsibility: "Valor Connect Cloud payment integration", status: "Credentials required before live test" },
+    ],
+    automations: [
+      { id: "convex-deploy", name: "Deploy migration Convex", trigger: "GitHub Actions manual/trigger file", action: "Deploy schema/functions to benevolent-bulldog-176 then run diagnostics", enabled: true },
+      { id: "cloudflare-deploy", name: "Cloudflare migration deployment", trigger: "Pending exact Worker registration", action: "Build migration branch and expose staging URL", enabled: false },
+    ],
+    diagnostics: [
+      { id: "source-import", name: "Source archive integrity", result: "Passed", detail: "Uploaded source was SHA-256 verified before GitHub baseline import." },
+      { id: "build", name: "Hercules-free production build", result: "Passed", detail: "Frozen pnpm install, Convex TypeScript check, and Vite production build passed after Hercules runtime removal." },
+      { id: "convex-target", name: "Migration Convex deployment", result: "Passed", detail: "Schema/functions deployed to benevolent-bulldog-176 and diagnostics passed. Backend is intentionally empty before data migration: 0 products, 0 customers, 0 transactions." },
+      { id: "production-protection", name: "Legacy production protection", result: "Passed", detail: "Hercules live POS and moonlit-mallard-698 remain untouched during migration." },
+      { id: "cloudflare-target", name: "Cloudflare migration target", result: "Pending", detail: "Matching project exists, but exact Worker/project identifier and staging URL still need registration in VA." },
+    ],
+    versions: [
+      { id: "baseline", label: "Verified Hercules source baseline", ref: "d62120d72158", note: "Exact uploaded baseline imported before migration-specific edits." },
+      { id: "hercules-free", label: "Hercules-free migration branch", ref: "migration/remove-hercules", note: "Hercules Vite/auth/OIDC runtime removed; business logic preserved." },
+      { id: "pr-1", label: "Migration draft PR", ref: "#1", note: "Draft boundary for review before merge/cutover." },
+    ],
+    deployments: [
+      { id: "legacy-production", environment: "Live production — protected", provider: "Hercules", status: "Active", url: "https://smoke-signals-pos-224583.onhercules.app" },
+      { id: "migration-backend", environment: "Migration backend", provider: "Convex", status: "Deployed / data migration pending", url: "https://benevolent-bulldog-176.convex.cloud" },
+      { id: "cloudflare-staging", environment: "Cloudflare staging", provider: "Cloudflare Workers", status: "Project created / mapping pending", url: "" },
+    ],
+    domains: [
+      { id: "legacy", host: "smoke-signals-pos-224583.onhercules.app", type: "Legacy Hercules host", status: "Active during migration", notes: "Current live POS; do not cut over until staging is fully tested." },
+    ],
+    secrets: [
+      { id: "convex-deploy-key", name: "CONVEX_DEPLOY_KEY", provider: "GitHub Actions", purpose: "Deploy migration schema/functions to benevolent-bulldog-176", status: "Configured" },
+      { id: "convex-url", name: "VITE_CONVEX_URL", provider: "Cloudflare build/runtime", purpose: "Point migrated frontend to benevolent-bulldog-176", status: "Target known" },
+      { id: "valor", name: "VALOR_APP_ID / VALOR_APP_KEY / VALOR_CHANNEL_ID / VALOR_EPI / VALOR_API_BASE_URL", provider: "Convex environment", purpose: "Valor Connect Cloud payment processing", status: "Migration copy required" },
+      { id: "legacy-hercules", name: "HERCULES_OIDC_*", provider: "Legacy Hercules", purpose: "Old wrapper auth/runtime", status: "Removed from migration branch" },
+    ],
+    settings: {
+      displayName: project.name,
+      repository: "dakotawireless/Smoke-Signals-POS---New",
+      defaultBranch: "migration/remove-hercules",
+      productionUrl: "https://smoke-signals-pos-224583.onhercules.app",
+      backendProvider: "Convex",
+      backendDeployment: "benevolent-bulldog-176",
+      backendUrl: "https://benevolent-bulldog-176.convex.cloud",
+      notes: "Smoke Signals migration is isolated from live production. Main preserves the imported baseline; migration/remove-hercules is the active migration branch. Live Hercules and moonlit-mallard-698 remain protected until staging validation and final data reconciliation are complete.",
+    },
+  };
+}
+
 function projectDefaults(project) {
   if (project.id === "dw-pos") return dwPosDefaults(project);
+  if (project.id === "smoke-pos") return smokePosDefaults(project);
   if (project.id === "timekeeper") return timekeeperDefaults();
   if (project.id === "viking-aries") return vikingAriesDefaults(project);
   if (project.id === "rez-lock") return rezLockDefaults(project);

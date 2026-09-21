@@ -19,6 +19,26 @@ export const MIGRATED_PROJECTS = {
       "Do not change production routing, email test mode, credentials, or perform a data cutover without explicit direction. Migration validation and final data reconciliation remain separate work.",
     ].join("\n"),
   },
+  "smoke-pos": {
+    repository: "dakotawireless/Smoke-Signals-POS---New",
+    defaultBranch: "migration/remove-hercules",
+    cloudflareWorker: "",
+    deploymentUrl: "",
+    backend: "Convex",
+    backendDeployment: "benevolent-bulldog-176",
+    backendUrl: "https://benevolent-bulldog-176.convex.cloud",
+    convexDashboardUrl: "https://dashboard.convex.dev/",
+    status: "Migration",
+    contextSummary: [
+      "Smoke Signals POS migration source is in dakotawireless/Smoke-Signals-POS---New. The untouched imported baseline remains on main; migration work is isolated on migration/remove-hercules.",
+      "The new migration Convex deployment is benevolent-bulldog-176 at https://benevolent-bulldog-176.convex.cloud. The GitHub Actions CONVEX_DEPLOY_KEY is configured for this migration deployment.",
+      "Live production remains the Hercules POS at https://smoke-signals-pos-224583.onhercules.app using Convex moonlit-mallard-698. Do not repoint, reset, overwrite, or migrate that production backend during staging work.",
+      "The Hercules runtime/auth packages have been removed on the migration branch while preserving POS business logic, employee/PIN access, Valor integration, recovery diagnostics, inventory, transactions, customers, returns, and shared settings.",
+      "The cleaned migration branch passes frozen pnpm install, Convex TypeScript checks, and the production Vite build.",
+      "A matching Cloudflare migration project has been created, but its exact Worker/project name and staging URL are not yet registered in Viking Aries. Do not target a Cloudflare Worker until those exact identifiers are confirmed.",
+      "Timekeeper is a separate application and must not be modified as part of this migration.",
+    ].join("\n"),
+  },
   "dw-site": {
     repository: "dakotawireless/DW-Website---NEW",
     defaultBranch: "migration-staging",
@@ -47,7 +67,7 @@ export function migrateProjectMappings(projectId, mappings = {}) {
     ...mappings,
     migratedProjectVersion: 1,
     github: { ...mappings?.github, enabled: true, repository: project.repository, branch: project.defaultBranch },
-    cloudflare: { ...mappings?.cloudflare, enabled: true, worker: project.cloudflareWorker, deploymentUrl: project.deploymentUrl },
+    cloudflare: { ...mappings?.cloudflare, enabled: Boolean(project.cloudflareWorker || project.deploymentUrl), worker: project.cloudflareWorker, deploymentUrl: project.deploymentUrl },
     convex: { ...mappings?.convex, enabled: true, deployment: project.backendDeployment, url: project.backendUrl, dashboardUrl: project.convexDashboardUrl },
   };
 }
