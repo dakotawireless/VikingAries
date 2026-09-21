@@ -44,6 +44,7 @@ import {
   Rocket,
   Send,
   Settings,
+  Square,
   Shield,
   SlidersHorizontal,
   ShieldCheck,
