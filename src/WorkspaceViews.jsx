@@ -1104,7 +1104,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   <label className="compact-field">
                     <span>Connection status</span>
                     <select
-                      value={item.status}
+                      value={
+                        item.id === "cloudflare" && cloudflareDestinationConnected
+                          ? "Connected"
+                          : item.status
+                      }
                       onChange={(e) => updateProvider(item.id, { status: e.target.value })}
                     >
                       <option>Needs connection</option>
