@@ -1769,11 +1769,11 @@ function ChatWorkspace({ project, active = true }) {
           </button>
           {attachmentMenuOpen && (
             <div className="attachment-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => photoInputRef.current?.click()}>
+              <button type="button" role="menuitem" onClick={(event) => openAttachmentPicker(photoInputRef, event)}>
                 <FileImage size={17} />
                 <span><strong>Photos</strong><small>Choose images from your device</small></span>
               </button>
-              <button type="button" role="menuitem" onClick={() => fileInputRef.current?.click()}>
+              <button type="button" role="menuitem" onClick={(event) => openAttachmentPicker(fileInputRef, event)}>
                 <FileText size={17} />
                 <span><strong>Files</strong><small>Choose a document or text file</small></span>
               </button>
