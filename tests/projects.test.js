@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MIGRATED_PROJECTS, migrateProjectMappings } from '../shared/projects.js';
@@ -36,4 +37,11 @@ test('Smoke Signals migration registration exposes isolated repo, Convex and Clo
   assert.equal(result.github.branch, project.defaultBranch);
   assert.equal(result.convex.deployment, project.backendDeployment);
   assert.equal(result.cloudflare.worker, project.cloudflareWorker);
+});
+
+test('Smoke Signals has exactly one authoritative project registration', () => {
+  const source = fs.readFileSync(new URL('../shared/projects.js', import.meta.url), 'utf8');
+  const matches = source.match(/"smoke-pos"\s*:\s*\{/g) || [];
+  assert.equal(matches.length, 1);
+  assert.equal(MIGRATED_PROJECTS['smoke-pos'].convexDashboardUrl, 'https://dashboard.convex.dev/t/erik-2df00/smoke-signals-pos-new/benevolent-bulldog-176');
 });

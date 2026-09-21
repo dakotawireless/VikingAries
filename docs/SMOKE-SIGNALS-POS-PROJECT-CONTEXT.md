@@ -76,7 +76,7 @@ A matching migration project exists. Viking Aries currently registers the expect
 
 - `smoke-signals-pos---new`
 
-Verify the Worker with the shared Cloudflare integration before recording a staging URL or triggering a migration build.
+The migration branch now includes `wrangler.jsonc`, pinned Wrangler tooling, React SPA fallback routing, and permanent CI validation using `wrangler deploy --dry-run`. The dry-run passes. Verify the actual Worker with the shared Cloudflare integration before recording a staging URL or triggering the first real migration deployment.
 
 ### Valor Connect Cloud / VP550
 
