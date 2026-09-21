@@ -1634,7 +1634,6 @@ function ChatWorkspace({ project, active = true }) {
           aria-label="Stop Viking Aries from continuing"
         >
           <Square size={15} fill="currentColor" />
-          Stop
         </button>
         <label className="model-picker">
           <span>Model</span>
