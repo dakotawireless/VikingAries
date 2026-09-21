@@ -1539,87 +1539,24 @@ const worker = {
         return json({ error: "Owner login required." }, { status: 401 });
       }
 
-      const githubToken = await resolveSecret(env.GITHUB_TOKEN);
-      if (!githubToken) {
-        return json({ error: "GITHUB_TOKEN is not configured in Cloudflare." }, { status: 503 });
+      if (url.pathname === "/api/files/list" && request.method === "GET") {
+        return json({
+          ok: true,
+          files: [],
+          storageStatus: "secure-storage-migration",
+          message:
+            "GitHub-backed hardcopy storage is retired. Project hardcopies are being kept in the private Library archive until a private VA storage backend is connected.",
+        });
       }
 
-      try {
-        if (url.pathname === "/api/files/upload") {
-          if (request.method !== "POST") {
-            return json({ error: "Method not allowed." }, { status: 405 });
-          }
-
-          const form = await request.formData();
-          const projectId = String(form.get("projectId") || "").trim();
-          const file = form.get("file");
-          if (!safeProjectStorageId(projectId)) {
-            return json({ error: "A valid project is required." }, { status: 400 });
-          }
-          if (!file || typeof file.arrayBuffer !== "function") {
-            return json({ error: "A file is required." }, { status: 400 });
-          }
-
-          const stored = await githubStoreProjectFile(githubToken, { projectId, file });
-          return json({ ok: true, file: stored });
-        }
-
-        if (url.pathname === "/api/files/delete") {
-          if (request.method !== "DELETE") {
-            return json({ error: "Method not allowed." }, { status: 405 });
-          }
-
-          const body = await request.json().catch(() => ({}));
-          const projectId = String(body?.projectId || "").trim();
-          if (!safeProjectStorageId(projectId)) {
-            return json({ error: "A valid project is required." }, { status: 400 });
-          }
-
-          const result = await githubDeleteProjectFile(githubToken, {
-            projectId,
-            path: body?.path,
-            sha: body?.sha,
-            name: body?.name,
-          });
-          return json(result);
-        }
-
-        if (request.method !== "GET") {
-          return json({ error: "Method not allowed." }, { status: 405 });
-        }
-
-        const projectId = String(url.searchParams.get("projectId") || "").trim();
-        if (!safeProjectStorageId(projectId)) {
-          return json({ error: "A valid project is required." }, { status: 400 });
-        }
-
-        if (url.pathname === "/api/files/list") {
-          const files = await githubListProjectFiles(githubToken, projectId);
-          return json({ ok: true, files });
-        }
-
-        const path = url.searchParams.get("path") || "";
-        const fileName = safeUploadedFileName(url.searchParams.get("name") || path.split("/").pop() || "file");
-        const contentType = (url.searchParams.get("type") || "application/octet-stream").slice(0, 200);
-        const inline = url.searchParams.get("inline") === "1";
-        const upstream = await githubDownloadProjectFile(githubToken, { projectId, path });
-
-        const headers = new Headers();
-        headers.set("Content-Type", contentType);
-        const contentLength = upstream.headers.get("Content-Length");
-        if (contentLength) headers.set("Content-Length", contentLength);
-        headers.set(
-          "Content-Disposition",
-          `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fileName)}`
-        );
-        headers.set("Cache-Control", "private, max-age=60");
-
-        return new Response(upstream.body, { status: 200, headers });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "File storage request failed.";
-        const status = /3 MB|empty|required|valid|registered/i.test(message) ? 400 : 502;
-        return json({ error: message }, { status });
-      }
+      return json(
+        {
+          error:
+            "Hardcopy upload/download through VA is temporarily disabled while private storage is being connected. Use the project's private Files & Media Library archive for durable files.",
+          storageStatus: "secure-storage-migration",
+        },
+        { status: 503 }
+      );
     }
 
     if (url.pathname === "/api/integrations/status") {
