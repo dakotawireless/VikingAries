@@ -514,6 +514,51 @@ function formatChatTimestamp(value) {
   }).format(new Date(Number(value) || Date.now()));
 }
 
+function renderLinkedText(text, keyPrefix) {
+  // Support both Markdown links returned by the AI and normal pasted URLs.
+  // Only http(s) and mailto links are matched, so chat text cannot create
+  // executable javascript: links.
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)|(https?:\/\/[^\s<>"']+|mailto:[^\s<>"']+)/gi;
+  const parts = [];
+  let cursor = 0;
+  let match;
+  let linkIndex = 0;
+
+  while ((match = linkPattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      parts.push(<span key={`${keyPrefix}-text-${cursor}`}>{text.slice(cursor, match.index)}</span>);
+    }
+
+    const markdownLabel = match[1];
+    const rawHref = match[2] || match[3];
+    // Sentence punctuation is commonly placed immediately after a pasted URL.
+    const href = markdownLabel ? rawHref : rawHref.replace(/[.,!?;:]+$/, "");
+    const suffix = markdownLabel ? "" : rawHref.slice(href.length);
+
+    parts.push(
+      <a
+        key={`${keyPrefix}-link-${linkIndex}`}
+        className="chat-message-link"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {markdownLabel || href}
+      </a>
+    );
+    if (suffix) parts.push(<span key={`${keyPrefix}-suffix-${linkIndex}`}>{suffix}</span>);
+
+    linkIndex += 1;
+    cursor = match.index + match[0].length;
+  }
+
+  if (!parts.length) return text;
+  if (cursor < text.length) {
+    parts.push(<span key={`${keyPrefix}-text-trailing`}>{text.slice(cursor)}</span>);
+  }
+  return parts;
+}
+
 function renderChatContent(content, onImageOpen, fullSizeImage = "") {
   const text = String(content || "");
   // Match any markdown image backed by an inline image data URL. Keeping this
@@ -526,7 +571,7 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
 
   while ((match = imagePattern.exec(text)) !== null) {
     const textBefore = text.slice(cursor, match.index);
-    if (textBefore) parts.push(<span key={`text-${match.index}`}>{textBefore}</span>);
+    if (textBefore) parts.push(...[].concat(renderLinkedText(textBefore, `text-${match.index}`)));
     const imageSource = match[1].replace(/\s/g, "");
     const fullImageSource = fullSizeImage || imageSource;
     parts.push(
@@ -549,9 +594,9 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
     cursor = match.index + match[0].length;
   }
 
-  if (!parts.length) return text;
+  if (!parts.length) return renderLinkedText(text, "chat");
   const trailingText = text.slice(cursor);
-  if (trailingText) parts.push(<span key="text-trailing">{trailingText}</span>);
+  if (trailingText) parts.push(...[].concat(renderLinkedText(trailingText, "text-trailing")));
   return parts;
 }
 
