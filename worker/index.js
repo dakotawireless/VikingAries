@@ -1415,21 +1415,44 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
   throw lastError || new Error("The AI service returned an error.");
 }
 
-function expandPdfAttachments(messages) {
-  const marker = /\\[VA_PDF_ATTACHMENT:(data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+)\\]/i;
+function expandAttachmentMarkers(messages) {
+  const attachmentPattern = /\\[VA_ATTACHMENT:([^|]*)\\|([^|]*)\\|(data:[^\\]]+)\\]/gi;
+  const legacyPdfPattern = /\\[VA_PDF_ATTACHMENT:(data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+)\\]/i;
+
   return messages.map((message) => {
     if (message?.role !== "user" || typeof message?.content !== "string") return message;
-    const match = message.content.match(marker);
-    if (!match) return message;
 
-    const visibleText = message.content.replace(marker, "").trim();
-    return {
-      ...message,
-      content: [
-        ...(visibleText ? [{ type: "input_text", text: visibleText }] : []),
-        { type: "input_file", filename: "attached.pdf", file_data: match[1] },
-      ],
-    };
+    const attachments = [];
+    let visibleText = message.content.replace(attachmentPattern, (_match, encodedName, type, dataUrl) => {
+      let filename = "attached";
+      try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback name. */ }
+      attachments.push({ filename, type, dataUrl });
+      return "";
+    });
+
+    // Continue accepting PDFs created by older queued messages.
+    const legacyMatch = visibleText.match(legacyPdfPattern);
+    if (legacyMatch) {
+      attachments.push({ filename: "attached.pdf", type: "application/pdf", dataUrl: legacyMatch[1] });
+      visibleText = visibleText.replace(legacyPdfPattern, "");
+    }
+
+    if (!attachments.length) return message;
+
+    const content = visibleText.trim() ? [{ type: "input_text", text: visibleText.trim() }] : [];
+    for (const attachment of attachments) {
+      if (String(attachment.type || "").startsWith("image/")) {
+        content.push({ type: "input_image", image_url: attachment.dataUrl });
+      } else {
+        content.push({
+          type: "input_file",
+          filename: attachment.filename,
+          file_data: attachment.dataUrl,
+        });
+      }
+    }
+
+    return { ...message, content };
   });
 }
 
