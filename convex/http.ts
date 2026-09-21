@@ -152,7 +152,7 @@ http.route({
           { status: 400 }
         );
       }
-      if (requestJson.length > 600000) {
+      if (requestJson.length > 12000000) {
         return Response.json({ error: "AI job request is too large." }, { status: 413 });
       }
 
