@@ -103,6 +103,31 @@ Never place the values in GitHub source, Viking Aries project metadata, or chat.
 - `returns`
 - `recoveryBatches`
 
+
+## Guarded production data migration
+
+The Smoke Signals migration branch includes a manual GitHub workflow at `.github/workflows/migrate-convex-data.yml`.
+
+It is intentionally blocked until two dedicated migration-scoped Convex keys are configured as GitHub Actions secrets:
+
+- `SMOKE_SIGNALS_PROD_EXPORT_KEY` — production export access for `moonlit-mallard-698`; use least privilege with `deployment:data:view` and the backup create/download permissions required by Convex export.
+- `SMOKE_SIGNALS_MIGRATION_DATA_KEY` — staging import/re-export access for `benevolent-bulldog-176`; use least privilege with the backup import/create/download and data permissions required by Convex import/export.
+
+The workflow also uses the existing migration `CONVEX_DEPLOY_KEY` for target diagnostics.
+
+Safety behavior:
+
+- manual-only execution
+- exact confirmation phrase required
+- refuses to import if migration diagnostics show existing products/customers/transactions/recovery data
+- source snapshot remains only in temporary runner storage and is never uploaded as an artifact
+- imports into the migration deployment only
+- re-exports the migration deployment after import
+- compares source and target table document counts and normalized content hashes
+- deletes temporary source/target snapshots at the end even if the job fails
+
+Do not configure broad or reusable account credentials for this workflow when deployment-scoped keys can be used.
+
 ## Cutover rule
 
 Do not merge/cut over merely because the app builds. Before production cutover, verify at minimum:

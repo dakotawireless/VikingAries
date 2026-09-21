@@ -535,7 +535,8 @@ function smokePosDefaults(project) {
     ],
     automations: [
       { id: "convex-deploy", name: "Deploy migration Convex", trigger: "GitHub Actions manual/trigger file", action: "Deploy schema/functions to benevolent-bulldog-176 then run diagnostics", enabled: true },
-      { id: "cloudflare-deploy", name: "Cloudflare migration deployment", trigger: "Pending exact Worker registration", action: "Build migration branch and expose staging URL", enabled: false },
+      { id: "cloudflare-deploy", name: "Cloudflare migration deployment", trigger: "After project-specific Cloudflare verification", action: "Build migration branch and expose staging URL", enabled: false },
+      { id: "convex-data-copy", name: "Production → migration Convex data copy", trigger: "Manual GitHub workflow with exact confirmation phrase", action: "Export moonlit-mallard-698, import benevolent-bulldog-176, then re-export and compare table counts/content hashes", enabled: false },
     ],
     diagnostics: [
       { id: "source-import", name: "Source archive integrity", result: "Passed", detail: "Uploaded source was SHA-256 verified before GitHub baseline import." },
@@ -543,6 +544,7 @@ function smokePosDefaults(project) {
       { id: "convex-target", name: "Migration Convex deployment", result: "Passed", detail: "Schema/functions deployed to benevolent-bulldog-176 and diagnostics passed. Backend is intentionally empty before data migration: 0 products, 0 customers, 0 transactions." },
       { id: "production-protection", name: "Legacy production protection", result: "Passed", detail: "Hercules live POS and moonlit-mallard-698 remain untouched during migration." },
       { id: "cloudflare-target", name: "Cloudflare migration target", result: "Packaging passed", detail: "Wrangler is pinned, React SPA routing is configured, and wrangler deploy --dry-run passes. Provider verification and the first real staging deployment remain pending." },
+      { id: "data-migration-workflow", name: "Guarded production data-copy workflow", result: "Ready / blocked on keys", detail: "Manual-only workflow requires an exact confirmation phrase, refuses non-empty staging, keeps snapshots only in runner temp storage, re-exports staging after import, and compares table counts plus normalized content hashes." },
     ],
     versions: [
       { id: "baseline", label: "Verified Hercules source baseline", ref: "d62120d72158", note: "Exact uploaded baseline imported before migration-specific edits." },
@@ -560,6 +562,8 @@ function smokePosDefaults(project) {
     secrets: [
       { id: "convex-deploy-key", name: "CONVEX_DEPLOY_KEY", provider: "GitHub Actions", purpose: "Deploy migration schema/functions to benevolent-bulldog-176", status: "Configured" },
       { id: "convex-url", name: "VITE_CONVEX_URL", provider: "Cloudflare build environment", purpose: "Point migrated frontend to benevolent-bulldog-176", status: "Target known" },
+      { id: "prod-export-key", name: "SMOKE_SIGNALS_PROD_EXPORT_KEY", provider: "GitHub Actions / Convex", purpose: "Read-only production snapshot export from moonlit-mallard-698; grant only deployment:data:view plus required backup create/download permissions", status: "Needs configuration" },
+      { id: "migration-data-key", name: "SMOKE_SIGNALS_MIGRATION_DATA_KEY", provider: "GitHub Actions / Convex", purpose: "Import/re-export staging snapshot on benevolent-bulldog-176; grant only required backup import/create/download and data permissions", status: "Needs configuration" },
       { id: "valor-api-base-url", name: "VALOR_API_BASE_URL", provider: "Convex environment", purpose: "Valor Connect Cloud API endpoint", status: "Migration copy required" },
       { id: "valor-app-id", name: "VALOR_APP_ID", provider: "Convex environment", purpose: "Valor Connect Cloud application ID", status: "Migration copy required" },
       { id: "valor-app-key", name: "VALOR_APP_KEY", provider: "Convex environment", purpose: "Valor Connect Cloud application key", status: "Migration copy required" },
