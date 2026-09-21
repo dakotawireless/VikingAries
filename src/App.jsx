@@ -788,34 +788,46 @@ function recommendModelForTask(value) {
   if (!text) return null;
 
   const lower = text.toLowerCase();
+
+  // Sol is for broad project/system work, not merely a substantial edit to one
+  // page or UI area. Require wording that clearly scopes the change to the whole
+  // app/site/platform/system or to architecture/migration-level work.
   const solSignals = [
-    /\b(overhaul|re-architect|rearchitect|architecture overhaul|major refactor|large refactor|full rewrite|rewrite the app|rebuild the app|rebuild the site)\b/,
+    /\b(entire|whole|full|complete)\b[\s\S]{0,80}\b(app|application|website|site|platform|system|project|codebase|architecture)\b[\s\S]{0,80}\b(redo|redesign|rebuild|rewrite|refactor|overhaul|re-architect|rearchitect)\b/,
+    /\b(redo|redesign|rebuild|rewrite|refactor|overhaul|re-architect|rearchitect)\b[\s\S]{0,80}\b(entire|whole|full|complete)\b[\s\S]{0,80}\b(app|application|website|site|platform|system|project|codebase|architecture)\b/,
     /\b(full migration|migrate the entire|migrate everything|system-wide|cross-project|across multiple projects|all projects)\b/,
-    /\b(schema migration|data model redesign|security audit|performance overhaul|platform redesign|major redesign)\b/,
+    /\b(schema migration|data model redesign|security audit|performance overhaul|architecture overhaul|platform redesign|major architectural redesign)\b/,
   ];
 
   const terraSignals = [
-    /\b(create|build|add|implement|develop|make)\b[\s\S]{0,120}\b(page|screen|feature|workflow|integration|module|component|dashboard|form|api|endpoint|automation)\b/,
+    /\b(create|build|add|implement|develop|make)\b[\s\S]{0,140}\b(page|screen|feature|workflow|integration|module|component|dashboard|form|api|endpoint|automation|sidebar|navigation|nav|header|footer|layout|ui|interface|section|menu)\b/,
+    /\b(redo|redesign|rework|rebuild|rewrite|refactor|overhaul|revamp)\b[\s\S]{0,140}\b(page|screen|feature|workflow|integration|module|component|dashboard|form|sidebar|navigation|nav|header|footer|layout|ui|interface|section|menu)\b/,
+    /\b(page|screen|feature|workflow|integration|module|component|dashboard|form|sidebar|navigation|nav|header|footer|layout|ui|interface|section|menu)\b[\s\S]{0,100}\b(redo|redesign|rework|rebuild|rewrite|refactor|overhaul|revamp)\b/,
     /\b(new page|new feature|new integration|multi-file|multiple files|connect .* api|integrate .* with)\b/,
     /\b(fix|debug|troubleshoot|investigate)\b[\s\S]{0,120}\b(bug|issue|error|integration|build|deploy|sync|code)\b/,
-    /\b(update|change|modify)\b[\s\S]{0,100}\b(component|page|workflow|integration|backend|database|api)\b/,
+    /\b(update|change|modify)\b[\s\S]{0,120}\b(component|page|screen|workflow|integration|backend|database|api|sidebar|navigation|nav|header|footer|layout|ui|section|menu)\b/,
   ];
 
   if (solSignals.some((pattern) => pattern.test(lower))) {
     return {
       id: "gpt-5.6-sol",
       label: "Sol",
-      reason: "Broad architectural or high-complexity work",
+      reason: "Whole-project, architectural, or migration-level work",
     };
   }
 
   const terraMatches = terraSignals.filter((pattern) => pattern.test(lower)).length;
-  const complexityWords = (lower.match(/\b(repo|repository|backend|database|api|integration|deploy|migration|refactor|workflow|multiple|several)\b/g) || []).length;
+  const complexityWords = (
+    lower.match(
+      /\b(repo|repository|backend|database|api|integration|deploy|migration|refactor|workflow|multiple|several|redesign|rebuild|overhaul|sidebar|navigation|layout|component)\b/g
+    ) || []
+  ).length;
+
   if (terraMatches > 0 || complexityWords >= 3 || text.length > 900) {
     return {
       id: "gpt-5.6-terra",
       label: "Terra",
-      reason: "Implementation or multi-step build work",
+      reason: "Implementation, redesign, or multi-step build work",
     };
   }
 
