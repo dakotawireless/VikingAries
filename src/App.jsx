@@ -1186,16 +1186,10 @@ function ChatWorkspace({ project, active = true }) {
 
   const sendMessage = async () => {
     const typedContent = draft.trim();
-    const content = [
-      typedContent,
-      attachment?.thumbnailDataUrl ? `![${attachment.name || "Attached photo"}](${attachment.thumbnailDataUrl})` : "",
-      attachment?.kind === "pdf"
-        ? `Attached PDF: ${attachment.name}\n\n[VA_PDF_ATTACHMENT:${attachment.dataUrl}]`
-        : "",
-      attachment?.kind === "file"
-        ? `Attached file: ${attachment.name}\n\n${attachment.text || "(This file did not contain readable text.)"}`
-        : "",
-    ].filter(Boolean).join("\n\n");
+    const attachmentMarker = attachment?.dataUrl
+      ? `[VA_ATTACHMENT:${encodeURIComponent(attachment.name || "Attachment")}|${attachment.type || "application/octet-stream"}|${attachment.dataUrl}]`
+      : "";
+    const content = [typedContent, attachmentMarker].filter(Boolean).join("\n\n");
 
     if (!content || submitGuardRef.current) return;
     if (!activeThread) {
