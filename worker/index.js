@@ -1358,6 +1358,24 @@ function formatVerifiedActionHistory(receipts) {
     .join("\n");
 }
 
+function retryDelayMs(response, payload, attempt) {
+  const retryAfter = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) {
+    return Math.min(10000, Math.max(250, retryAfter * 1000));
+  }
+
+  const message = String(payload?.error?.message || "");
+  const match = message.match(/try again in\s+([0-9.]+)\s*(ms|s)/i);
+  if (match) {
+    const amount = Number(match[1]);
+    if (Number.isFinite(amount)) {
+      return Math.min(10000, Math.max(250, match[2].toLowerCase() === "ms" ? amount : amount * 1000));
+    }
+  }
+
+  return Math.min(8000, 750 * 2 ** attempt);
+}
+
 async function callOpenAI({ apiKey, model, instructions, input, tools, previousResponseId, finalOnly = false }) {
   const body = {
     model,
@@ -1372,22 +1390,29 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
   if (finalOnly) body.tool_choice = "none";
   if (previousResponseId) body.previous_response_id = previousResponseId;
 
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    if (response.ok) return payload;
+
     const error = new Error(payload?.error?.message || "The AI service returned an error.");
     error.status = response.status;
-    throw error;
+    lastError = error;
+
+    if (response.status !== 429 || attempt === 3) throw error;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(response, payload, attempt)));
   }
-  return payload;
+
+  throw lastError || new Error("The AI service returned an error.");
 }
 
 function extractResponseText(payload) {
@@ -2382,20 +2407,42 @@ const worker = {
       projectMetadata.repository = "";
     }
 
-    const messages = Array.isArray(body?.messages)
-      ? body.messages
-          .filter(
-            (message) =>
-              (message?.role === "user" || message?.role === "assistant") &&
-              typeof message?.content === "string" &&
-              message.content.trim()
-          )
-          .slice(-40)
-          .map((message) => ({
-            role: message.role,
-            content: message.content.trim().slice(0, 12000),
-          }))
-      : [];
+    const messages = (() => {
+      if (!Array.isArray(body?.messages)) return [];
+
+      const candidates = body.messages
+        .filter(
+          (message) =>
+            (message?.role === "user" || message?.role === "assistant") &&
+            typeof message?.content === "string" &&
+            message.content.trim()
+        )
+        .slice(-14);
+
+      const MAX_TOTAL_CHARS = 70000;
+      const MAX_MESSAGE_CHARS = 7000;
+      let remaining = MAX_TOTAL_CHARS;
+      const compact = [];
+
+      // Build backward so the newest context is always preserved first.
+      for (let index = candidates.length - 1; index >= 0 && remaining > 0; index -= 1) {
+        const message = candidates[index];
+        const raw = message.content.trim();
+        const limit = Math.min(MAX_MESSAGE_CHARS, remaining);
+        // Keep the tail of older messages because it usually contains the outcome,
+        // while the newest message keeps its beginning in full.
+        const content =
+          index === candidates.length - 1
+            ? raw.slice(0, limit)
+            : raw.length > limit
+              ? raw.slice(-limit)
+              : raw;
+        remaining -= content.length;
+        compact.unshift({ role: message.role, content });
+      }
+
+      return compact;
+    })();
 
     if (!messages.length) {
       return json({ error: "At least one chat message is required." }, { status: 400 });
