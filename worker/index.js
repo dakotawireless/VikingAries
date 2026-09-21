@@ -1619,6 +1619,25 @@ async function listVAJobs(env, projectId, limit = 50) {
   return payload;
 }
 
+async function cancelVAJobs(env, projectId, threadId) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/jobs/cancel`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ projectId, threadId }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Job store returned status ${response.status}`);
+  }
+  return payload;
+}
+
 async function internalJobAuthorized(request, env) {
   const expected = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!expected) return false;
