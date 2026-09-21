@@ -2342,7 +2342,7 @@ body.resizing-preview * {
 }
 
 .app-shell.mobile-ui .composer {
-  grid-template-columns: 34px 34px minmax(0, 1fr) 46px;
+  grid-template-columns: 34px 34px minmax(0, 1fr) 46px 46px;
   gap: 7px;
   padding: 9px calc(8px + env(safe-area-inset-right))
     calc(10px + env(safe-area-inset-bottom))
