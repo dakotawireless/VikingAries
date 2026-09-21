@@ -1746,9 +1746,38 @@ function ChatWorkspace({ project, active = true }) {
           sendMessage();
         }}
       >
-        <button className="attach-button" type="button" title="Attachments coming next">
-          <Archive size={18} />
-        </button>
+        <div className="attachment-picker" ref={attachmentMenuRef}>
+          <button
+            className={attachmentMenuOpen ? "attach-button active" : "attach-button"}
+            type="button"
+            title="Add files or photos"
+            aria-label="Add files or photos"
+            aria-expanded={attachmentMenuOpen}
+            onClick={() => setAttachmentMenuOpen((value) => !value)}
+          >
+            <Paperclip size={18} />
+          </button>
+          {attachmentMenuOpen && (
+            <div className="attachment-menu" role="menu">
+              <button type="button" role="menuitem" onClick={() => photoInputRef.current?.click()}>
+                <FileImage size={17} />
+                <span><strong>Photos</strong><small>Choose images from your device</small></span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => fileInputRef.current?.click()}>
+                <FileText size={17} />
+                <span><strong>Files</strong><small>Choose a document or text file</small></span>
+              </button>
+            </div>
+          )}
+          <input ref={photoInputRef} type="file" accept="image/*" hidden onChange={(event) => {
+            handleSelectedAttachment(event.target.files?.[0]);
+            event.target.value = "";
+          }} />
+          <input ref={fileInputRef} type="file" accept=".txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
+            handleSelectedAttachment(event.target.files?.[0]);
+            event.target.value = "";
+          }} />
+        </div>
         <button
           className={listening ? "voice-button active" : "voice-button"}
           type="button"
