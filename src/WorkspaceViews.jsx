@@ -802,6 +802,26 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const [cloudflareTokenDraft, setCloudflareTokenDraft] = useState("");
   const [configureBusy, setConfigureBusy] = useState(false);
 
+  useEffect(() => {
+    const registeredWorker = project?.cloudflareWorker || (project?.id === "viking-aries" ? "vikingaries" : "");
+    if (!registeredWorker) return;
+
+    setMappings((current) => {
+      const cloudflare = current?.cloudflare || {};
+      const nextCloudflare = {
+        ...cloudflare,
+        enabled: true,
+        worker: cloudflare.worker || registeredWorker,
+        deploymentUrl: cloudflare.deploymentUrl || project.deploymentUrl || "",
+      };
+      const changed =
+        cloudflare.enabled !== nextCloudflare.enabled ||
+        cloudflare.worker !== nextCloudflare.worker ||
+        cloudflare.deploymentUrl !== nextCloudflare.deploymentUrl;
+      return changed ? { ...current, cloudflare: nextCloudflare } : current;
+    });
+  }, [project?.id, project?.cloudflareWorker, project?.deploymentUrl]);
+
   const icons = {
     GitHub: Github,
     Cloudflare: Cloud,
