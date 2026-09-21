@@ -2644,7 +2644,7 @@ const worker = {
         compact.unshift({ role: message.role, content });
       }
 
-      return compact;
+      return expandPdfAttachments(compact);
     })();
 
     if (!messages.length) {
