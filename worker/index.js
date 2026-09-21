@@ -2132,14 +2132,32 @@ const worker = {
         return json({ error: "CLOUDFLARE_API_TOKEN is not configured in Cloudflare runtime secrets." }, { status: 503 });
       }
 
+      const projectId = (url.searchParams.get("projectId") || "").trim();
+      const projectConfig = projectId ? registeredProjectConfig(projectId) : null;
+
       try {
         const verification = await cloudflareVerifyToken(cloudflareToken);
+        let worker = null;
+        if (projectConfig?.cloudflareWorker) {
+          const record = await cloudflareWorkerRecord(
+            cloudflareToken,
+            projectConfig.cloudflareWorker
+          );
+          worker = {
+            id: record?.id || projectConfig.cloudflareWorker,
+            tag: record?.tag || null,
+            modifiedOn: record?.modified_on || null,
+          };
+        }
+
         return json({
           ok: verification.status === "active",
           status: verification.status,
           tokenId: verification.id,
           expiresOn: verification.expiresOn,
           accountId: CLOUDFLARE_ACCOUNT_ID,
+          projectId: projectId || null,
+          worker,
         });
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
@@ -2161,12 +2179,25 @@ const worker = {
         return json({ error: "CONVEX_PERSONAL_ACCESS_TOKEN is not configured in Cloudflare runtime secrets." }, { status: 503 });
       }
 
+      const projectId = (url.searchParams.get("projectId") || "").trim();
+      const projectConfig = projectId ? registeredProjectConfig(projectId) : null;
+
       try {
         const verification = await convexVerifyToken(convexToken);
+        let deployment = null;
+        if (projectConfig?.backend === "Convex" && projectConfig?.backendDeployment) {
+          deployment = await convexGetDeployment(
+            convexToken,
+            projectConfig.backendDeployment
+          );
+        }
+
         return json({
           ok: true,
           tokenType: verification.tokenType,
           tokenCount: verification.tokenCount,
+          projectId: projectId || null,
+          deployment,
         });
       } catch (error) {
         return json({ error: error.message }, { status: 502 });
