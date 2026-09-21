@@ -855,6 +855,8 @@ function ChatWorkspace({ project, active = true }) {
     [draft]
   );
   const scrollRef = useRef(null);
+  const conversationRef = useRef(null);
+  const autoFollowRef = useRef(true);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
   const recognitionSessionRef = useRef(0);
@@ -890,6 +892,7 @@ function ChatWorkspace({ project, active = true }) {
   const scrollToChatBottom = (behavior = "auto") => {
     const node = scrollRef.current;
     if (!node) return;
+    autoFollowRef.current = true;
     node.scrollTo({ top: node.scrollHeight, behavior });
     setShowJumpToBottom(false);
   };
@@ -898,21 +901,61 @@ function ChatWorkspace({ project, active = true }) {
     const node = scrollRef.current;
     if (!node) return;
     const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    setShowJumpToBottom(distanceFromBottom > 140);
+    const nearBottom = distanceFromBottom <= 140;
+    autoFollowRef.current = nearBottom;
+    setShowJumpToBottom(!nearBottom);
   };
 
+  // Changing projects/chats starts at the latest activity.
   useEffect(() => {
-    const run = () => scrollToChatBottom("auto");
-
-    // Run after layout and once more after embedded content/fonts finish settling.
-    const frame = window.requestAnimationFrame(run);
-    const timer = window.setTimeout(run, 80);
+    if (!active) return;
+    autoFollowRef.current = true;
+    const frame = window.requestAnimationFrame(() => scrollToChatBottom("auto"));
+    const timer = window.setTimeout(() => scrollToChatBottom("auto"), 80);
 
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [project.id, activeThreadId, activeThread?.messages?.length, sending, active]);
+  }, [project.id, activeThreadId, active]);
+
+  // New messages keep following only if the owner has not manually scrolled up.
+  useEffect(() => {
+    if (!active || !autoFollowRef.current) return;
+    const frame = window.requestAnimationFrame(() => scrollToChatBottom("auto"));
+    const timer = window.setTimeout(() => {
+      if (autoFollowRef.current) scrollToChatBottom("auto");
+    }, 80);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [activeThread?.messages?.length, sending, active]);
+
+  // The live activity feed grows inside an existing message, so message count does
+  // not change. Observe the conversation height and keep the newest activity row
+  // visible while follow mode is active.
+  useEffect(() => {
+    if (!active || typeof ResizeObserver === "undefined") return undefined;
+    const conversation = conversationRef.current;
+    if (!conversation) return undefined;
+
+    let frame = null;
+    const observer = new ResizeObserver(() => {
+      if (!autoFollowRef.current) return;
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        if (autoFollowRef.current) scrollToChatBottom("auto");
+      });
+    });
+
+    observer.observe(conversation);
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [project.id, activeThreadId, active]);
 
   useEffect(() => {
     if (!active && recognitionRef.current) {
@@ -1125,6 +1168,7 @@ function ChatWorkspace({ project, active = true }) {
     }
 
     submitGuardRef.current = true;
+    autoFollowRef.current = true;
     setQueueing(true);
 
     recognitionSessionRef.current += 1;
@@ -1464,7 +1508,7 @@ function ChatWorkspace({ project, active = true }) {
       </div>
 
       <div className="workspace-scroll" ref={scrollRef} onScroll={handleChatScroll}>
-        <section className="conversation live-conversation">
+        <section className="conversation live-conversation" ref={conversationRef}>
           {activeThread?.messages.length === 0 && (
             <div className="empty-chat-state">
               <div className="empty-chat-icon"><Bot size={22} /></div>
