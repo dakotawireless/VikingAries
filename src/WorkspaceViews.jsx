@@ -277,7 +277,7 @@ function vikingAriesDefaults(project) {
     files: [],
     integrations: [
       { id: "github", name: "GitHub", provider: "dakotawireless/VikingAries", purpose: "Source control", status: "Connected" },
-      { id: "cloudflare", name: "Cloudflare", provider: "Workers", purpose: "Hosting / deployment", status: "Connected" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Worker: vikingaries", purpose: "Hosting / deployment", status: "Connected" },
       { id: "convex", name: "Convex", provider: "flippant-mandrill-487", purpose: "Database / backend", status: "Connected" },
       { id: "drive", name: "Google Drive", provider: "Not configured", purpose: "Files / documents", status: "Available" },
       { id: "gmail", name: "Gmail", provider: "Not configured", purpose: "Email", status: "Available" },
