@@ -2186,6 +2186,32 @@ const worker = {
       }
     }
 
+    if (url.pathname === "/api/jobs/cancel") {
+      const auth = await ownerAuthConfig(env);
+      const ownerAuthenticated = auth.configured
+        ? await verifyOwnerSession(request, auth.sessionSecret)
+        : true;
+
+      if (auth.configured && !ownerAuthenticated) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      try {
+        const body = await request.json();
+        const projectId = typeof body?.projectId === "string" ? body.projectId.trim().slice(0, 120) : "";
+        const threadId = typeof body?.threadId === "string" ? body.threadId.trim().slice(0, 160) : "";
+        if (!projectId || !threadId) {
+          return json({ error: "A project and thread are required." }, { status: 400 });
+        }
+        return json(await cancelVAJobs(env, projectId, threadId));
+      } catch (error) {
+        return json({ error: error.message || "Could not stop AI jobs." }, { status: 502 });
+      }
+    }
+
     if (url.pathname === "/api/jobs") {
       const auth = await ownerAuthConfig(env);
       const ownerAuthenticated = auth.configured
