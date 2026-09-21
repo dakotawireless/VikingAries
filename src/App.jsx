@@ -868,6 +868,11 @@ function ChatWorkspace({ project, active = true }) {
   const submitGuardRef = useRef(false);
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
+  const projectIntegrationMappings = loadProjectIntegrationMappings(project);
+  const projectDeploymentUrl =
+    projectIntegrationMappings.cloudflare?.deploymentUrl ||
+    project.deploymentUrl ||
+    "";
 
   useEffect(() => {
     window.localStorage.setItem(`viking-aries-chats:${project.id}`, JSON.stringify(threads));
@@ -1474,6 +1479,26 @@ function ChatWorkspace({ project, active = true }) {
         <div className="project-title-row">
           <h1>{project.name}</h1>
           <span className="active-project"><span /> Active Project</span>
+          {projectDeploymentUrl ? (
+            <a
+              className="project-deployment-link"
+              href={projectDeploymentUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open deployment: ${projectDeploymentUrl}`}
+            >
+              <Globe2 size={13} />
+              <span>{projectDeploymentUrl}</span>
+            </a>
+          ) : (
+            <span
+              className="project-deployment-link project-deployment-link-empty"
+              title="No deployment URL is registered for this project yet"
+            >
+              <Globe2 size={13} />
+              <span>Deployment URL not set</span>
+            </span>
+          )}
           <span className="chat-connection-status">{statusText}</span>
         </div>
       </div>

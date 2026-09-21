@@ -181,6 +181,43 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 .project-title-row h1 { margin: 0; font-size: 23px; line-height: 1; letter-spacing: -.025em; }
 .active-project { display: inline-flex; align-items: center; gap: 6px; color: #66788b; font-size: 12px; }
 .active-project > span { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+
+.project-deployment-link {
+  min-width: 0;
+  max-width: 360px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid #cfe0ec;
+  border-radius: 5px;
+  background: #f8fbfd;
+  color: #0878df;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+.project-deployment-link svg {
+  flex: 0 0 auto;
+}
+.project-deployment-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.project-deployment-link:hover {
+  border-color: #9bc9ea;
+  background: #edf7ff;
+  color: #0567ba;
+}
+.project-deployment-link-empty {
+  color: #8a9aa7;
+  border-style: dashed;
+  background: #fbfcfd;
+  cursor: default;
+}
 .chat-tab-row {
   display: flex;
   align-items: stretch;
@@ -2176,8 +2213,18 @@ body.resizing-preview * {
     padding-bottom: 7px;
   }
 
+  .project-title-row {
+    gap: 7px;
+    flex-wrap: wrap;
+  }
   .project-title-row h1 { font-size: 19px; }
   .active-project { display: none; }
+  .project-deployment-link {
+    order: 3;
+    max-width: 100%;
+    flex: 1 1 100%;
+    width: fit-content;
+  }
   .chat-connection-status { font-size: 10px; }
 
   .composer {
