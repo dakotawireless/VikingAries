@@ -1170,7 +1170,10 @@ function ChatWorkspace({ project, active = true }) {
     const typedContent = draft.trim();
     const content = [
       typedContent,
-      attachment?.thumbnailDataUrl ? `![Pasted image](${attachment.thumbnailDataUrl})` : "",
+      attachment?.thumbnailDataUrl ? `![${attachment.name || "Attached photo"}](${attachment.thumbnailDataUrl})` : "",
+      attachment?.kind === "file"
+        ? `Attached file: ${attachment.name}\n\n${attachment.text || "(This file did not contain readable text.)"}`
+        : "",
     ].filter(Boolean).join("\n\n");
 
     if (!content || submitGuardRef.current) return;
