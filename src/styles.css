@@ -361,6 +361,20 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 .user-message { background: #eef2f6; }
 .assistant-message { background: #eaf4ff; }
+.chat-message-link {
+  color: #056fc7;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.chat-message-link:hover { color: #034f91; }
+.chat-message-link:focus-visible {
+  outline: 2px solid #4aa7f3;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .assistant-message p { margin: 0 0 9px; }
 .assistant-message ol { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
 .assistant-message li { display: flex; align-items: center; gap: 8px; }
