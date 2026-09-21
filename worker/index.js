@@ -1082,21 +1082,6 @@ async function convexFindDeploymentByReference(token, teamSlug, projectSlug, ref
   return payload?.result || payload;
 }
 
-async function cloudflareStoreVikingAriesSecret(token, name, value) {
-  await cloudflareRequest(
-    token,
-    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/vikingaries/secrets`,
-    {
-      method: "PUT",
-      body: JSON.stringify({
-        name,
-        text: value,
-        type: "secret_text",
-      }),
-    }
-  );
-}
-
 function normalizeConvexDeployment(result, fallbackReference = null) {
   if (!result) return null;
   return {
