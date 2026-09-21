@@ -22,6 +22,7 @@ import {
   Eye,
   EyeOff,
   FileImage,
+  FileText,
   FlaskConical,
   Github,
   Globe2,
