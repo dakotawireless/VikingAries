@@ -2351,7 +2351,8 @@ body.resizing-preview * {
 
 .app-shell.mobile-ui .attach-button,
 .app-shell.mobile-ui .voice-button,
-.app-shell.mobile-ui .send-button {
+.app-shell.mobile-ui .send-button,
+.app-shell.mobile-ui .stop-button {
   height: 46px;
 }
 
