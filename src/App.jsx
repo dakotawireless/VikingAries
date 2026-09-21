@@ -86,7 +86,12 @@ const personalProjects = [
     icon: Monitor,
     ...MIGRATED_PROJECTS["dw-pos"],
   },
-  { id: "smoke-pos", name: "Smoke Signals POS", icon: TerminalSquare },
+  {
+    id: "smoke-pos",
+    name: "Smoke Signals POS",
+    icon: TerminalSquare,
+    ...MIGRATED_PROJECTS["smoke-pos"],
+  },
   { id: "dw-site", name: "DW Website", icon: Cloud, ...MIGRATED_PROJECTS["dw-site"] },
   {
     id: "rez-lock",
