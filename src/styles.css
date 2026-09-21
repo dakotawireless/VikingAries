@@ -512,6 +512,21 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
 }
 .voice-button:disabled { opacity: .55; cursor: not-allowed; }
 .send-button { border: 0; padding: 0 15px; background: #0878df; color: white; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.stop-button {
+  min-width: 92px;
+  border: 1px solid #d98d87;
+  padding: 0 12px;
+  background: #fff2f1;
+  color: #a52f27;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.stop-button:hover { background: #ffe5e2; border-color: #c96f67; }
+.stop-button:disabled { opacity: .6; cursor: wait; }
 .model-picker {
   grid-column: 3;
   justify-self: start;
