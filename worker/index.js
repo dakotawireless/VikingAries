@@ -1415,6 +1415,24 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
   throw lastError || new Error("The AI service returned an error.");
 }
 
+function expandPdfAttachments(messages) {
+  const marker = /\\[VA_PDF_ATTACHMENT:(data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+)\\]/i;
+  return messages.map((message) => {
+    if (message?.role !== "user" || typeof message?.content !== "string") return message;
+    const match = message.content.match(marker);
+    if (!match) return message;
+
+    const visibleText = message.content.replace(marker, "").trim();
+    return {
+      ...message,
+      content: [
+        ...(visibleText ? [{ type: "input_text", text: visibleText }] : []),
+        { type: "input_file", filename: "attached.pdf", file_data: match[1] },
+      ],
+    };
+  });
+}
+
 function extractResponseText(payload) {
   if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
     return payload.output_text.trim();
