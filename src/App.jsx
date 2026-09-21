@@ -1832,8 +1832,8 @@ function ChatWorkspace({ project, active = true }) {
               <button
                 type="button"
                 onClick={() => setAttachment(null)}
-                title="Remove pasted image"
-                aria-label="Remove pasted image"
+                title="Remove attachment"
+                aria-label="Remove attachment"
               >
                 <X size={14} />
               </button>
