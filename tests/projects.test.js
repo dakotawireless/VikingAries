@@ -21,3 +21,14 @@ test('later user edits and unrelated projects are retained', () => {
   assert.equal(migrateProjectMappings('dw-pos', edited), edited);
   assert.equal(migrateProjectMappings('custom', edited), edited);
 });
+
+
+test('Smoke Signals registration maps the migration repo and Convex backend without inventing Cloudflare', () => {
+  const result = migrateProjectMappings('smoke-pos');
+  assert.equal(result.github.repository, 'dakotawireless/Smoke-Signals-POS---New');
+  assert.equal(result.github.branch, 'migration/remove-hercules');
+  assert.equal(result.convex.deployment, 'benevolent-bulldog-176');
+  assert.equal(result.convex.url, 'https://benevolent-bulldog-176.convex.cloud');
+  assert.equal(result.cloudflare.enabled, false);
+  assert.equal(result.cloudflare.worker, '');
+});
