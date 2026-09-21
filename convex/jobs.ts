@@ -198,7 +198,7 @@ export const failJob = internalMutation({
       .query("aiJobs")
       .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
       .unique();
-    if (!row) return false;
+    if (!row || row.status === "canceled") return false;
 
     await ctx.db.patch(row._id, {
       status: "failed",
