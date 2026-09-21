@@ -661,10 +661,6 @@ function FilesMediaView({ project }) {
   const [items, setItems] = useProjectStorage(project.id, "files-media-v2", defaults);
   const [draft, setDraft] = useState({ name: "", type: "Screenshot", location: "", status: "Reference" });
   const [uploadMessage, setUploadMessage] = useState("");
-  const fileInputRef = useRef(null);
-
-  // GitHub-backed hardcopy recovery is retired because the VA repository is public.
-  // Durable project files are maintained in the private Files & Media Library archive.
 
   const add = () => {
     if (!draft.name.trim()) return;
@@ -672,49 +668,7 @@ function FilesMediaView({ project }) {
     setDraft({ name: "", type: "Screenshot", location: "", status: "Reference" });
   };
 
-  const uploadFiles = async (event) => {
-    event.target.value = "";
-    setUploadMessage(
-      "Hardcopy upload is temporarily disabled while VA is moved to a private storage backend. Use the project's private Files & Media Library archive for durable files."
-    );
-  };
-
-  const deleteFile = async (item) => {
-    const durable = item.storage === "github" && item.storagePath && item.storageSha;
-    if (durable) {
-      const confirmed = window.confirm(`Permanently delete ${item.name} from durable project storage?`);
-      if (!confirmed) return;
-
-      setUploadMessage(`Deleting ${item.name} from durable storage…`);
-      try {
-        const response = await fetch("/api/files/delete", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId: project.id,
-            path: item.storagePath,
-            sha: item.storageSha,
-            name: item.name,
-          }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload?.error || "Delete failed.");
-
-        setItems((current) => current.filter((row) => row.id !== item.id));
-        setUploadMessage(`${item.name} was deleted from durable storage.`);
-      } catch (error) {
-        setUploadMessage(`${item.name} was not deleted: ${error.message}`);
-      }
-      return;
-    }
-
-    setItems((current) => current.filter((row) => row.id !== item.id));
-  };
-
-  return (
-    <WorkspacePage>
-      <PageHeader icon={FileImage} title="Files & Media" description="Upload hardcopies of screenshots, mockups, logos, documents, and other project assets." />
-      <InfoBanner text="New hardcopy uploads are stored durably before they appear here. The actual file bytes live in VA's priva  const deleteFile = async (item) => {
+  const deleteFile = (item) => {
     setItems((current) => current.filter((row) => row.id !== item.id));
     if (item.storage === "github") {
       setUploadMessage(
@@ -722,6 +676,341 @@ function FilesMediaView({ project }) {
       );
     }
   };
+
+  const archiveText =
+    project.id === "dw-pos"
+      ? "Dakota Wireless POS migration files are preserved in the private Library under /Viking Aries/Dakota Wireless POS/Files & Media. Direct VA hardcopy uploads are temporarily disabled until a private storage backend is connected."
+      : "Direct VA hardcopy uploads are temporarily disabled while a private storage backend is connected. Existing registered file references remain available.";
+
+  return (
+    <WorkspacePage>
+      <PageHeader
+        icon={FileImage}
+        title="Files & Media"
+        description="Project screenshots, mockups, logos, documents, exports, and durable file references."
+      />
+      <InfoBanner text={archiveText} />
+      {uploadMessage && <div className="integration-feedback">{uploadMessage}</div>}
+
+      <section className="workspace-card upload-dropzone">
+        <Upload size={24} />
+        <div>
+          <strong>Upload hardcopies</strong>
+          <p>
+            Temporarily disabled while private VA storage is being connected.
+            Existing migration files are preserved in the private Library.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="primary-action"
+          disabled
+          title="Private storage migration in progress"
+        >
+          <Upload size={15} /> Secure storage pending
+        </button>
+      </section>
+
+      <div className="media-grid">
+        {items.map((item) => {
+          const retiredGithubUpload = item.storage === "github" && Boolean(item.storagePath);
+          const browserCopy = Boolean(item.dataUrl);
+          const isImage = String(item.type || "").startsWith("image/");
+          const Icon = isImage ? FileImage : FileText;
+
+          return (
+            <section className="workspace-card media-card" key={item.id}>
+              <div className="media-icon">
+                {isImage && browserCopy
+                  ? <img className="media-thumb" src={item.dataUrl} alt="" />
+                  : <Icon size={20} />}
+              </div>
+              <div>
+                <div className="card-heading-row compact">
+                  <h2>{item.name}</h2>
+                  <StatusPill status={item.status} />
+                </div>
+                <p>{browserCopy ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
+                {browserCopy ? (
+                  <a className="media-download" href={item.dataUrl} download={item.name}>
+                    <Download size={14} /> Download browser copy
+                  </a>
+                ) : retiredGithubUpload ? (
+                  <small>Legacy GitHub storage retired · private archive retained separately</small>
+                ) : (
+                  <input
+                    value={item.location || ""}
+                    onChange={(e) =>
+                      setItems((current) =>
+                        current.map((row) =>
+                          row.id === item.id ? { ...row, location: e.target.value } : row
+                        )
+                      )
+                    }
+                    placeholder="File, repo, Drive, or URL reference"
+                  />
+                )}
+              </div>
+              <button
+                className="icon-action danger"
+                type="button"
+                onClick={() => deleteFile(item)}
+              >
+                <Trash2 size={15} />
+              </button>
+            </section>
+          );
+        })}
+      </div>
+
+      <section className="workspace-card va-entry-panel">
+        <div className="va-entry-title"><Plus size={15} /> Register an existing file or reference</div>
+        <div className="va-entry-grid">
+          <label><span>Name</span><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
+          <label>
+            <span>Type</span>
+            <select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}>
+              <option>Screenshot</option>
+              <option>Mockup</option>
+              <option>Logo</option>
+              <option>Document</option>
+              <option>Export</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label><span>Location / reference</span><input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} /></label>
+          <label><span>Status</span><input value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} /></label>
+        </div>
+        <button type="button" className="primary-action" onClick={add}><Plus size={15} /> Add reference</button>
+      </section>
+    </WorkspacePage>
+  );
+}
+
+function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
+  const [providers, setProviders] = useSharedStorage("integrations-v1", sharedIntegrationDefaults);
+  const [mappings, setMappings] = useProjectStorage(project.id, "integration-mappings-v1", projectIntegrationDefaults(project));
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [providerMessage, setProviderMessage] = useState("");
+  const [providerBusy, setProviderBusy] = useState("");
+  const [configureProviderId, setConfigureProviderId] = useState("");
+  const [githubTokenDraft, setGithubTokenDraft] = useState("");
+  const [cloudflareTokenDraft, setCloudflareTokenDraft] = useState("");
+  const [configureBusy, setConfigureBusy] = useState(false);
+
+  const icons = {
+    GitHub: Github,
+    Cloudflare: Cloud,
+    Convex: Box,
+    Gmail: Mail,
+    "Google Drive": FileImage,
+  };
+
+  const refreshRuntimeStatus = async () => {
+    try {
+      const response = await fetch(`/api/integrations/status?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) setRuntimeStatus(payload);
+    } catch {
+      setRuntimeStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    refreshRuntimeStatus();
+  }, []);
+
+  const verifyProvider = async (providerId) => {
+    if (!["github", "cloudflare", "convex"].includes(providerId)) return;
+
+    setProviderBusy(providerId);
+    setProviderMessage("");
+    try {
+      const endpoint =
+        providerId === "github"
+          ? `/api/github/verify?projectId=${encodeURIComponent(project.id)}`
+          : providerId === "cloudflare"
+            ? "/api/cloudflare/verify"
+            : "/api/convex/verify";
+      const response = await fetch(endpoint, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+          (providerId === "github"
+            ? "Could not verify GitHub."
+            : providerId === "cloudflare"
+              ? "Could not verify Cloudflare."
+              : "Could not verify Convex.")
+        );
+      }
+
+      if (providerId === "github") {
+        updateProvider("github", {
+          account: payload.login || payload.name || "Connected GitHub account",
+          status: "Connected",
+        });
+        setProviderMessage(
+          payload.repository
+            ? `GitHub verified as ${payload.login || payload.name || "connected account"} with access to ${payload.repository}.`
+            : `GitHub verified as ${payload.login || payload.name || "connected account"}.`
+        );
+      } else if (providerId === "cloudflare") {
+        updateProvider("cloudflare", {
+          account: `Account ${String(payload.accountId || "").slice(0, 8)}…`,
+          status: payload.status === "active" ? "Connected" : "Needs attention",
+        });
+        setProviderMessage(
+          payload.status === "active"
+            ? "Cloudflare API token verified. Runtime tools are ready for registered Workers."
+            : `Cloudflare token status: ${payload.status || "unknown"}.`
+        );
+      } else {
+        updateProvider("convex", {
+          account: "Connected Convex account",
+          status: "Connected",
+        });
+        setProviderMessage("Convex personal access token verified. The shared PERSONAL connection is ready; each project still needs its own Convex deployment mapping.");
+      }
+
+      await refreshRuntimeStatus();
+    } catch (error) {
+      setProviderMessage(error.message || `Could not verify ${providerId}.`);
+      updateProvider(providerId, { status: "Needs attention" });
+    } finally {
+      setProviderBusy("");
+    }
+  };
+
+  const configureProvider = (providerId) => {
+    setProviderMessage("");
+
+    if (providerId === "github") {
+      setConfigureProviderId("github");
+      return;
+    }
+
+    if (providerId === "cloudflare") {
+      if (runtimeStatus?.providers?.cloudflare?.configured) {
+        verifyProvider("cloudflare");
+        return;
+      }
+      setConfigureProviderId("cloudflare");
+      return;
+    }
+
+    if (providerId === "convex") {
+      verifyProvider(providerId);
+      return;
+    }
+
+    setProviderMessage("This provider uses its project-specific mapping below.");
+  };
+
+  const connectGithub = async () => {
+    const token = githubTokenDraft.trim();
+    if (!token) {
+      setProviderMessage("Enter a GitHub token.");
+      return;
+    }
+
+    setConfigureBusy(true);
+    setProviderMessage("");
+    try {
+      const response = await fetch("/api/github/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, projectId: project.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not connect GitHub.");
+      }
+
+      setGithubTokenDraft("");
+      setConfigureProviderId("");
+      updateProvider("github", {
+        account: payload.login || payload.name || "Connected GitHub account",
+        status: "Connected",
+      });
+      setProviderMessage(
+        payload.repository
+          ? `GitHub connected with access to ${payload.repository}.`
+          : "GitHub connected."
+      );
+      await refreshRuntimeStatus();
+    } catch (error) {
+      setProviderMessage(error.message || "Could not connect GitHub.");
+      updateProvider("github", { status: "Needs attention" });
+    } finally {
+      setGithubTokenDraft("");
+      setConfigureBusy(false);
+    }
+  };
+
+  const connectCloudflare = async () => {
+    const token = cloudflareTokenDraft.trim();
+    if (!token) {
+      setProviderMessage("Enter a Cloudflare API token.");
+      return;
+    }
+
+    setConfigureBusy(true);
+    setProviderMessage("");
+    try {
+      const response = await fetch("/api/cloudflare/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not connect Cloudflare.");
+      }
+
+      setCloudflareTokenDraft("");
+      setConfigureProviderId("");
+      updateProvider("cloudflare", {
+        account: payload.accountId ? `Account ${String(payload.accountId).slice(0, 8)}…` : "Connected Cloudflare account",
+        status: "Connected",
+      });
+      setProviderMessage("Cloudflare connected. The API token is stored only as a Cloudflare Worker secret.");
+      await refreshRuntimeStatus();
+    } catch (error) {
+      setProviderMessage(error.message || "Could not connect Cloudflare.");
+    } finally {
+      setCloudflareTokenDraft("");
+      setConfigureBusy(false);
+    }
+  };
+
+  const providerUsage = (providerId) => {
+    const names = [];
+    for (const candidate of projects) {
+      try {
+        const saved = window.localStorage.getItem(`viking-aries:${candidate.id}:integration-mappings-v1`);
+        const candidateMappings = saved ? JSON.parse(saved) : projectIntegrationDefaults(candidate);
+        if (candidateMappings?.[providerId]?.enabled) names.push(candidate.name);
+      } catch {
+        const fallback = projectIntegrationDefaults(candidate);
+        if (fallback?.[providerId]?.enabled) names.push(candidate.name);
+      }
+    }
+    return names;
+  };
+
+  const updateProvider = (id, patch) => {
+    setProviders((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const updateMapping = (providerId, patch) => {
+    setMappings((current) => ({
+      ...current,
+      [providerId]: { ...(current[providerId] || {}), ...patch },
+    }));
+  };
+
+  const projectUsage = providers.filter((provider) => mappings?.[provider.id]?.enabled);
 
   return (
     <WorkspacePage>
@@ -1079,7 +1368,11 @@ function DwPosStagingBackendProvisioner() {
 
   const provision = async () => {
     if (state.status === "working") return;
-    setState({ status: "working", message: "Provisioning isolated Convex staging backend…", deployment: null });
+    setState({
+      status: "working",
+      message: "Provisioning isolated Convex staging backend…",
+      deployment: null,
+    });
 
     try {
       const response = await fetch("/api/projects/dw-pos/staging/convex", {
@@ -1110,11 +1403,13 @@ function DwPosStagingBackendProvisioner() {
 
   return (
     <section className="workspace-card va-entry-panel">
-      <div className="va-entry-title"><Database size={16} /> DW POS migration staging backend</div>
+      <div className="va-entry-title">
+        <Database size={16} /> DW POS migration staging backend
+      </div>
       <p>
-        Creates or reuses the non-default Convex <code>migration-staging</code> deployment in the
-        existing Dakota Wireless POS Convex project. The live <code>sleek-bear-647</code> production
-        deployment is never replaced or made non-default.
+        Creates or reuses the non-default Convex <code>migration-staging</code> deployment
+        in the existing Dakota Wireless POS project. The live <code>sleek-bear-647</code>
+        production deployment is never replaced or made non-default.
       </p>
       <button
         type="button"
@@ -1141,6 +1436,7 @@ function DwPosStagingBackendProvisioner() {
 
 function BackendView({ project }) {
   const defaults = projectDefaults(project).backend;
+
   if (project.id === "dw-pos") {
     return (
       <WorkspacePage>
@@ -1150,40 +1446,47 @@ function BackendView({ project }) {
           description="Server-side modules, functions, APIs, and business logic behind the application."
         />
         <DwPosStagingBackendProvisioner />
-        <EditableListView
-          project={project}
-          storageKey="backend-v2"
-          title="Backend components"
-          description="Registered backend modules and responsibilities."
-          icon={Code2}
-          defaults={defaults.map((row, i) => ({ id: `backend-${i}`, ...row }))}
-          addLabel="Add backend component"
-          columns={[
-            { key: "name", label: "Component" },
-            { key: "type", label: "Type" },
-            { key: "responsibility", label: "Responsibility" },
-            { key: "status", label: "Status" },
-          ]}
-        />
+        <section className="workspace-card">
+          <div className="card-heading-row">
+            <div>
+              <h2>Backend components</h2>
+              <p>Registered Dakota Wireless POS backend modules and responsibilities.</p>
+            </div>
+            <span className="count-badge">{defaults.length}</span>
+          </div>
+          <div className="integration-table">
+            {defaults.map((row, i) => (
+              <div className="integration-row" key={row.id || `backend-${i}`}>
+                <div>
+                  <strong>{row.name}</strong>
+                  <small>{row.type} · {row.responsibility}</small>
+                </div>
+                <StatusPill status={row.status} />
+              </div>
+            ))}
+          </div>
+        </section>
       </WorkspacePage>
     );
   }
 
-  return <EditableListView
-    project={project}
-    storageKey="backend-v2"
-    title="Backend"
-    description="Server-side modules, functions, APIs, and business logic behind the application."
-    icon={Code2}
-    defaults={defaults.map((row, i) => ({ id: `backend-${i}`, ...row }))}
-    addLabel="Add backend component"
-    columns={[
-      { key: "name", label: "Component" },
-      { key: "type", label: "Type" },
-      { key: "responsibility", label: "Responsibility" },
-      { key: "status", label: "Status" },
-    ]}
-  />;
+  return (
+    <EditableListView
+      project={project}
+      storageKey="backend-v2"
+      title="Backend"
+      description="Server-side modules, functions, APIs, and business logic behind the application."
+      icon={Code2}
+      defaults={defaults.map((row, i) => ({ id: `backend-${i}`, ...row }))}
+      addLabel="Add backend component"
+      columns={[
+        { key: "name", label: "Component" },
+        { key: "type", label: "Type" },
+        { key: "responsibility", label: "Responsibility" },
+        { key: "status", label: "Status" },
+      ]}
+    />
+  );
 }
 
 function AutomationsView({ project }) {
