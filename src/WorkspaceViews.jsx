@@ -1074,8 +1074,101 @@ function DatabaseView({ project }) {
   />;
 }
 
+function DwPosStagingBackendProvisioner() {
+  const [state, setState] = useState({ status: "idle", message: "", deployment: null });
+
+  const provision = async () => {
+    if (state.status === "working") return;
+    setState({ status: "working", message: "Provisioning isolated Convex staging backend…", deployment: null });
+
+    try {
+      const response = await fetch("/api/projects/dw-pos/staging/convex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Staging backend provisioning failed.");
+      }
+
+      setState({
+        status: "success",
+        message: payload.created
+          ? "Isolated Convex staging backend created successfully."
+          : "Existing migration-staging Convex backend found and reused.",
+        deployment: payload.deployment || null,
+      });
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Staging backend provisioning failed.",
+        deployment: null,
+      });
+    }
+  };
+
+  return (
+    <section className="workspace-card va-entry-panel">
+      <div className="va-entry-title"><Database size={16} /> DW POS migration staging backend</div>
+      <p>
+        Creates or reuses the non-default Convex <code>migration-staging</code> deployment in the
+        existing Dakota Wireless POS Convex project. The live <code>sleek-bear-647</code> production
+        deployment is never replaced or made non-default.
+      </p>
+      <button
+        type="button"
+        className="primary-action"
+        onClick={provision}
+        disabled={state.status === "working"}
+      >
+        <Database size={15} />
+        {state.status === "working" ? "Provisioning…" : "Provision staging backend"}
+      </button>
+      {state.message && <div className="integration-feedback">{state.message}</div>}
+      {state.deployment && (
+        <div className="preview-project-facts">
+          <span><strong>Reference</strong> {state.deployment.reference || "migration-staging"}</span>
+          <span><strong>Deployment</strong> {state.deployment.name || "—"}</span>
+          <span><strong>URL</strong> {state.deployment.cloudUrl || "—"}</span>
+          <span><strong>Default</strong> {state.deployment.isDefault ? "Yes — blocked" : "No"}</span>
+          <span><strong>Deploy key</strong> Stored securely in Viking Aries Cloudflare secrets</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function BackendView({ project }) {
   const defaults = projectDefaults(project).backend;
+  if (project.id === "dw-pos") {
+    return (
+      <WorkspacePage>
+        <PageHeader
+          icon={Code2}
+          title="Backend"
+          description="Server-side modules, functions, APIs, and business logic behind the application."
+        />
+        <DwPosStagingBackendProvisioner />
+        <EditableListView
+          project={project}
+          storageKey="backend-v2"
+          title="Backend components"
+          description="Registered backend modules and responsibilities."
+          icon={Code2}
+          defaults={defaults.map((row, i) => ({ id: `backend-${i}`, ...row }))}
+          addLabel="Add backend component"
+          columns={[
+            { key: "name", label: "Component" },
+            { key: "type", label: "Type" },
+            { key: "responsibility", label: "Responsibility" },
+            { key: "status", label: "Status" },
+          ]}
+        />
+      </WorkspacePage>
+    );
+  }
+
   return <EditableListView
     project={project}
     storageKey="backend-v2"
