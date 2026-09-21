@@ -1051,6 +1051,175 @@ async function convexGetDeployment(token, deploymentName) {
   };
 }
 
+async function convexFindDeploymentByReference(token, teamSlug, projectSlug, reference) {
+  if (!teamSlug || !projectSlug || !reference) return null;
+
+  const response = await fetch(
+    `${CONVEX_MANAGEMENT_API_BASE}/teams/${encodeURIComponent(teamSlug)}/projects/${encodeURIComponent(projectSlug)}/deployment?reference=${encodeURIComponent(reference)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (response.status === 404) return null;
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code = payload?.code || payload?.error?.code || payload?.errors?.[0]?.code || "";
+    if (String(code).toLowerCase().includes("deploymentnotfound")) return null;
+    const message =
+      payload?.message ||
+      payload?.error?.message ||
+      payload?.error ||
+      payload?.errors?.[0]?.message ||
+      `Convex deployment lookup failed with status ${response.status}`;
+    throw new Error(String(message));
+  }
+
+  return payload?.result || payload;
+}
+
+async function cloudflareStoreVikingAriesSecret(token, name, value) {
+  await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/vikingaries/secrets`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name,
+        text: value,
+        type: "secret_text",
+      }),
+    }
+  );
+}
+
+function normalizeConvexDeployment(result, fallbackReference = null) {
+  if (!result) return null;
+  return {
+    name: result?.name || result?.deploymentName || result?.deployment_name || null,
+    deploymentType: result?.deploymentType || result?.deployment_type || result?.type || null,
+    projectId: result?.projectId || result?.project_id || null,
+    projectSlug: result?.projectSlug || result?.project_slug || null,
+    teamId: result?.teamId || result?.team_id || null,
+    teamSlug: result?.teamSlug || result?.team_slug || null,
+    cloudUrl:
+      result?.deploymentUrl ||
+      result?.deployment_url ||
+      result?.url ||
+      result?.cloudUrl ||
+      result?.cloud_url ||
+      null,
+    reference: result?.reference || fallbackReference,
+    isDefault: Boolean(result?.isDefault ?? result?.is_default ?? false),
+  };
+}
+
+async function convexProvisionDwPosStaging(token, cloudflareToken, productionDeploymentName) {
+  const reference = "migration-staging";
+  const production = await convexGetDeployment(token, productionDeploymentName);
+
+  if (!production.projectId) {
+    throw new Error("Convex did not return the Dakota Wireless POS project ID.");
+  }
+  if (production.name !== productionDeploymentName) {
+    throw new Error("The registered production Convex deployment did not match the expected deployment.");
+  }
+
+  let existing = null;
+  if (production.teamSlug && production.projectSlug) {
+    existing = await convexFindDeploymentByReference(
+      token,
+      production.teamSlug,
+      production.projectSlug,
+      reference
+    );
+  }
+
+  let created = false;
+  let staging = normalizeConvexDeployment(existing, reference);
+
+  if (!staging?.name) {
+    try {
+      const payload = await convexManagementRequest(
+        token,
+        `/projects/${encodeURIComponent(String(production.projectId))}/create_deployment`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            type: "prod",
+            region: null,
+            reference,
+            isDefault: false,
+          }),
+        }
+      );
+      staging = normalizeConvexDeployment(payload?.result || payload, reference);
+      created = true;
+    } catch (error) {
+      // If another request created the same reference first, resolve it by reference
+      // rather than creating a second staging backend.
+      if (production.teamSlug && production.projectSlug) {
+        const retry = await convexFindDeploymentByReference(
+          token,
+          production.teamSlug,
+          production.projectSlug,
+          reference
+        );
+        staging = normalizeConvexDeployment(retry, reference);
+      }
+      if (!staging?.name) throw error;
+    }
+  }
+
+  if (!staging?.name || !staging?.cloudUrl) {
+    throw new Error("Convex created or found staging, but did not return a usable deployment name and URL.");
+  }
+  if (staging.name === productionDeploymentName || staging.isDefault) {
+    throw new Error("Safety check failed: staging resolved to the default production deployment.");
+  }
+
+  let deployKeyStored = false;
+  if (cloudflareToken) {
+    const keyPayload = await convexManagementRequest(
+      token,
+      `/deployments/${encodeURIComponent(staging.name)}/create_deploy_key`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "viking-aries-dw-pos-migration-staging" }),
+      }
+    );
+    const deployKey =
+      keyPayload?.result?.deployKey ||
+      keyPayload?.deployKey ||
+      keyPayload?.result?.deploy_key ||
+      keyPayload?.deploy_key ||
+      null;
+
+    if (!deployKey) {
+      throw new Error("Convex staging was created, but no deploy key was returned.");
+    }
+
+    await cloudflareStoreVikingAriesSecret(
+      cloudflareToken,
+      "DW_POS_STAGING_CONVEX_DEPLOY_KEY",
+      deployKey
+    );
+    deployKeyStored = true;
+  }
+
+  return {
+    created,
+    reference,
+    deployment: staging,
+    productionDeployment: productionDeploymentName,
+    deployKeyStored,
+  };
+}
+
 function convexToolsEnabled(authenticated, token, deploymentName) {
   return Boolean(authenticated && token && deploymentName);
 }
@@ -1557,6 +1726,65 @@ const worker = {
         },
         { status: 503 }
       );
+    }
+
+    if (url.pathname === "/api/projects/dw-pos/staging/convex") {
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const projectConfig = PROJECT_RUNTIME_CONFIG["dw-pos"];
+      if (
+        projectConfig?.repository !== "dakotawireless/Dakota-Wireless-POS---New" ||
+        projectConfig?.backendDeployment !== "sleek-bear-647"
+      ) {
+        return json(
+          { error: "DW POS production mapping failed the staging safety check." },
+          { status: 409 }
+        );
+      }
+
+      const [convexToken, cloudflareToken] = await Promise.all([
+        resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
+        resolveSecret(env.CLOUDFLARE_API_TOKEN),
+      ]);
+
+      if (!convexToken) {
+        return json(
+          { error: "The shared Convex personal connection is not configured." },
+          { status: 503 }
+        );
+      }
+      if (!cloudflareToken) {
+        return json(
+          { error: "The shared Cloudflare connection is not configured, so the staging deploy key cannot be stored securely." },
+          { status: 503 }
+        );
+      }
+
+      try {
+        const result = await convexProvisionDwPosStaging(
+          convexToken,
+          cloudflareToken,
+          projectConfig.backendDeployment
+        );
+        return json({ ok: true, ...result });
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not provision the DW POS staging Convex deployment.",
+          },
+          { status: 502 }
+        );
+      }
     }
 
     if (url.pathname === "/api/integrations/status") {
