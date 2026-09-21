@@ -2622,8 +2622,11 @@ const worker = {
         )
         .slice(-14);
 
-      const MAX_TOTAL_CHARS = 70000;
-      const MAX_MESSAGE_CHARS = 7000;
+      // PDF attachments are carried as base64 until they are converted into an
+      // OpenAI input_file. Keep enough room for the complete selected document;
+      // truncating its data URL would turn it back into unreadable text.
+      const MAX_TOTAL_CHARS = 12000000;
+      const MAX_MESSAGE_CHARS = 12000000;
       let remaining = MAX_TOTAL_CHARS;
       const compact = [];
 
