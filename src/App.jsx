@@ -1452,6 +1452,16 @@ function ChatWorkspace({ project, active = true }) {
     return () => document.removeEventListener("mousedown", closeAttachmentMenu);
   }, []);
 
+  const openAttachmentPicker = (inputRef, event) => {
+    // Keep the document-level outside-click handler from closing the menu before
+    // the browser receives the synthetic file-input click, especially on touch
+    // browsers where pointer and mouse events are both dispatched.
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setAttachmentMenuOpen(false);
+    window.setTimeout(() => inputRef.current?.click(), 0);
+  };
+
   const handleSelectedAttachment = async (file) => {
     if (!file) return;
     setAttachmentMenuOpen(false);
