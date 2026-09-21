@@ -116,13 +116,7 @@ const personalProjects = [
     id: "viking-aries",
     name: "Viking Aries",
     icon: Boxes,
-    repository: "dakotawireless/VikingAries",
-    deploymentUrl: "https://vikingaries.dakotawireless.net/",
-    cloudflareWorker: "vikingaries",
-    backend: "Convex",
-    backendUrl: "https://flippant-mandrill-487.convex.cloud",
-    convexDashboardUrl: "https://dashboard.convex.dev/",
-    status: "Active",
+    ...MIGRATED_PROJECTS["viking-aries"],
   },
 ];
 
