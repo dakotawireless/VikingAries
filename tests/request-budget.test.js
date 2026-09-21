@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker/index.js';
-import { withRequestBudget, budgetedFetch, remainingRequests, resolveBoundSecret } from '../worker/request-budget.js';
+import { withRequestBudget, budgetedFetch, remainingRequests, resolveBoundSecret, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from '../worker/request-budget.js';
+
+const requestLimit = withRequestBudget(() => remainingRequests());
 
 test('hard limit isolates simultaneous requests', async (t) => {
   t.mock.method(globalThis, 'fetch', async (_url, init) => {
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
     return Response.json({});
   });
   await Promise.all([1,2].map(() => withRequestBudget(async () => {
-    await Promise.all(Array.from({ length: 44 }, () => budgetedFetch('https://test')));
+    await Promise.all(Array.from({ length: requestLimit }, () => budgetedFetch('https://test')));
     assert.equal(remainingRequests(), 0);
     await assert.rejects(budgetedFetch('https://test'), /request budget/);
   })));
@@ -20,7 +22,7 @@ test('secret lookup is cached only within its request and charged once', async (
   const secret = { get: async () => { reads++; return 'test'; } };
   for (let i = 0; i < 2; i++) await withRequestBudget(async () => {
     assert.deepEqual(await Promise.all([resolveBoundSecret(secret), resolveBoundSecret(secret)]), ['test','test']);
-    assert.equal(remainingRequests(), 43);
+    assert.equal(remainingRequests(), requestLimit - 1);
   });
   assert.equal(reads, 2);
 });
@@ -31,7 +33,7 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     let finalInput;
     t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
       requests++;
-      assert.ok(requests <= 44, 'exceeded request-wide cap');
+      assert.ok(requests <= requestLimit, 'exceeded request-wide cap');
       if (String(url).includes('api.openai.com')) {
         models++;
         const body = JSON.parse(init.body);
@@ -41,7 +43,7 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
           return Response.json({ id: `r${models}`, output_text: 'Completed this batch; more remains.', usage: { input_tokens: 1, output_tokens: 1 } });
         }
         return Response.json({ id: `r${models}`, usage: { input_tokens: 1, output_tokens: 1 }, output:
-          Array.from({length: mode === 'rounds' ? 1 : 100}, (_, i) => ({
+          Array.from({length: mode === 'rounds' ? 1 : MAX_AGENT_TOOLS + 10}, (_, i) => ({
             type: 'function_call', call_id: `c${models}-${i}`,
             name: mode === 'writes' ? 'github_write_file' : 'github_read_file',
             arguments: JSON.stringify({ path: `file${i}.js`, content: 'new', message: 'Update' }),
@@ -70,12 +72,12 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     assert.equal(body.executionStatus, 'paused');
     assert.equal(body.continuationRequired, true);
     assert.match(body.text, /Send continue/);
-    assert.ok(models <= 9);
+    assert.ok(models <= MAX_AGENT_ROUNDS + 1);
     assert.equal(stored, models - (mode === "summary-failure" ? 1 : 0));
     assert.equal(body.usage.requests, stored);
     assert.equal(body.actionReceipts.length, writes);
     assert.equal(body.usageRecorded, mode !== 'store-failure');
-    if (mode === 'writes') assert.ok(writes > 0 && writes < 20);
+    if (mode === 'writes') assert.ok(writes > 0 && writes <= MAX_AGENT_TOOLS);
     if (mode !== 'rounds') assert.ok(finalInput.some(item => JSON.parse(item.output).deferred));
   });
 }
@@ -84,6 +86,6 @@ test('failed network attempts consume budget', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline'); });
   await withRequestBudget(async () => {
     await assert.rejects(budgetedFetch('https://test'), /offline/);
-    assert.equal(remainingRequests(), 43);
+    assert.equal(remainingRequests(), requestLimit - 1);
   });
 });

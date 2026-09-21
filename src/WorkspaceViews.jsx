@@ -1,3 +1,4 @@
+import { MIGRATED_PROJECTS, migrateProjectMappings } from "../shared/projects.js";
 import { formatUsd, useApiUsage } from "./api-usage.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -38,7 +39,8 @@ function useProjectStorage(projectId, key, initialValue) {
   const [value, setValue] = useState(() => {
     try {
       const saved = window.localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : initialValue;
+      const stored = saved ? JSON.parse(saved) : initialValue;
+      return key === "integration-mappings-v1" ? migrateProjectMappings(projectId, stored) : stored;
     } catch {
       return initialValue;
     }
@@ -126,6 +128,7 @@ const sharedIntegrationDefaults = [
 ];
 
 function projectIntegrationDefaults(project) {
+  if (MIGRATED_PROJECTS[project?.id]) return migrateProjectMappings(project.id);
   return {
     github: {
       enabled: Boolean(project?.repository),

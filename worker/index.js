@@ -1,3 +1,4 @@
+import { MIGRATED_PROJECTS } from "../shared/projects.js";
 import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -16,15 +17,7 @@ async function resolveSecret(binding) {
 
 
 const PROJECT_RUNTIME_CONFIG = {
-  "dw-pos": {
-    repository: "dakotawireless/Dakota-Wireless-POS---New",
-    defaultBranch: "migration-staging",
-    cloudflareWorker: "dakota-wireless-pos---new",
-    backend: "Convex",
-    backendDeployment: "sleek-bear-647",
-    backendUrl: "https://sleek-bear-647.convex.cloud",
-    convexDashboardUrl: "https://dashboard.convex.dev/",
-  },
+  ...MIGRATED_PROJECTS,
   timekeeper: {
     repository: "dakotawireless/TimeKeeper-App",
     defaultBranch: "main",
@@ -2378,6 +2371,7 @@ const worker = {
     if (runtimeProject) {
       projectMetadata.repository = runtimeProject.repository || "";
       projectMetadata.defaultBranch = runtimeProject.defaultBranch || "main";
+      projectMetadata.deploymentUrl = runtimeProject.deploymentUrl || projectMetadata.deploymentUrl;
       projectMetadata.cloudflareWorker = runtimeProject.cloudflareWorker || projectMetadata.cloudflareWorker;
       projectMetadata.backend = runtimeProject.backend || projectMetadata.backend;
       projectMetadata.backendDeployment = runtimeProject.backendDeployment || projectMetadata.backendDeployment;
