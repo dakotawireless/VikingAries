@@ -1180,6 +1180,9 @@ function ChatWorkspace({ project, active = true }) {
     const content = [
       typedContent,
       attachment?.thumbnailDataUrl ? `![${attachment.name || "Attached photo"}](${attachment.thumbnailDataUrl})` : "",
+      attachment?.kind === "pdf"
+        ? `Attached PDF: ${attachment.name}\n\n[VA_PDF_ATTACHMENT:${attachment.dataUrl}]`
+        : "",
       attachment?.kind === "file"
         ? `Attached file: ${attachment.name}\n\n${attachment.text || "(This file did not contain readable text.)"}`
         : "",
