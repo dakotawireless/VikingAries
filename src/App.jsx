@@ -1789,10 +1789,14 @@ function ChatWorkspace({ project, active = true }) {
           <Mic size={18} />
         </button>
         <div className="composer-input-wrap">
-          {attachment?.thumbnailDataUrl && (
+          {attachment && (
             <div className="composer-image-thumbnail">
-              <img src={attachment.thumbnailDataUrl} alt="Pasted image thumbnail" />
-              <span>Image attached</span>
+              {attachment.thumbnailDataUrl ? (
+                <img src={attachment.thumbnailDataUrl} alt="Attached photo thumbnail" />
+              ) : (
+                <FileText size={20} />
+              )}
+              <span>{attachment.name || "Attachment ready"}</span>
               <button
                 type="button"
                 onClick={() => setAttachment(null)}
