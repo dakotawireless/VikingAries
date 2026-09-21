@@ -1083,11 +1083,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   </div>
                   <StatusPill
                     status={
-                      runtimeStatus?.providers?.[item.id]?.usable || item.status === "Connected"
+                      runtimeStatus?.providers?.[item.id]?.usable ||
+                      item.status === "Connected" ||
+                      (item.id === "cloudflare" && cloudflareDestinationConnected)
                         ? "Connected"
-                        : item.id === "cloudflare" && mappings?.cloudflare?.enabled && mappings?.cloudflare?.worker
-                          ? "Destination mapped"
-                          : item.status
+                        : item.status
                     }
                   />
                 </div>
