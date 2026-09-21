@@ -837,6 +837,15 @@ function readTextAttachment(file) {
   });
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("That file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function ChatWorkspace({ project, active = true }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
