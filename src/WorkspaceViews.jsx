@@ -139,13 +139,14 @@ function projectIntegrationDefaults(project) {
       enabled: Boolean(project?.deploymentUrl),
       project: "",
       worker:
-        project?.id === "timekeeper"
+        project?.cloudflareWorker ||
+        (project?.id === "timekeeper"
           ? "timekeeper-app"
           : project?.id === "viking-aries"
             ? "vikingaries"
             : project?.id === "rez-lock"
               ? "rez-lock-and-key-staging"
-              : "",
+              : ""),
       deploymentUrl: project?.deploymentUrl || "",
     },
     convex: {
