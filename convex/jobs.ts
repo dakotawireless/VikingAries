@@ -131,6 +131,34 @@ export const claimNextThreadJob = internalMutation({
   },
 });
 
+export const cancelThreadJobs = internalMutation({
+  args: {
+    projectId: v.string(),
+    threadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("aiJobs")
+      .withIndex("by_project_thread_updatedAt", (q) =>
+        q.eq("projectId", args.projectId).eq("threadId", args.threadId)
+      )
+      .collect();
+    const now = Date.now();
+    let canceled = 0;
+    for (const row of rows) {
+      if (row.status !== "queued" && row.status !== "running") continue;
+      await ctx.db.patch(row._id, {
+        status: "canceled",
+        error: "Stopped by the owner.",
+        completedAt: now,
+        updatedAt: now,
+      });
+      canceled += 1;
+    }
+    return { canceled };
+  },
+});
+
 export const completeJob = internalMutation({
   args: {
     jobId: v.string(),
@@ -144,7 +172,7 @@ export const completeJob = internalMutation({
       .query("aiJobs")
       .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
       .unique();
-    if (!row) return false;
+    if (!row || row.status === "canceled") return false;
 
     await ctx.db.patch(row._id, {
       status: "completed",
