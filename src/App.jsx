@@ -1237,6 +1237,8 @@ function ChatWorkspace({ project, active = true }) {
             ? typedContent.length > 28
               ? `${typedContent.slice(0, 28)}…`
               : typedContent
+            : attachment?.kind === "file"
+            ? attachment.name
             : "Pasted image"
           : thread.title,
       messages: [...thread.messages, userMessage],
