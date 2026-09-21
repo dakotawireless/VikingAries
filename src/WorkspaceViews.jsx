@@ -542,7 +542,7 @@ function smokePosDefaults(project) {
       { id: "build", name: "Hercules-free production build", result: "Passed", detail: "Frozen pnpm install, Convex TypeScript check, and Vite production build passed after Hercules runtime removal." },
       { id: "convex-target", name: "Migration Convex deployment", result: "Passed", detail: "Schema/functions deployed to benevolent-bulldog-176 and diagnostics passed. Backend is intentionally empty before data migration: 0 products, 0 customers, 0 transactions." },
       { id: "production-protection", name: "Legacy production protection", result: "Passed", detail: "Hercules live POS and moonlit-mallard-698 remain untouched during migration." },
-      { id: "cloudflare-target", name: "Cloudflare migration target", result: "Pending", detail: "Matching project exists, but exact Worker/project identifier and staging URL still need registration in VA." },
+      { id: "cloudflare-target", name: "Cloudflare migration target", result: "Packaging passed", detail: "Wrangler is pinned, React SPA routing is configured, and wrangler deploy --dry-run passes. Provider verification and the first real staging deployment remain pending." },
     ],
     versions: [
       { id: "baseline", label: "Verified Hercules source baseline", ref: "d62120d72158", note: "Exact uploaded baseline imported before migration-specific edits." },
@@ -552,7 +552,7 @@ function smokePosDefaults(project) {
     deployments: [
       { id: "legacy-production", environment: "Live production — protected", provider: "Hercules", status: "Active", url: "https://smoke-signals-pos-224583.onhercules.app" },
       { id: "migration-backend", environment: "Migration backend", provider: "Convex", status: "Deployed / data migration pending", url: "https://benevolent-bulldog-176.convex.cloud" },
-      { id: "cloudflare-staging", environment: "Cloudflare staging", provider: "Cloudflare Workers", status: "Project created / mapping pending", url: "" },
+      { id: "cloudflare-staging", environment: "Cloudflare staging", provider: "Cloudflare Workers", status: "Packaging validated / provider verification pending", url: "" },
     ],
     domains: [
       { id: "legacy", host: "smoke-signals-pos-224583.onhercules.app", type: "Legacy Hercules host", status: "Active during migration", notes: "Current live POS; do not cut over until staging is fully tested." },
@@ -960,8 +960,8 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
         providerId === "github"
           ? `/api/github/verify?projectId=${encodeURIComponent(project.id)}`
           : providerId === "cloudflare"
-            ? "/api/cloudflare/verify"
-            : "/api/convex/verify";
+            ? `/api/cloudflare/verify?projectId=${encodeURIComponent(project.id)}`
+            : `/api/convex/verify?projectId=${encodeURIComponent(project.id)}`;
       const response = await fetch(endpoint, { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -992,7 +992,9 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
         });
         setProviderMessage(
           payload.status === "active"
-            ? "Cloudflare API token verified. Runtime tools are ready for registered Workers."
+            ? payload.worker?.id
+              ? `Cloudflare verified. Worker ${payload.worker.id} exists in the connected account and is ready for project-scoped runtime tools.`
+              : "Cloudflare API token verified. This project does not yet have a registered Worker to verify."
             : `Cloudflare token status: ${payload.status || "unknown"}.`
         );
       } else {
@@ -1000,7 +1002,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
           account: "Connected Convex account",
           status: "Connected",
         });
-        setProviderMessage("Convex personal access token verified. The shared PERSONAL connection is ready; each project still needs its own Convex deployment mapping.");
+        setProviderMessage(
+          payload.deployment?.name
+            ? `Convex verified. Deployment ${payload.deployment.name} is reachable through the shared PERSONAL connection.`
+            : "Convex personal access token verified. This project does not yet have a registered Convex deployment to verify."
+        );
       }
 
       await refreshRuntimeStatus();
