@@ -1503,12 +1503,12 @@ function ChatWorkspace({ project, active = true }) {
           dataUrl,
         });
       } else {
-        const text = await readTextAttachment(file);
+        const dataUrl = await readFileAsDataUrl(file);
         setAttachment({
           kind: "file",
           name: file.name,
           type: file.type || "application/octet-stream",
-          text,
+          dataUrl,
         });
       }
       setStatusText("Attachment ready");
