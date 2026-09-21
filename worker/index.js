@@ -2670,7 +2670,7 @@ const worker = {
         compact.unshift({ role: message.role, content });
       }
 
-      return expandPdfAttachments(compact);
+      return expandAttachmentMarkers(compact);
     })();
 
     if (!messages.length) {
