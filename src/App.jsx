@@ -935,9 +935,11 @@ function ChatWorkspace({ project, active = true }) {
               (job.userMessageId && message.id === job.userMessageId))
         );
         const content =
-          job.status === "failed"
-            ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
-            : job.resultText || "The background job completed without response text.";
+          job.status === "canceled"
+            ? "Stopped by the owner."
+            : job.status === "failed"
+              ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
+              : job.resultText || "The background job completed without response text.";
 
         next.splice(userIndex + 1, 0, {
           id: assistantId,
