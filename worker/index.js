@@ -1416,8 +1416,8 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
 }
 
 function expandAttachmentMarkers(messages) {
-  const attachmentPattern = /\\[VA_ATTACHMENT:([^|]*)\\|([^|]*)\\|(data:[^\\]]+)\\]/gi;
-  const legacyPdfPattern = /\\[VA_PDF_ATTACHMENT:(data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+)\\]/i;
+  const attachmentPattern = /\[VA_ATTACHMENT:([^|]*)\|([^|]*)\|(data:[^\]]+)\]/gi;
+  const legacyPdfPattern = /\[VA_PDF_ATTACHMENT:(data:application\/pdf;base64,[A-Za-z0-9+/=\r\n]+)\]/i;
 
   return messages.map((message) => {
     if (message?.role !== "user" || typeof message?.content !== "string") return message;
