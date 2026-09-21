@@ -495,7 +495,71 @@ a.project-deployment-link:hover {
   border: 1px solid var(--line); border-radius: 7px; padding: 11px 13px; font-size: 13px; line-height: 1.5;
 }
 .user-message { background: #eef2f6; }
+.user-message:empty { display: none; }
 .assistant-message { background: #eaf4ff; }
+
+.chat-file-attachment {
+  margin-top: 7px;
+  width: min(360px, 100%);
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #cbd8e3;
+  border-radius: 7px;
+  background: #fff;
+}
+.chat-file-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #eef4f8;
+  color: #526b80;
+}
+.chat-file-icon.pdf {
+  background: #fff0ef;
+  color: #b43b32;
+}
+.chat-file-copy {
+  min-width: 0;
+}
+.chat-file-copy strong,
+.chat-file-copy small {
+  display: block;
+}
+.chat-file-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2b4357;
+  font-size: 11px;
+}
+.chat-file-copy small {
+  margin-top: 3px;
+  color: #738698;
+  font-size: 9px;
+}
+.chat-file-image-preview {
+  width: 56px;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid #d7e1e9;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #f7f9fb;
+  cursor: zoom-in;
+}
+.chat-file-image-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
 .chat-message-link {
   color: #056fc7;
   font-weight: 600;

@@ -567,19 +567,92 @@ function renderLinkedText(text, keyPrefix) {
   return parts;
 }
 
+function sanitizeLegacyAttachmentContent(content) {
+  let text = String(content || "");
+
+  // Older VA builds appended the whole PDF data URL to the visible message.
+  // If one of those markers was truncated, a regex that expects the closing
+  // bracket cannot hide it. Collapse from the marker to the end because legacy
+  // attachment markers were always appended after the user's typed text.
+  const legacyPdfStart = text.indexOf("[VA_PDF_ATTACHMENT:data:application/pdf;base64,");
+  if (legacyPdfStart >= 0) {
+    text = `${text.slice(0, legacyPdfStart).trimEnd()}\n[VA_FILE:${encodeURIComponent("attached.pdf")}|application/pdf]`;
+  }
+
+  const legacyGenericStart = text.indexOf("[VA_ATTACHMENT:");
+  if (legacyGenericStart >= 0) {
+    const dataStart = text.indexOf("|data:", legacyGenericStart);
+    if (dataStart >= 0) {
+      const header = text.slice(legacyGenericStart + "[VA_ATTACHMENT:".length, dataStart);
+      const divider = header.indexOf("|");
+      const encodedName = divider >= 0 ? header.slice(0, divider) : encodeURIComponent("Attachment");
+      const type = divider >= 0 ? header.slice(divider + 1) : "application/octet-stream";
+      text = `${text.slice(0, legacyGenericStart).trimEnd()}\n[VA_FILE:${encodedName}|${type}]`;
+    }
+  }
+
+  return text.trim();
+}
+
+function attachmentMetaFromContent(content) {
+  const text = sanitizeLegacyAttachmentContent(content);
+  const match = text.match(/\[VA_FILE:([^|\]]+)\|([^\]]+)\]/i);
+  if (!match) return null;
+
+  let name = match[1] || "Attachment";
+  try { name = decodeURIComponent(name); } catch { /* Keep encoded fallback. */ }
+  const type = match[2] || "application/octet-stream";
+  return {
+    name,
+    type,
+    kind: type === "application/pdf" ? "pdf" : type.startsWith("image/") ? "image" : "file",
+  };
+}
+
+function stripAttachmentMarkers(content) {
+  return sanitizeLegacyAttachmentContent(content)
+    .replace(/\[VA_FILE:[^\]]+\]/gi, "")
+    .trim();
+}
+
+function ChatAttachmentCard({ message, onImageOpen }) {
+  if (message?.role !== "user") return null;
+  const meta = message.attachmentMeta || attachmentMetaFromContent(message.content);
+  if (!meta) return null;
+
+  const isImage = meta.kind === "image" || String(meta.type || "").startsWith("image/");
+  const isPdf = meta.kind === "pdf" || meta.type === "application/pdf";
+
+  return (
+    <div className="chat-file-attachment" aria-label={`Attached file ${meta.name}`}>
+      {isImage && message.fullSizeImage ? (
+        <button
+          className="chat-file-image-preview"
+          type="button"
+          onClick={() => onImageOpen?.(message.fullSizeImage)}
+          title="Open attached image"
+        >
+          <img src={message.fullSizeImage} alt={meta.name || "Attached image"} />
+        </button>
+      ) : (
+        <span className={isPdf ? "chat-file-icon pdf" : "chat-file-icon"}>
+          <FileText size={20} />
+        </span>
+      )}
+      <span className="chat-file-copy">
+        <strong>{meta.name || "Attachment"}</strong>
+        <small>{isPdf ? "PDF document" : isImage ? "Image" : meta.type || "File"} · available to Viking Aries</small>
+      </span>
+    </div>
+  );
+}
+
 function renderChatContent(content, onImageOpen, fullSizeImage = "") {
-  // Attachments are represented by a readable label in the conversation. Their
-  // original data stays in the request payload and is never rendered as binary
-  // text in the chat transcript.
-  const text = String(content || "")
-    .replace(/\[VA_ATTACHMENT:([^|]*)\|([^|]*)\|data:[^\]]+\]/gi, (_match, encodedName) => {
-      let name = encodedName || "Attachment";
-      try { name = decodeURIComponent(encodedName); } catch { /* Keep the encoded name. */ }
-      return `[Attachment: ${name}]`;
-    })
-    .replace(/\n?\[VA_PDF_ATTACHMENT:data:application\/pdf;base64,[A-Za-z0-9+/=\r\n]+\]/gi, "\n[PDF attached]");
-  // Match any markdown image backed by an inline image data URL. Keeping this
-  // generic also fixes thumbnails for images saved by older paste versions.
+  const text = stripAttachmentMarkers(content);
+  if (!text) return null;
+
+  // Continue rendering inline images from older chat messages, but new file
+  // uploads are displayed by ChatAttachmentCard and are not embedded in text.
   const imagePattern = /!\[[^\]]*\]\(\s*(data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+)\s*\)/gi;
   const parts = [];
   let cursor = 0;
@@ -600,11 +673,7 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
         title="Open full-size image"
         aria-label="Open pasted image full size"
       >
-        <img
-          className="chat-pasted-image"
-          src={imageSource}
-          alt="Pasted image"
-        />
+        <img className="chat-pasted-image" src={imageSource} alt="Pasted image" />
       </button>
     );
     imageIndex += 1;
@@ -622,7 +691,20 @@ function loadProjectThreads(projectId) {
     const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed) && parsed.length) {
+        return parsed.map((thread) => ({
+          ...thread,
+          messages: Array.isArray(thread.messages)
+            ? thread.messages.map((message) => ({
+                ...message,
+                content:
+                  typeof message?.content === "string"
+                    ? sanitizeLegacyAttachmentContent(message.content)
+                    : message?.content,
+              }))
+            : [],
+        }));
+      }
       if (Array.isArray(parsed) && parsed.length === 0) {
         return [{ id: `chat-${Date.now()}`, title: "New Chat", messages: [] }];
       }
@@ -1186,12 +1268,12 @@ function ChatWorkspace({ project, active = true }) {
 
   const sendMessage = async () => {
     const typedContent = draft.trim();
-    const attachmentMarker = attachment?.dataUrl
-      ? `[VA_ATTACHMENT:${encodeURIComponent(attachment.name || "Attachment")}|${attachment.type || "application/octet-stream"}|${attachment.dataUrl}]`
+    const attachmentMarker = attachment
+      ? `[VA_FILE:${encodeURIComponent(attachment.name || "Attachment")}|${attachment.type || "application/octet-stream"}]`
       : "";
     const content = [typedContent, attachmentMarker].filter(Boolean).join("\n\n");
 
-    if (!content || submitGuardRef.current) return;
+    if ((!typedContent && !attachment) || submitGuardRef.current) return;
     if (!activeThread) {
       const id = `chat-${Date.now()}`;
       setThreads([{ id, title: "New Chat", messages: [] }]);
@@ -1223,7 +1305,14 @@ function ChatWorkspace({ project, active = true }) {
       jobId,
       role: "user",
       content,
-      fullSizeImage: attachment?.fullDataUrl || "",
+      attachmentMeta: attachment
+        ? {
+            kind: attachment.kind || "file",
+            name: attachment.name || "Attachment",
+            type: attachment.type || "application/octet-stream",
+          }
+        : null,
+      fullSizeImage: attachment?.kind === "image" ? attachment?.fullDataUrl || "" : "",
       timestamp: formatChatTime(),
       queueStatus: "queued",
     };
@@ -1238,8 +1327,17 @@ function ChatWorkspace({ project, active = true }) {
         id,
         jobId: messageJobId,
         role,
-        content: text,
+        content: sanitizeLegacyAttachmentContent(text),
       }));
+
+    if (attachment?.dataUrl && requestMessages.length) {
+      requestMessages[requestMessages.length - 1].attachment = {
+        kind: attachment.kind || "file",
+        name: attachment.name || "Attachment",
+        type: attachment.type || "application/octet-stream",
+        dataUrl: attachment.dataUrl,
+      };
+    }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
     const alreadyWorking = sending;
@@ -1252,9 +1350,7 @@ function ChatWorkspace({ project, active = true }) {
             ? typedContent.length > 28
               ? `${typedContent.slice(0, 28)}…`
               : typedContent
-            : attachment?.kind === "file"
-            ? attachment.name
-            : "Pasted image"
+            : attachment?.name || "Attachment"
           : thread.title,
       messages: [...thread.messages, userMessage],
     }));
@@ -1481,6 +1577,11 @@ function ChatWorkspace({ project, active = true }) {
 
   const handleSelectedAttachment = async (file) => {
     if (!file) return;
+    const maxAttachmentBytes = 8 * 1024 * 1024;
+    if (file.size > maxAttachmentBytes) {
+      setStatusText("Attachments are limited to 8 MB");
+      return;
+    }
     setAttachmentMenuOpen(false);
     setStatusText(`Preparing ${file.name}…`);
     try {
@@ -1671,6 +1772,7 @@ function ChatWorkspace({ project, active = true }) {
                 >
                   {renderChatContent(message.content, setFullSizeImage, message.fullSizeImage)}
                 </div>
+                <ChatAttachmentCard message={message} onImageOpen={setFullSizeImage} />
 
                 {message.role === "user" &&
                   Array.isArray(message.progress) &&

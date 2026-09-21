@@ -1416,30 +1416,66 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
 }
 
 function expandAttachmentMarkers(messages) {
-  const attachmentPattern = /\[VA_ATTACHMENT:([^|]*)\|([^|]*)\|(data:[^\]]+)\]/gi;
+  const legacyAttachmentPattern = /\[VA_ATTACHMENT:([^|]*)\|([^|]*)\|(data:[^\]]+)\]/gi;
   const legacyPdfPattern = /\[VA_PDF_ATTACHMENT:(data:application\/pdf;base64,[A-Za-z0-9+/=\r\n]+)\]/i;
+  const fileMarkerPattern = /\[VA_FILE:[^\]]+\]/gi;
 
   return messages.map((message) => {
-    if (message?.role !== "user" || typeof message?.content !== "string") return message;
-
-    const attachments = [];
-    let visibleText = message.content.replace(attachmentPattern, (_match, encodedName, type, dataUrl) => {
-      let filename = "attached";
-      try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback name. */ }
-      attachments.push({ filename, type, dataUrl });
-      return "";
-    });
-
-    // Continue accepting PDFs created by older queued messages.
-    const legacyMatch = visibleText.match(legacyPdfPattern);
-    if (legacyMatch) {
-      attachments.push({ filename: "attached.pdf", type: "application/pdf", dataUrl: legacyMatch[1] });
-      visibleText = visibleText.replace(legacyPdfPattern, "");
+    if (message?.role !== "user") {
+      return {
+        role: message?.role,
+        content: typeof message?.content === "string" ? message.content : message?.content,
+      };
     }
 
-    if (!attachments.length) return message;
+    const attachments = [];
+    if (message?.attachment?.dataUrl) {
+      attachments.push({
+        filename: String(message.attachment.name || "attached").slice(0, 180),
+        type: String(message.attachment.type || "application/octet-stream").slice(0, 180),
+        dataUrl: String(message.attachment.dataUrl),
+      });
+    }
 
-    const content = visibleText.trim() ? [{ type: "input_text", text: visibleText.trim() }] : [];
+    let visibleText = typeof message?.content === "string" ? message.content : "";
+
+    // Backward compatibility for jobs queued by older VA builds.
+    visibleText = visibleText.replace(
+      legacyAttachmentPattern,
+      (_match, encodedName, type, dataUrl) => {
+        let filename = "attached";
+        try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
+        attachments.push({ filename, type, dataUrl });
+        return "";
+      }
+    );
+
+    const legacyPdfMatch = visibleText.match(legacyPdfPattern);
+    if (legacyPdfMatch) {
+      attachments.push({
+        filename: "attached.pdf",
+        type: "application/pdf",
+        dataUrl: legacyPdfMatch[1],
+      });
+      visibleText = visibleText.replace(legacyPdfPattern, "");
+    } else {
+      // A truncated old marker cannot be sent as a valid file. Remove the raw
+      // payload from model-visible text rather than leaking base64 into context.
+      const incompletePdf = visibleText.indexOf("[VA_PDF_ATTACHMENT:data:application/pdf;base64,");
+      if (incompletePdf >= 0) visibleText = visibleText.slice(0, incompletePdf);
+      const incompleteGeneric = visibleText.indexOf("[VA_ATTACHMENT:");
+      if (incompleteGeneric >= 0 && visibleText.indexOf("|data:", incompleteGeneric) >= 0) {
+        visibleText = visibleText.slice(0, incompleteGeneric);
+      }
+    }
+
+    visibleText = visibleText.replace(fileMarkerPattern, "").trim();
+
+    if (!attachments.length) {
+      return { role: "user", content: visibleText };
+    }
+
+    const content = visibleText ? [{ type: "input_text", text: visibleText }] : [];
     for (const attachment of attachments) {
       if (String(attachment.type || "").startsWith("image/")) {
         content.push({ type: "input_image", image_url: attachment.dataUrl });
@@ -1452,7 +1488,7 @@ function expandAttachmentMarkers(messages) {
       }
     }
 
-    return { ...message, content };
+    return { role: "user", content };
   });
 }
 
@@ -2640,37 +2676,43 @@ const worker = {
         .filter(
           (message) =>
             (message?.role === "user" || message?.role === "assistant") &&
-            typeof message?.content === "string" &&
-            message.content.trim()
+            (typeof message?.content === "string" || message?.attachment?.dataUrl)
         )
         .slice(-14);
 
-      // PDF attachments are carried as base64 until they are converted into an
-      // OpenAI input_file. Keep enough room for the complete selected document;
-      // truncating its data URL would turn it back into unreadable text.
-      const MAX_TOTAL_CHARS = 12000000;
-      const MAX_MESSAGE_CHARS = 12000000;
+      // Convert attachments before text compaction so PDF/image data is never
+      // mistaken for conversation text and never consumes the rolling text budget.
+      const expanded = expandAttachmentMarkers(candidates);
+      const MAX_TOTAL_CHARS = 70000;
+      const MAX_MESSAGE_CHARS = 7000;
       let remaining = MAX_TOTAL_CHARS;
       const compact = [];
 
-      // Build backward so the newest context is always preserved first.
-      for (let index = candidates.length - 1; index >= 0 && remaining > 0; index -= 1) {
-        const message = candidates[index];
-        const raw = message.content.trim();
+      for (let index = expanded.length - 1; index >= 0; index -= 1) {
+        const message = expanded[index];
+
+        if (Array.isArray(message.content)) {
+          compact.unshift({ role: message.role, content: message.content });
+          continue;
+        }
+
+        if (remaining <= 0) continue;
+        const raw = String(message.content || "").trim();
+        if (!raw) continue;
+
         const limit = Math.min(MAX_MESSAGE_CHARS, remaining);
-        // Keep the tail of older messages because it usually contains the outcome,
-        // while the newest message keeps its beginning in full.
         const content =
-          index === candidates.length - 1
+          index === expanded.length - 1
             ? raw.slice(0, limit)
             : raw.length > limit
               ? raw.slice(-limit)
               : raw;
+
         remaining -= content.length;
         compact.unshift({ role: message.role, content });
       }
 
-      return expandAttachmentMarkers(compact);
+      return compact;
     })();
 
     if (!messages.length) {
