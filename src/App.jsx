@@ -568,7 +568,7 @@ function renderLinkedText(text, keyPrefix) {
 }
 
 function renderChatContent(content, onImageOpen, fullSizeImage = "") {
-  const text = String(content || "");
+  const text = String(content || "").replace(/\\n?\\[VA_PDF_ATTACHMENT:data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+\\]/gi, "\\n[PDF attached]");
   // Match any markdown image backed by an inline image data URL. Keeping this
   // generic also fixes thumbnails for images saved by older paste versions.
   const imagePattern = /!\[[^\]]*\]\(\s*(data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+)\s*\)/gi;
