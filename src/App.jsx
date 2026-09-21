@@ -1459,7 +1459,9 @@ function ChatWorkspace({ project, active = true }) {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     setAttachmentMenuOpen(false);
-    window.setTimeout(() => inputRef.current?.click(), 0);
+    // Keep this synchronous so iOS/Safari preserves the user gesture needed to
+    // open the native file chooser.
+    inputRef.current?.click();
   };
 
   const handleSelectedAttachment = async (file) => {
