@@ -1622,23 +1622,20 @@ function ChatWorkspace({ project, active = true }) {
             rows={1}
           />
         </div>
-        {sending ? (
-          <button
-            className="stop-button"
-            type="button"
-            onClick={stopAiJobs}
-            disabled={queueing}
-            title="Stop Viking Aries from continuing"
-            aria-label="Stop Viking Aries from continuing"
-          >
-            <Square size={15} fill="currentColor" />
-            Stop
-          </button>
-        ) : (
-          <button className="send-button" type="submit" disabled={queueing || (!draft.trim() && !attachment)}>
-            <Send size={17} /> {queueing ? "Queuing…" : "Send"}
-          </button>
-        )}
+        <button className="send-button" type="submit" disabled={queueing || (!draft.trim() && !attachment)}>
+          <Send size={17} /> {queueing ? "Queuing…" : "Send"}
+        </button>
+        <button
+          className="stop-button"
+          type="button"
+          onClick={stopAiJobs}
+          disabled={!sending || queueing}
+          title="Stop Viking Aries from continuing"
+          aria-label="Stop Viking Aries from continuing"
+        >
+          <Square size={15} fill="currentColor" />
+          Stop
+        </button>
         <label className="model-picker">
           <span>Model</span>
           <select
