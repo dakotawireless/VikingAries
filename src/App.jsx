@@ -1490,6 +1490,7 @@ function ChatWorkspace({ project, active = true }) {
           kind: "image",
           thumbnailDataUrl: imageData.thumbnailDataUrl,
           fullDataUrl: imageData.fullDataUrl,
+          dataUrl: imageData.fullDataUrl,
           name: file.name || "Photo",
           type: file.type || "image/jpeg",
         });
