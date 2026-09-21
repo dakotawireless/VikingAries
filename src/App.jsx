@@ -927,7 +927,7 @@ function ChatWorkspace({ project, active = true }) {
         }
       }
 
-      if ((job.status === "completed" || job.status === "failed") && userIndex >= 0) {
+      if ((job.status === "completed" || job.status === "failed" || job.status === "canceled") && userIndex >= 0) {
         userIndex = next.findIndex(
           (message) =>
             message.role === "user" &&
