@@ -896,6 +896,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const [mappings, setMappings] = useProjectStorage(project.id, "integration-mappings-v1", projectIntegrationDefaults(project));
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [providerMessage, setProviderMessage] = useState("");
+  const [providerMessageProvider, setProviderMessageProvider] = useState("");
   const [providerBusy, setProviderBusy] = useState("");
   const [configureProviderId, setConfigureProviderId] = useState("");
   const [githubTokenDraft, setGithubTokenDraft] = useState("");
@@ -958,6 +959,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
     if (!["github", "cloudflare", "convex"].includes(providerId)) return;
 
     setProviderBusy(providerId);
+    setProviderMessageProvider(providerId);
     setProviderMessage("");
     try {
       const endpoint =
@@ -1023,6 +1025,7 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   };
 
   const configureProvider = (providerId) => {
+    setProviderMessageProvider(providerId);
     setProviderMessage("");
 
     if (providerId === "github") {
@@ -1278,6 +1281,11 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                     Disconnect
                   </button>
                 </div>
+                {providerMessage && providerMessageProvider === item.id && (
+                  <div className="integration-feedback" role="status" aria-live="polite">
+                    {providerMessage}
+                  </div>
+                )}
                 {item.id === "github" && configureProviderId === "github" && (
                   <div className="integration-config-panel">
                     <strong>Connect GitHub</strong>
@@ -1481,7 +1489,6 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
         </div>
       </section>
 
-      {providerMessage && <div className="integration-feedback">{providerMessage}</div>}
       <InfoBanner text={
         runtimeStatus?.project?.registered
           ? `This project is server-registered for runtime tools. GitHub is locked to ${runtimeStatus.project.repository || "its registered repository"} on ${runtimeStatus.project.defaultBranch || "main"}.`
