@@ -112,6 +112,7 @@ const personalProjects = [
     icon: Boxes,
     repository: "dakotawireless/VikingAries",
     deploymentUrl: "https://vikingaries.dakotawireless.net/",
+    cloudflareWorker: "vikingaries",
     backend: "Convex",
     backendUrl: "https://flippant-mandrill-487.convex.cloud",
     convexDashboardUrl: "https://dashboard.convex.dev/",
