@@ -1439,6 +1439,43 @@ function ChatWorkspace({ project, active = true }) {
     recognition.start();
   };
 
+  useEffect(() => {
+    const closeAttachmentMenu = (event) => {
+      if (!attachmentMenuRef.current?.contains(event.target)) setAttachmentMenuOpen(false);
+    };
+    document.addEventListener("mousedown", closeAttachmentMenu);
+    return () => document.removeEventListener("mousedown", closeAttachmentMenu);
+  }, []);
+
+  const handleSelectedAttachment = async (file) => {
+    if (!file) return;
+    setAttachmentMenuOpen(false);
+    setStatusText(`Preparing ${file.name}…`);
+    try {
+      if (file.type.startsWith("image/")) {
+        const imageData = await prepareImageAttachment(file);
+        setAttachment({
+          kind: "image",
+          thumbnailDataUrl: imageData.thumbnailDataUrl,
+          fullDataUrl: imageData.fullDataUrl,
+          name: file.name || "Photo",
+          type: file.type || "image/jpeg",
+        });
+      } else {
+        const text = await readTextAttachment(file);
+        setAttachment({
+          kind: "file",
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          text,
+        });
+      }
+      setStatusText("Attachment ready");
+    } catch (error) {
+      setStatusText(error.message || "Could not attach that file");
+    }
+  };
+
   const handleComposerPaste = async (event) => {
     const imageItem = Array.from(event.clipboardData?.items || []).find((item) =>
       item.type.startsWith("image/")
