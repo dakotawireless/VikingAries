@@ -801,9 +801,19 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
   const [githubTokenDraft, setGithubTokenDraft] = useState("");
   const [cloudflareTokenDraft, setCloudflareTokenDraft] = useState("");
   const [configureBusy, setConfigureBusy] = useState(false);
+  // A Worker recorded in the project definition is a durable deployment
+  // connection, even when the optional Cloudflare management-token check has
+  // not been run in this browser session.
+  const registeredCloudflareWorker =
+    project?.cloudflareWorker || (project?.id === "viking-aries" ? "vikingaries" : "");
+  const cloudflareDestinationConnected = Boolean(
+    registeredCloudflareWorker &&
+    mappings?.cloudflare?.enabled &&
+    (mappings.cloudflare.worker || registeredCloudflareWorker)
+  );
 
   useEffect(() => {
-    const registeredWorker = project?.cloudflareWorker || (project?.id === "viking-aries" ? "vikingaries" : "");
+    const registeredWorker = registeredCloudflareWorker;
     if (!registeredWorker) return;
 
     setMappings((current) => {
