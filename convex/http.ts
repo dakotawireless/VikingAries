@@ -179,6 +179,32 @@ http.route({
 });
 
 http.route({
+  path: "/jobs/cancel",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    try {
+      const body = await request.json();
+      const projectId = typeof body?.projectId === "string" ? body.projectId.slice(0, 120) : "";
+      const threadId = typeof body?.threadId === "string" ? body.threadId.slice(0, 160) : "";
+      if (!projectId || !threadId) {
+        return Response.json({ error: "projectId and threadId are required." }, { status: 400 });
+      }
+      const result = await ctx.runMutation(internal.jobs.cancelThreadJobs, { projectId, threadId });
+      return Response.json({ ok: true, ...result });
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : "Could not stop AI jobs." },
+        { status: 400 }
+      );
+    }
+  }),
+});
+
+http.route({
   path: "/jobs/list",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
