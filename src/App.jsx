@@ -848,6 +848,7 @@ function ChatWorkspace({ project, active = true }) {
   });
   const [draft, setDraft] = useState(() => loadProjectDraft(project.id));
   const [attachment, setAttachment] = useState(null);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [queueing, setQueueing] = useState(false);
   const [listening, setListening] = useState(false);
