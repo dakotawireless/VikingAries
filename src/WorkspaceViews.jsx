@@ -508,7 +508,7 @@ function smokePosDefaults(project) {
     ],
     integrations: [
       { id: "github", name: "GitHub", provider: "dakotawireless/Smoke-Signals-POS---New", purpose: "Source control, migration branch, PRs, CI/CD", status: "Connected" },
-      { id: "convex", name: "Convex — migration", provider: "benevolent-bulldog-176", purpose: "Isolated migration database/functions", status: "Mapped" },
+      { id: "convex", name: "Convex — migration", provider: "benevolent-bulldog-176", purpose: "Isolated migration database/functions", status: "Deployed" },
       { id: "convex-production", name: "Convex — legacy production", provider: "moonlit-mallard-698", purpose: "Current live Hercules POS backend; read/protect during migration", status: "Protected" },
       { id: "cloudflare", name: "Cloudflare", provider: "Matching migration project created", purpose: "Future staging/production hosting", status: "Worker registration pending" },
       { id: "valor", name: "Valor", provider: "Valor Connect Cloud / VP550", purpose: "Card payment processing", status: "Credentials pending migration backend configuration" },
@@ -535,7 +535,7 @@ function smokePosDefaults(project) {
     diagnostics: [
       { id: "source-import", name: "Source archive integrity", result: "Passed", detail: "Uploaded source was SHA-256 verified before GitHub baseline import." },
       { id: "build", name: "Hercules-free production build", result: "Passed", detail: "Frozen pnpm install, Convex TypeScript check, and Vite production build passed after Hercules runtime removal." },
-      { id: "convex-target", name: "Migration Convex mapping", result: "Configured", detail: "Frontend target is benevolent-bulldog-176.convex.cloud; deployment uses GitHub Actions CONVEX_DEPLOY_KEY." },
+      { id: "convex-target", name: "Migration Convex deployment", result: "Passed", detail: "Schema/functions deployed to benevolent-bulldog-176 and diagnostics passed. Backend is intentionally empty before data migration: 0 products, 0 customers, 0 transactions." },
       { id: "production-protection", name: "Legacy production protection", result: "Passed", detail: "Hercules live POS and moonlit-mallard-698 remain untouched during migration." },
       { id: "cloudflare-target", name: "Cloudflare migration target", result: "Pending", detail: "Matching project exists, but exact Worker/project identifier and staging URL still need registration in VA." },
     ],
@@ -546,7 +546,7 @@ function smokePosDefaults(project) {
     ],
     deployments: [
       { id: "legacy-production", environment: "Live production — protected", provider: "Hercules", status: "Active", url: "https://smoke-signals-pos-224583.onhercules.app" },
-      { id: "migration-backend", environment: "Migration backend", provider: "Convex", status: "Configured", url: "https://benevolent-bulldog-176.convex.cloud" },
+      { id: "migration-backend", environment: "Migration backend", provider: "Convex", status: "Deployed / data migration pending", url: "https://benevolent-bulldog-176.convex.cloud" },
       { id: "cloudflare-staging", environment: "Cloudflare staging", provider: "Cloudflare Workers", status: "Project created / mapping pending", url: "" },
     ],
     domains: [
