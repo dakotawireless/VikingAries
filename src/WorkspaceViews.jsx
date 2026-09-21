@@ -1086,8 +1086,8 @@ function IntegrationsView({ project, projects = [], workspace = "Personal" }) {
                   <label className="compact-field">
                     <span>Connected account / workspace</span>
                     <input
-                      value={item.account || ""}
-                      placeholder="Not connected"
+                      value={item.account || (item.id === "cloudflare" && mappings?.cloudflare?.worker ? `Worker: ${mappings.cloudflare.worker}` : "")}
+                      placeholder={item.id === "cloudflare" && mappings?.cloudflare?.worker ? `Worker: ${mappings.cloudflare.worker}` : "Not connected"}
                       onChange={(e) => updateProvider(item.id, { account: e.target.value })}
                     />
                   </label>
