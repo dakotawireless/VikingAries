@@ -680,6 +680,53 @@ const VA_MODEL_OPTIONS = [
   { id: "gpt-5.6-sol", label: "Sol", note: "Deep / highest capability" },
 ];
 
+const VA_MODEL_BY_ID = Object.fromEntries(
+  VA_MODEL_OPTIONS.map((option) => [option.id, option])
+);
+
+function recommendModelForTask(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+
+  const lower = text.toLowerCase();
+  const solSignals = [
+    /\b(overhaul|re-architect|rearchitect|architecture overhaul|major refactor|large refactor|full rewrite|rewrite the app|rebuild the app|rebuild the site)\b/,
+    /\b(full migration|migrate the entire|migrate everything|system-wide|cross-project|across multiple projects|all projects)\b/,
+    /\b(schema migration|data model redesign|security audit|performance overhaul|platform redesign|major redesign)\b/,
+  ];
+
+  const terraSignals = [
+    /\b(create|build|add|implement|develop|make)\b[\s\S]{0,120}\b(page|screen|feature|workflow|integration|module|component|dashboard|form|api|endpoint|automation)\b/,
+    /\b(new page|new feature|new integration|multi-file|multiple files|connect .* api|integrate .* with)\b/,
+    /\b(fix|debug|troubleshoot|investigate)\b[\s\S]{0,120}\b(bug|issue|error|integration|build|deploy|sync|code)\b/,
+    /\b(update|change|modify)\b[\s\S]{0,100}\b(component|page|workflow|integration|backend|database|api)\b/,
+  ];
+
+  if (solSignals.some((pattern) => pattern.test(lower))) {
+    return {
+      id: "gpt-5.6-sol",
+      label: "Sol",
+      reason: "Broad architectural or high-complexity work",
+    };
+  }
+
+  const terraMatches = terraSignals.filter((pattern) => pattern.test(lower)).length;
+  const complexityWords = (lower.match(/\b(repo|repository|backend|database|api|integration|deploy|migration|refactor|workflow|multiple|several)\b/g) || []).length;
+  if (terraMatches > 0 || complexityWords >= 3 || text.length > 900) {
+    return {
+      id: "gpt-5.6-terra",
+      label: "Terra",
+      reason: "Implementation or multi-step build work",
+    };
+  }
+
+  return {
+    id: "gpt-5.6-luna",
+    label: "Luna",
+    reason: "Lookup, question, or lightweight task",
+  };
+}
+
 function loadSelectedModel() {
   const saved = window.localStorage.getItem("viking-aries:selected-model");
   return VA_MODEL_OPTIONS.some((item) => item.id === saved) ? saved : "gpt-5.6-luna";
@@ -801,6 +848,10 @@ function ChatWorkspace({ project, active = true }) {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const [selectedModel, setSelectedModel] = useState(loadSelectedModel);
+  const modelRecommendation = useMemo(
+    () => recommendModelForTask(draft),
+    [draft]
+  );
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -1562,6 +1613,32 @@ function ChatWorkspace({ project, active = true }) {
             ))}
           </select>
         </label>
+
+        {modelRecommendation && modelRecommendation.id !== selectedModel && (
+          <div className="model-recommendation" role="status">
+            <span>
+              Recommended: <strong>{modelRecommendation.label}</strong>
+              <small>{modelRecommendation.reason}</small>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedModel(modelRecommendation.id)}
+              title={`Use ${modelRecommendation.label} for this request`}
+            >
+              Use {modelRecommendation.label}
+            </button>
+          </div>
+        )}
+
+        {modelRecommendation && modelRecommendation.id === selectedModel && (
+          <div className="model-recommendation model-recommendation-match" role="status">
+            <span>
+              <strong>{VA_MODEL_BY_ID[selectedModel]?.label || modelRecommendation.label}</strong> looks right for this request
+              <small>{modelRecommendation.reason}</small>
+            </span>
+          </div>
+        )}
+
         <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
       </form>
     </main>

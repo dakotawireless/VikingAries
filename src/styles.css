@@ -2360,6 +2360,63 @@ body.resizing-preview * {
   font-size: 12px;
 }
 
+.model-recommendation {
+  grid-column: 3 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 2px;
+  padding: 7px 9px;
+  border: 1px solid #cfe1ef;
+  border-radius: 5px;
+  background: #f4f9fd;
+  color: #35536a;
+  font-size: 11px;
+}
+.model-recommendation > span {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.model-recommendation strong {
+  color: #163f5d;
+}
+.model-recommendation small {
+  color: #72889a;
+  font-size: 10px;
+}
+.model-recommendation button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #9fc5e1;
+  border-radius: 4px;
+  background: white;
+  color: #126aa5;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.model-recommendation button:hover {
+  background: #edf7ff;
+}
+.model-recommendation-match {
+  border-color: #d9e4ec;
+  background: #fafcfd;
+  color: #587083;
+}
+
+@media (max-width: 620px) {
+  .model-recommendation {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+  }
+}
+
 .app-shell.mobile-ui .mobile-current-project strong {
   font-size: 16px;
 }
