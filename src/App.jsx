@@ -1490,6 +1490,14 @@ function ChatWorkspace({ project, active = true }) {
           name: file.name || "Photo",
           type: file.type || "image/jpeg",
         });
+      } else if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
+        const dataUrl = await readFileAsDataUrl(file);
+        setAttachment({
+          kind: "pdf",
+          name: file.name,
+          type: "application/pdf",
+          dataUrl,
+        });
       } else {
         const text = await readTextAttachment(file);
         setAttachment({
