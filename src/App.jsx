@@ -1534,8 +1534,10 @@ function ChatWorkspace({ project, active = true }) {
     try {
       const imageData = await prepareImageAttachment(file);
       setAttachment({
+        kind: "image",
         thumbnailDataUrl: imageData.thumbnailDataUrl,
         fullDataUrl: imageData.fullDataUrl,
+        dataUrl: imageData.fullDataUrl,
         name: file.name || "Pasted image",
         type: file.type || "image/jpeg",
       });
