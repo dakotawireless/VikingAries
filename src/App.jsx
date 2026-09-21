@@ -568,7 +568,16 @@ function renderLinkedText(text, keyPrefix) {
 }
 
 function renderChatContent(content, onImageOpen, fullSizeImage = "") {
-  const text = String(content || "").replace(/\\n?\\[VA_PDF_ATTACHMENT:data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+\\]/gi, "\\n[PDF attached]");
+  // Attachments are represented by a readable label in the conversation. Their
+  // original data stays in the request payload and is never rendered as binary
+  // text in the chat transcript.
+  const text = String(content || "")
+    .replace(/\\[VA_ATTACHMENT:([^|]*)\\|([^|]*)\\|data:[^\\]]+\\]/gi, (_match, encodedName) => {
+      let name = encodedName || "Attachment";
+      try { name = decodeURIComponent(encodedName); } catch { /* Keep the encoded name. */ }
+      return `[Attachment: ${name}]`;
+    })
+    .replace(/\\n?\\[VA_PDF_ATTACHMENT:data:application\\/pdf;base64,[A-Za-z0-9+/=\\r\\n]+\\]/gi, "\\n[PDF attached]");
   // Match any markdown image backed by an inline image data URL. Keeping this
   // generic also fixes thumbnails for images saved by older paste versions.
   const imagePattern = /!\[[^\]]*\]\(\s*(data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+)\s*\)/gi;
