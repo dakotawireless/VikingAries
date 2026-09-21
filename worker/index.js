@@ -1505,6 +1505,50 @@ async function writeVAState(env, entry) {
   return payload;
 }
 
+function jobProgressStateKey(jobId) {
+  const safeJob = String(jobId || "")
+    .replace(/[^A-Za-z0-9_.-]+/g, "-")
+    .slice(0, 120);
+  return safeJob ? `viking-aries:progress:${safeJob}` : "";
+}
+
+function describeRuntimeTool(call) {
+  let args = {};
+  try {
+    args = JSON.parse(call?.arguments || "{}");
+  } catch {
+    args = {};
+  }
+
+  const path = String(args.path || "").trim();
+  const labels = {
+    github_list_directory: path ? `Inspecting repository folder: ${path}` : "Inspecting repository files",
+    github_read_file: path ? `Reading file: ${path}` : "Reading repository file",
+    github_write_file: path ? `Writing file: ${path}` : "Writing repository file",
+    github_replace_text: path ? `Editing file: ${path}` : "Editing repository file",
+    cloudflare_get_project_status: "Checking Cloudflare deployment status",
+    cloudflare_get_build_logs: "Reading Cloudflare build logs",
+    cloudflare_trigger_build: "Starting Cloudflare build",
+    convex_get_deployment_status: "Checking Convex deployment status",
+  };
+
+  return labels[call?.name] || "Running project tool";
+}
+
+async function persistJobProgress(env, jobId, progress) {
+  const key = jobProgressStateKey(jobId);
+  if (!key) return;
+  try {
+    await writeVAState(env, {
+      key,
+      value: JSON.stringify(progress.slice(-60)),
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // Progress is informational and must never make the actual AI job fail.
+  }
+}
+
 function verifiedActionStateKey(projectId, threadId) {
   const safeProject = String(projectId || "unknown").replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 100);
   const safeThread = String(threadId || "unknown").replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 120);
@@ -2292,7 +2336,45 @@ const worker = {
           if (!projectId) {
             return json({ error: "projectId is required." }, { status: 400 });
           }
-          return json(await listVAJobs(env, projectId, 100));
+
+          const result = await listVAJobs(env, projectId, 100);
+          const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
+          let progressByJob = new Map();
+
+          try {
+            const state = await readVAState(env);
+            const jobIds = new Set(jobs.map((job) => job.jobId));
+            progressByJob = new Map(
+              (Array.isArray(state?.entries) ? state.entries : [])
+                .filter(
+                  (entry) =>
+                    typeof entry?.key === "string" &&
+                    entry.key.startsWith("viking-aries:progress:") &&
+                    !entry.deleted
+                )
+                .map((entry) => {
+                  const jobId = entry.key.slice("viking-aries:progress:".length);
+                  if (!jobIds.has(jobId)) return null;
+                  try {
+                    const parsed = JSON.parse(entry.value || "[]");
+                    return [jobId, Array.isArray(parsed) ? parsed.slice(-60) : []];
+                  } catch {
+                    return [jobId, []];
+                  }
+                })
+                .filter(Boolean)
+            );
+          } catch {
+            progressByJob = new Map();
+          }
+
+          return json({
+            ...result,
+            jobs: jobs.map((job) => ({
+              ...job,
+              progress: progressByJob.get(job.jobId) || [],
+            })),
+          });
         }
 
         return json({ error: "Method not allowed." }, { status: 405 });
@@ -2366,6 +2448,33 @@ const worker = {
     } catch {
       return json({ error: "Invalid JSON request." }, { status: 400 });
     }
+
+    const jobId =
+      typeof body?.jobId === "string" ? body.jobId.trim().slice(0, 120) : "";
+    const jobProgress = [];
+
+    const beginProgress = async (label) => {
+      if (!jobId) return "";
+      const id = crypto.randomUUID();
+      jobProgress.push({
+        id,
+        label: String(label || "Working").slice(0, 240),
+        status: "running",
+        at: Date.now(),
+      });
+      await persistJobProgress(env, jobId, jobProgress);
+      return id;
+    };
+
+    const finishProgress = async (id, status = "done", detail = "") => {
+      if (!jobId || !id) return;
+      const event = jobProgress.find((item) => item.id === id);
+      if (!event) return;
+      event.status = status;
+      event.completedAt = Date.now();
+      if (detail) event.detail = String(detail).slice(0, 240);
+      await persistJobProgress(env, jobId, jobProgress);
+    };
 
     const projectName =
       typeof body?.project?.name === "string" && body.project.name.trim()
@@ -2635,6 +2744,7 @@ const worker = {
       }
     };
     try {
+      const analysisProgressId = await beginProgress("Analyzing request");
       payload = await callOpenAI({
         apiKey,
         model,
@@ -2643,6 +2753,7 @@ const worker = {
         tools,
       });
       await captureUsage(payload);
+      await finishProgress(analysisProgressId, "done");
 
       for (let step = 0; step < MAX_AGENT_ROUNDS; step += 1) {
         const calls = extractFunctionCalls(payload);
@@ -2658,6 +2769,7 @@ const worker = {
             continue;
           }
           executedTools += 1;
+          const toolProgressId = await beginProgress(describeRuntimeTool(call));
           try {
             let result;
             if (call.name.startsWith("github_")) {
@@ -2669,6 +2781,8 @@ const worker = {
             } else {
               throw new Error(`Unsupported runtime tool: ${call.name}`);
             }
+
+            await finishProgress(toolProgressId, "done");
 
             const receipt = buildVerifiedActionReceipt(call, result, projectMetadata);
             if (receipt) {
@@ -2687,6 +2801,11 @@ const worker = {
             });
           } catch (error) {
             if (error instanceof RequestBudgetExceeded) budgetPaused = true;
+            await finishProgress(
+              toolProgressId,
+              "failed",
+              error instanceof Error ? error.message : "Tool action failed"
+            );
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,

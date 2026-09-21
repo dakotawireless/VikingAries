@@ -8,6 +8,7 @@ function isSharedKey(key) {
     key.startsWith(PREFIX) &&
     key !== "viking-aries:active-project" &&
     key !== "viking-aries:active-workspace" &&
+    !key.startsWith("viking-aries:progress:") &&
     !key.startsWith("viking-aries:audit:")
   );
 }

@@ -958,6 +958,7 @@ function ChatWorkspace({ project, active = true }) {
           content: job.userMessageContent,
           timestamp: formatChatTimestamp(job.createdAt),
           queueStatus: job.status,
+          progress: Array.isArray(job.progress) ? job.progress : [],
         });
         userIndex = next.length - 1;
       } else if (userIndex >= 0) {
@@ -965,6 +966,9 @@ function ChatWorkspace({ project, active = true }) {
           ...next[userIndex],
           jobId: job.jobId,
           queueStatus: job.status,
+          progress: Array.isArray(job.progress)
+            ? job.progress
+            : next[userIndex].progress || [],
         };
       }
 
@@ -1507,6 +1511,42 @@ function ChatWorkspace({ project, active = true }) {
                 >
                   {renderChatContent(message.content, setFullSizeImage, message.fullSizeImage)}
                 </div>
+
+                {message.role === "user" &&
+                  Array.isArray(message.progress) &&
+                  message.progress.length > 0 && (
+                    <div className="job-activity-feed" aria-label="Viking Aries activity">
+                      <div className="job-activity-heading">
+                        <Activity size={14} />
+                        <strong>Activity</strong>
+                        {message.queueStatus === "running" && <span>Live</span>}
+                      </div>
+                      <div className="job-activity-list">
+                        {message.progress.slice(-20).map((event) => (
+                          <div
+                            className={`job-activity-row ${event.status || "done"}`}
+                            key={event.id || `${event.at}-${event.label}`}
+                          >
+                            <span className="job-activity-icon">
+                              {event.status === "running" ? (
+                                <RefreshCw size={12} className="job-activity-spin" />
+                              ) : event.status === "failed" ? (
+                                <X size={12} />
+                              ) : (
+                                <Check size={12} />
+                              )}
+                            </span>
+                            <span className="job-activity-copy">
+                              <strong>{event.label || "Working"}</strong>
+                              {event.detail && <small>{event.detail}</small>}
+                            </span>
+                            <time>{formatChatTimestamp(event.completedAt || event.at)}</time>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 {message.role === "assistant" && (
                   <div className="message-actions">
                     <button
