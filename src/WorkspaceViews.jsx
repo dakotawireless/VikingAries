@@ -37,19 +37,40 @@ import {
   Zap,
 } from "lucide-react";
 
+function readProjectStorage(projectId, key, initialValue) {
+  const storageKey = `viking-aries:${projectId}:${key}`;
+  try {
+    const saved = window.localStorage.getItem(storageKey);
+    const stored = saved ? JSON.parse(saved) : initialValue;
+    return key === "integration-mappings-v1"
+      ? migrateProjectMappings(projectId, stored)
+      : stored;
+  } catch {
+    return initialValue;
+  }
+}
+
 function useProjectStorage(projectId, key, initialValue) {
   const storageKey = `viking-aries:${projectId}:${key}`;
-  const [value, setValue] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      const stored = saved ? JSON.parse(saved) : initialValue;
-      return key === "integration-mappings-v1" ? migrateProjectMappings(projectId, stored) : stored;
-    } catch {
-      return initialValue;
-    }
-  });
+  const [value, setValue] = useState(() =>
+    readProjectStorage(projectId, key, initialValue)
+  );
+  const skipNextPersistRef = useRef(false);
+
+  // Workspace views stay mounted while the selected project changes. Reload the
+  // newly selected project's own storage before allowing any persistence. The
+  // previous implementation kept the prior project's in-memory value and wrote
+  // it into the new project's key, causing cross-project metadata leakage.
+  useEffect(() => {
+    skipNextPersistRef.current = true;
+    setValue(readProjectStorage(projectId, key, initialValue));
+  }, [storageKey]);
 
   useEffect(() => {
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(value));
     } catch {
@@ -2097,6 +2118,30 @@ function SecretsView({ project }) {
   const [showValue, setShowValue] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const valueInputRef = useRef(null);
+
+  useEffect(() => {
+    setDraft({
+      name: "",
+      kind: "secret",
+      environment: "current",
+      purpose: "",
+      value: "",
+    });
+    setDestination("Secure project environment");
+    setConfiguredNames([]);
+    setSaveMessage("");
+    setSaveError("");
+    setShowValue(false);
+    setSearchQuery("");
+
+    if (project.id !== "timekeeper") {
+      setItems((current) =>
+        current.filter(
+          (item) => !String(item?.name || "").toUpperCase().startsWith("DWOLLA_")
+        )
+      );
+    }
+  }, [project.id]);
 
   useEffect(() => {
     if (!defaults.length) return;
