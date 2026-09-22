@@ -1734,6 +1734,7 @@ function SmokeSignalsStagingDeployControl() {
     buildUuid: "",
     outcome: "",
     logs: [],
+    stagingUrl: "",
   });
 
   const checkStatus = async (buildUuid = "") => {
@@ -1772,6 +1773,7 @@ function SmokeSignalsStagingDeployControl() {
         buildUuid: payload.build?.buildUuid || buildUuid || "",
         outcome,
         logs: Array.isArray(payload.logs?.lines) ? payload.logs.lines : [],
+        stagingUrl: payload.stagingUrl || "",
       });
 
       return { inProgress };
@@ -1805,7 +1807,7 @@ function SmokeSignalsStagingDeployControl() {
 
   const deploy = async () => {
     if (state.status === "working") return;
-    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "", outcome: "", logs: [] });
+    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "", outcome: "", logs: [], stagingUrl: "" });
     try {
       const response = await fetch("/api/projects/smoke-pos/staging/deploy", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
@@ -1819,6 +1821,7 @@ function SmokeSignalsStagingDeployControl() {
         buildUuid,
         outcome: "queued",
         logs: [],
+        stagingUrl: "",
       });
 
       const pollBuild = async () => {
@@ -1835,6 +1838,7 @@ function SmokeSignalsStagingDeployControl() {
         buildUuid: "",
         outcome: "",
         logs: [],
+        stagingUrl: "",
       });
     }
   };
@@ -1872,6 +1876,16 @@ function SmokeSignalsStagingDeployControl() {
           {state.message}
           {state.buildUuid ? <><br /><small>Build UUID: {state.buildUuid}</small></> : null}
           {state.outcome ? <><br /><small>Cloudflare outcome: {state.outcome}</small></> : null}
+          {state.stagingUrl ? (
+            <>
+              <br />
+              <a href={state.stagingUrl} target="_blank" rel="noreferrer">
+                Open Smoke Signals staging POS
+              </a>
+              <br />
+              <small>{state.stagingUrl}</small>
+            </>
+          ) : null}
         </div>
       )}
       {state.logs.length > 0 && (
