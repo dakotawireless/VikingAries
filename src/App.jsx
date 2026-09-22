@@ -1465,13 +1465,17 @@ function ChatWorkspace({ project, active = true }) {
       messages: [...thread.messages, userMessage],
     }));
 
-    setDraft("");
-    setAttachments([]);
+    // Clear the persisted composer synchronously before the state update. The
+    // guard also prevents the draft persistence effect from writing the just-
+    // submitted request back during the same render cycle.
+    clearDraftRef.current = true;
     try {
       window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
     } catch {
       // Ignore browser storage failures.
     }
+    setDraft("");
+    setAttachments([]);
 
     setSending(true);
     setStatusText(alreadyWorking ? "Message queued…" : "Viking Aries is starting…");
