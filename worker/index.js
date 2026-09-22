@@ -702,6 +702,49 @@ function buildGithubTools() {
 }
 
 
+function buildVikingAriesPlatformTools() {
+  return buildGithubTools().map((tool) => ({
+    ...tool,
+    name: tool.name.replace(/^github_/, "va_platform_"),
+    description:
+      "Viking Aries platform repository only (dakotawireless/VikingAries). " +
+      tool.description.replace(
+        /currently selected project's mapped GitHub repository|selected project's mapped GitHub repository/gi,
+        "Viking Aries platform repository"
+      ),
+  }));
+}
+
+async function executeVikingAriesPlatformTool(call, token) {
+  const mappedCall = {
+    ...call,
+    name: call.name.replace(/^va_platform_/, "github_"),
+  };
+  return executeGithubTool(mappedCall, token, {
+    repository: "dakotawireless/VikingAries",
+    defaultBranch: "main",
+  });
+}
+
+function vikingAriesPlatformChangeRequested(projectId, rawMessages) {
+  if (projectId === "viking-aries") return false;
+  if (!Array.isArray(rawMessages)) return false;
+
+  const latest = [...rawMessages]
+    .reverse()
+    .find((message) => message?.role === "user" && typeof message?.content === "string");
+  const text = String(latest?.content || "").toLowerCase();
+  if (!text) return false;
+
+  const changeVerb = /\b(redesign|redo|rework|revamp|change|modify|fix|update|build|add|remove|implement|make)\b/.test(text);
+  const platformNamed = /\b(viking aries|vikingaries|va app|va platform)\b/.test(text);
+  const platformSurface = /\b(secrets?|theme|sidebar|navigation|project selector|preview|ai builder|model selector|model recommendation|activity feed|chat ui|workspace settings|integrations? tab)\b/.test(text);
+  const surfaceLanguage = /\b(tab|screen|page|panel|workspace|sidebar|ui|interface|app)\b/.test(text);
+
+  return Boolean(changeVerb && (platformNamed || (platformSurface && surfaceLanguage)));
+}
+
+
 async function cloudflareRequest(token, path, init = {}) {
   const response = await fetch(`${CLOUDFLARE_API_BASE}${path}`, {
     ...init,
@@ -731,10 +774,11 @@ async function cloudflareVerifyToken(token) {
   };
 }
 
-async function cloudflareStoreVikingAriesSecret(cloudflareToken, name, value) {
+async function cloudflareStoreWorkerSecret(cloudflareToken, workerName, name, value) {
+  if (!workerName) throw new Error("No Cloudflare Worker is registered for this project.");
   await cloudflareRequest(
     cloudflareToken,
-    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/vikingaries/secrets`,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${encodeURIComponent(workerName)}/secrets`,
     {
       method: "PUT",
       body: JSON.stringify({
@@ -744,6 +788,10 @@ async function cloudflareStoreVikingAriesSecret(cloudflareToken, name, value) {
       }),
     }
   );
+}
+
+async function cloudflareStoreVikingAriesSecret(cloudflareToken, name, value) {
+  return cloudflareStoreWorkerSecret(cloudflareToken, "vikingaries", name, value);
 }
 
 async function cloudflareStoreVikingAriesToken(token) {
@@ -1052,6 +1100,118 @@ async function convexGetDeployment(token, deploymentName) {
   };
 }
 
+async function convexCreateTemporaryDeployKey(token, deploymentName) {
+  const name = `viking-aries-secret-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  const payload = await convexManagementRequest(
+    token,
+    `/deployments/${encodeURIComponent(deploymentName)}/create_deploy_key`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }
+  );
+  const deployKey =
+    payload?.deployKey ||
+    payload?.result?.deployKey ||
+    payload?.deploy_key ||
+    payload?.result?.deploy_key ||
+    null;
+  if (!deployKey) throw new Error("Convex did not return a temporary deployment key.");
+  return { name, deployKey };
+}
+
+async function convexDeleteTemporaryDeployKey(token, deploymentName, deployKey) {
+  try {
+    await convexManagementRequest(
+      token,
+      `/deployments/${encodeURIComponent(deploymentName)}/delete_deploy_key`,
+      {
+        method: "POST",
+        body: JSON.stringify({ id: deployKey }),
+      }
+    );
+  } catch {
+    // Cleanup must never expose the key or turn a successful environment write
+    // into a response that reveals anything about the secret.
+  }
+}
+
+async function convexDeploymentAdminRequest(backendUrl, deployKey, path, init = {}) {
+  const base = String(backendUrl || "").replace(/\/+$/, "");
+  if (!/^https:\/\/[A-Za-z0-9.-]+\.convex\.cloud$/i.test(base)) {
+    throw new Error("This project does not have a valid Convex deployment URL.");
+  }
+  const response = await fetch(`${base}/api/v1${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Convex ${deployKey}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload?.message ||
+      payload?.error?.message ||
+      payload?.error ||
+      `Convex deployment request failed with status ${response.status}`;
+    throw new Error(String(message));
+  }
+  return payload;
+}
+
+async function withTemporaryConvexDeployKey(token, projectConfig, callback) {
+  const deploymentName = projectConfig?.backendDeployment;
+  const backendUrl = projectConfig?.backendUrl;
+  if (!deploymentName || !backendUrl) {
+    throw new Error("This project does not have a registered Convex deployment.");
+  }
+
+  const { deployKey } = await convexCreateTemporaryDeployKey(token, deploymentName);
+  try {
+    return await callback({ deployKey, backendUrl, deploymentName });
+  } finally {
+    await convexDeleteTemporaryDeployKey(token, deploymentName, deployKey);
+  }
+}
+
+async function convexListEnvironmentVariableNames(token, projectConfig) {
+  return withTemporaryConvexDeployKey(token, projectConfig, async ({ deployKey, backendUrl }) => {
+    const payload = await convexDeploymentAdminRequest(
+      backendUrl,
+      deployKey,
+      "/list_environment_variables",
+      { method: "GET" }
+    );
+    const rows = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.result)
+        ? payload.result
+        : Array.isArray(payload?.environmentVariables)
+          ? payload.environmentVariables
+          : [];
+    return rows
+      .map((row) => (typeof row === "string" ? row : row?.name))
+      .filter((name) => typeof name === "string" && name);
+  });
+}
+
+async function convexSetEnvironmentVariable(token, projectConfig, name, value) {
+  return withTemporaryConvexDeployKey(token, projectConfig, async ({ deployKey, backendUrl }) => {
+    await convexDeploymentAdminRequest(
+      backendUrl,
+      deployKey,
+      "/update_environment_variables",
+      {
+        method: "POST",
+        body: JSON.stringify({ changes: [{ name, value }] }),
+      }
+    );
+    return true;
+  });
+}
+
 async function convexFindDeploymentByReference(token, teamSlug, projectSlug, reference) {
   if (!teamSlug || !projectSlug || !reference) return null;
 
@@ -1287,7 +1447,12 @@ function buildVerifiedActionReceipt(call, result, projectMetadata) {
   const recordedAt = new Date().toISOString();
 
   if (
-    (call.name === "github_write_file" || call.name === "github_replace_text") &&
+    (
+      call.name === "github_write_file" ||
+      call.name === "github_replace_text" ||
+      call.name === "va_platform_write_file" ||
+      call.name === "va_platform_replace_text"
+    ) &&
     result?.commitSha
   ) {
     return {
@@ -1611,6 +1776,10 @@ function describeRuntimeTool(call) {
     github_read_file: path ? `Reading file: ${path}` : "Reading repository file",
     github_write_file: path ? `Writing file: ${path}` : "Writing repository file",
     github_replace_text: path ? `Editing file: ${path}` : "Editing repository file",
+    va_platform_list_directory: path ? `Inspecting Viking Aries folder: ${path}` : "Inspecting Viking Aries platform files",
+    va_platform_read_file: path ? `Reading Viking Aries file: ${path}` : "Reading Viking Aries platform file",
+    va_platform_write_file: path ? `Writing Viking Aries file: ${path}` : "Writing Viking Aries platform file",
+    va_platform_replace_text: path ? `Editing Viking Aries file: ${path}` : "Editing Viking Aries platform file",
     cloudflare_get_project_status: "Checking Cloudflare deployment status",
     cloudflare_get_build_logs: "Reading Cloudflare build logs",
     cloudflare_trigger_build: "Starting Cloudflare build",
@@ -2433,6 +2602,142 @@ const worker = {
       }
     }
 
+    if (url.pathname === "/api/secrets") {
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      const queryProjectId = (url.searchParams.get("projectId") || "").trim();
+      let body = null;
+      if (request.method === "POST") {
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: "Invalid secret configuration request." }, { status: 400 });
+        }
+      }
+
+      const resolvedProjectId =
+        request.method === "POST"
+          ? String(body?.projectId || "").trim()
+          : queryProjectId;
+      const projectConfig = registeredProjectConfig(resolvedProjectId);
+      if (!projectConfig) {
+        return json({ error: "This project is not registered in Viking Aries." }, { status: 400 });
+      }
+
+      if (request.method === "GET") {
+        try {
+          if (projectConfig.backend === "Convex" && projectConfig.backendDeployment) {
+            const convexToken = await resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN);
+            if (!convexToken) {
+              return json(
+                { error: "Convex is not connected for secure environment management." },
+                { status: 503 }
+              );
+            }
+            const names = await convexListEnvironmentVariableNames(convexToken, projectConfig);
+            return json({
+              ok: true,
+              projectId: resolvedProjectId,
+              destination: `Convex · ${projectConfig.backendDeployment}`,
+              provider: "Convex",
+              names,
+            });
+          }
+
+          if (projectConfig.cloudflareWorker) {
+            const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+            if (!cloudflareToken) {
+              return json(
+                { error: "Cloudflare is not connected for secure secret management." },
+                { status: 503 }
+              );
+            }
+            await cloudflareWorkerRecord(cloudflareToken, projectConfig.cloudflareWorker);
+            return json({
+              ok: true,
+              projectId: resolvedProjectId,
+              destination: `Cloudflare Worker · ${projectConfig.cloudflareWorker}`,
+              provider: "Cloudflare",
+              names: [],
+            });
+          }
+
+          return json(
+            { error: "This project does not have a supported secure runtime destination." },
+            { status: 400 }
+          );
+        } catch (error) {
+          return json({ error: error.message || "Could not inspect secure configuration." }, { status: 502 });
+        }
+      }
+
+      if (request.method === "POST") {
+        const name = String(body?.name || "").trim().toUpperCase();
+        const value = typeof body?.value === "string" ? body.value : "";
+        if (!/^[A-Z][A-Z0-9_]{0,255}$/.test(name)) {
+          return json({ error: "Secret names must use letters, numbers, and underscores." }, { status: 400 });
+        }
+        if (!value || new TextEncoder().encode(value).length > 8192) {
+          return json({ error: "Enter a value no larger than 8 KiB." }, { status: 400 });
+        }
+
+        try {
+          if (projectConfig.backend === "Convex" && projectConfig.backendDeployment) {
+            const convexToken = await resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN);
+            if (!convexToken) {
+              return json(
+                { error: "Convex is not connected for secure environment management." },
+                { status: 503 }
+              );
+            }
+            await convexSetEnvironmentVariable(convexToken, projectConfig, name, value);
+            return json({
+              ok: true,
+              name,
+              configured: true,
+              destination: `Convex · ${projectConfig.backendDeployment}`,
+              provider: "Convex",
+            });
+          }
+
+          if (projectConfig.cloudflareWorker) {
+            const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+            if (!cloudflareToken) {
+              return json(
+                { error: "Cloudflare is not connected for secure secret management." },
+                { status: 503 }
+              );
+            }
+            await cloudflareStoreWorkerSecret(
+              cloudflareToken,
+              projectConfig.cloudflareWorker,
+              name,
+              value
+            );
+            return json({
+              ok: true,
+              name,
+              configured: true,
+              destination: `Cloudflare Worker · ${projectConfig.cloudflareWorker}`,
+              provider: "Cloudflare",
+            });
+          }
+
+          return json(
+            { error: "This project does not have a supported secure runtime destination." },
+            { status: 400 }
+          );
+        } catch (error) {
+          return json({ error: error.message || "Could not save the secure value." }, { status: 502 });
+        }
+      }
+
+      return json({ error: "Method not allowed." }, { status: 405 });
+    }
+
     if (url.pathname === "/api/convex/verify") {
       if (request.method !== "POST") {
         return json({ error: "Method not allowed." }, { status: 405 });
@@ -2981,7 +3286,9 @@ const worker = {
       "If you notice an unrelated issue while answering, mention it only as one short secondary note when it is genuinely important; otherwise leave it out.",
       "Do not ask Erik for more logs or information when the supplied material is already sufficient to answer or take the next available action.",
       "Prefer a short useful answer over a comprehensive report unless Erik explicitly asks for a full audit, detailed explanation, or technical breakdown.",
-      "Maintain awareness that Viking Aries manages multiple related projects while keeping write actions scoped to the selected project.",
+      "Maintain awareness that Viking Aries manages multiple related projects while keeping ordinary project write actions scoped to the selected project.",
+      "Viking Aries platform surfaces such as the Secrets tab, Theme, project selector, AI Builder chat UI, preview pane, model recommendation UI, and platform settings belong to dakotawireless/VikingAries, not to the selected app repository. When the owner explicitly asks to change one of those platform surfaces and va_platform_* tools are available, use those tools even if another project is selected. Do not use va_platform_* tools for changes to the selected app itself.",
+      "When a project needs a credential or API secret, never ask the owner to paste the value into AI chat. Direct them to the project Secrets tab, where the value can be sent directly to the secure runtime without entering model context.",
       "Project records should either be stored in Viking Aries or point to a durable retrievable source such as a repository file, commit, deployment, provider record, or Drive item.",
       "Never expose secret values to the AI layer unless the owner explicitly requests that exact value for an immediate task. Secret values belong in the secure vault; normal project context should include only names, providers, purposes, and configuration status.",
       "Treat uploaded attachments as opaque attachments. Do not reproduce raw PDF text, OCR output, base64, binary data, or full document contents in the chat. Keep the attachment represented by its filename and type, and inspect or summarize its contents only when the owner explicitly asks you to do so.",
@@ -3002,9 +3309,13 @@ const worker = {
       resolveSecret(env.CLOUDFLARE_API_TOKEN),
       resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
     ]);
+    const platformToolsRequested = vikingAriesPlatformChangeRequested(projectId, body?.messages);
     const tools = [
       ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
         ? buildGithubTools()
+        : []),
+      ...(platformToolsRequested && ownerAuthenticated && githubToken
+        ? buildVikingAriesPlatformTools()
         : []),
       ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
         ? buildCloudflareTools()
@@ -3017,6 +3328,9 @@ const worker = {
     const runtimeCapabilityNotes = [];
     if (githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
       runtimeCapabilityNotes.push("GitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.");
+    }
+    if (platformToolsRequested && ownerAuthenticated && githubToken) {
+      runtimeCapabilityNotes.push("The owner explicitly requested a Viking Aries platform UI change. va_platform_* tools are available and are hard-scoped to dakotawireless/VikingAries on main. Use them for the platform change while keeping ordinary github_* tools scoped to the selected project.");
     }
     if (cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)) {
       runtimeCapabilityNotes.push("Cloudflare status, build-log, and build-trigger tools are available for the selected project's server-registered Worker. Trigger builds only when the user explicitly asks to deploy or rebuild.");
@@ -3101,6 +3415,8 @@ const worker = {
             let result;
             if (call.name.startsWith("github_")) {
               result = await executeGithubTool(call, githubToken, projectMetadata);
+            } else if (call.name.startsWith("va_platform_")) {
+              result = await executeVikingAriesPlatformTool(call, githubToken);
             } else if (call.name.startsWith("cloudflare_")) {
               result = await executeCloudflareTool(call, cloudflareToken, projectMetadata);
             } else if (call.name.startsWith("convex_")) {

@@ -9,6 +9,8 @@ import {
   Code2,
   Database,
   Download,
+  Eye,
+  EyeOff,
   FileImage,
   FileText,
   FlaskConical,
@@ -2077,52 +2079,381 @@ function DomainsView({ project }) {
 
 function SecretsView({ project }) {
   const defaults = projectDefaults(project).secrets;
-  const [items, setItems] = useProjectStorage(project.id, "secrets-v2", defaults);
-  const [draft, setDraft] = useState({ name: "", provider: "", purpose: "", status: "Configured" });
+  const [items, setItems] = useProjectStorage(project.id, "secrets-v3", defaults);
+  const [draft, setDraft] = useState({
+    name: "",
+    kind: "secret",
+    environment: "Production",
+    purpose: "",
+    value: "",
+    confirmValue: "",
+  });
+  const [destination, setDestination] = useState("Secure project environment");
+  const [configuredNames, setConfiguredNames] = useState([]);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [showValue, setShowValue] = useState(false);
+  const valueInputRef = useRef(null);
 
   useEffect(() => {
     if (!defaults.length) return;
     setItems((current) => {
-      const existing = new Set(current.map((item) => `${item.name}|${item.provider}`));
-      const missing = defaults.filter((item) => !existing.has(`${item.name}|${item.provider}`));
+      const existing = new Set(current.map((item) => String(item.name || "").toUpperCase()));
+      const missing = defaults.filter(
+        (item) => !existing.has(String(item.name || "").toUpperCase())
+      );
       return missing.length ? [...current, ...missing] : current;
     });
   }, [project.id]);
 
-  const add = () => {
-    if (!draft.name.trim()) return;
-    setItems((current) => [...current, { id: `secret-${Date.now()}`, ...draft }]);
-    setDraft({ name: "", provider: "", purpose: "", status: "Configured" });
+  const loadSecretStatus = async () => {
+    setLoadingStatus(true);
+    try {
+      const response = await fetch(
+        `/api/secrets?projectId=${encodeURIComponent(project.id)}`,
+        { cache: "no-store" }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not check secret storage.");
+      setDestination(payload.destination || "Secure project environment");
+      const names = Array.isArray(payload.names) ? payload.names : [];
+      setConfiguredNames(names);
+      setItems((current) =>
+        current.map((item) => ({
+          ...item,
+          status: names.includes(item.name) ? "Configured" : item.status,
+        }))
+      );
+    } catch (error) {
+      setSaveError(error.message || "Could not check secret storage.");
+    } finally {
+      setLoadingStatus(false);
+    }
   };
+
+  useEffect(() => {
+    loadSecretStatus();
+  }, [project.id]);
+
+  const configureExisting = (item) => {
+    setDraft({
+      name: item.name || "",
+      kind: item.kind || "secret",
+      environment: item.environment || "Production",
+      purpose: item.purpose || "",
+      value: "",
+      confirmValue: "",
+    });
+    setSaveMessage("");
+    setSaveError("");
+    window.setTimeout(() => valueInputRef.current?.focus(), 0);
+  };
+
+  const useDwollaPreset = (name, kind, purpose) => {
+    setDraft({
+      name,
+      kind,
+      environment: "Sandbox",
+      purpose,
+      value: name === "DWOLLA_ENVIRONMENT" ? "sandbox" : "",
+      confirmValue: name === "DWOLLA_ENVIRONMENT" ? "sandbox" : "",
+    });
+    setSaveMessage("");
+    setSaveError("");
+    window.setTimeout(() => valueInputRef.current?.focus(), 0);
+  };
+
+  const saveSecret = async () => {
+    const name = draft.name.trim().toUpperCase();
+    const value = draft.value;
+    const isSecret = draft.kind === "secret";
+
+    setSaveMessage("");
+    setSaveError("");
+
+    if (!/^[A-Z][A-Z0-9_]{0,255}$/.test(name)) {
+      setSaveError("Use an environment-variable name such as DWOLLA_KEY.");
+      return;
+    }
+    if (!value) {
+      setSaveError("Enter the value to save.");
+      return;
+    }
+    if (isSecret && value !== draft.confirmValue) {
+      setSaveError("The secret value and confirmation do not match.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch("/api/secrets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          name,
+          value,
+          kind: draft.kind,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not save the value.");
+
+      const metadata = {
+        id: `secret-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        name,
+        kind: draft.kind,
+        environment: draft.environment || "Production",
+        provider: payload.destination || destination,
+        purpose: draft.purpose.trim() || "Project configuration",
+        status: "Configured",
+        lastUpdated: new Date().toISOString(),
+      };
+
+      setDestination(payload.destination || destination);
+      setConfiguredNames((current) =>
+        current.includes(name) ? current : [...current, name]
+      );
+      setItems((current) => {
+        const index = current.findIndex((item) => item.name === name);
+        if (index < 0) return [...current, metadata];
+        return current.map((item, rowIndex) =>
+          rowIndex === index ? { ...item, ...metadata } : item
+        );
+      });
+
+      setDraft((current) => ({
+        ...current,
+        name: "",
+        purpose: "",
+        value: "",
+        confirmValue: "",
+      }));
+      setShowValue(false);
+      setSaveMessage(`${name} saved securely to ${payload.destination || destination}.`);
+    } catch (error) {
+      setSaveError(error.message || "Could not save the value.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isSecretDraft = draft.kind === "secret";
+  const canSave =
+    Boolean(draft.name.trim() && draft.value) &&
+    (!isSecretDraft || draft.value === draft.confirmValue);
 
   return (
     <WorkspacePage>
-      <PageHeader icon={KeyRound} title="Secrets" description="Track required secret names and where they are stored without exposing the secret values." />
-      <InfoBanner text="Viking Aries should never display or store actual secret values in chat or local project metadata. Only names, purpose, provider, and configuration status belong here." />
-      <section className="workspace-card secret-list">
-        {items.map((item) => (
-          <div className="secret-row" key={item.id}>
-            <span className="secret-icon"><KeyRound size={16} /></span>
-            <div><strong>{item.name}</strong><small>{item.provider} · {item.purpose}</small></div>
-            <StatusPill status={item.status} />
-            <button type="button" className="icon-action danger" onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}><Trash2 size={15} /></button>
-          </div>
-        ))}
-      </section>
-      <section className="workspace-card va-entry-panel">
-        <div className="va-entry-title">Register secret metadata</div>
-        <div className="va-entry-grid">
-          <label><span>Secret name</span><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
-          <label><span>Stored in</span><input value={draft.provider} onChange={(e) => setDraft({ ...draft, provider: e.target.value })} /></label>
-          <label><span>Purpose</span><input value={draft.purpose} onChange={(e) => setDraft({ ...draft, purpose: e.target.value })} /></label>
-          <label><span>Status</span><input value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} /></label>
+      <PageHeader
+        icon={KeyRound}
+        title="Secrets"
+        description={`Secure environment configuration for ${project.name}.`}
+      />
+
+      <InfoBanner text="Values entered here go directly from your browser to the project’s secure runtime environment. Viking Aries keeps only the secret name and status; saved values are never shown back, written to GitHub, stored in local project metadata, or sent through AI chat." />
+
+      <section className="workspace-card secret-destination-card">
+        <div>
+          <small>Secure destination</small>
+          <strong>{destination}</strong>
         </div>
-        <button type="button" className="primary-action" onClick={add}><Plus size={15} /> Register secret name</button>
+        <span className={loadingStatus ? "secret-storage-status checking" : "secret-storage-status"}>
+          {loadingStatus ? "Checking…" : "Ready"}
+        </span>
+      </section>
+
+      {project.id === "timekeeper" && (
+        <section className="workspace-card secret-presets-card">
+          <div className="card-heading-row">
+            <div>
+              <h2>Dwolla setup</h2>
+              <p>Use these shortcuts to configure the Timekeeper Dwolla sandbox variables.</p>
+            </div>
+          </div>
+          <div className="secret-preset-actions">
+            <button type="button" className="secondary-action" onClick={() => useDwollaPreset("DWOLLA_ENVIRONMENT", "config", "Dwolla API environment")}>
+              DWOLLA_ENVIRONMENT
+            </button>
+            <button type="button" className="secondary-action" onClick={() => useDwollaPreset("DWOLLA_KEY", "secret", "Dwolla sandbox API key")}>
+              DWOLLA_KEY
+            </button>
+            <button type="button" className="secondary-action" onClick={() => useDwollaPreset("DWOLLA_SECRET", "secret", "Dwolla sandbox API secret")}>
+              DWOLLA_SECRET
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="workspace-card secret-list">
+        <div className="card-heading-row">
+          <div>
+            <h2>Configured variables</h2>
+            <p>Only names and configuration status are visible here.</p>
+          </div>
+          <button type="button" className="secondary-action" onClick={loadSecretStatus} disabled={loadingStatus}>
+            <RefreshCw size={14} /> {loadingStatus ? "Checking…" : "Refresh"}
+          </button>
+        </div>
+
+        {items.length === 0 && <EmptyState text="No project secrets have been registered yet." />}
+        {items.map((item) => {
+          const actuallyConfigured =
+            configuredNames.includes(item.name) || item.status === "Configured";
+          return (
+            <div className="secret-row secret-manager-row" key={item.id || item.name}>
+              <span className="secret-icon"><KeyRound size={16} /></span>
+              <div className="secret-row-copy">
+                <strong>{item.name}</strong>
+                <small>
+                  {[item.environment, item.provider || destination, item.purpose]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </small>
+                {item.lastUpdated && (
+                  <em>Updated {new Date(item.lastUpdated).toLocaleString()}</em>
+                )}
+              </div>
+              <StatusPill status={actuallyConfigured ? "Configured" : item.status || "Missing"} />
+              <div className="secret-row-actions">
+                <button type="button" className="secondary-action compact-action" onClick={() => configureExisting(item)}>
+                  {actuallyConfigured ? "Replace" : "Configure"}
+                </button>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  title="Remove this metadata row only"
+                  onClick={() =>
+                    setItems((current) => current.filter((row) => row.id !== item.id))
+                  }
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="workspace-card secure-secret-editor">
+        <div className="card-heading-row">
+          <div>
+            <h2>Configure value</h2>
+            <p>Saving a name that already exists securely replaces its value.</p>
+          </div>
+        </div>
+
+        <div className="secret-editor-grid">
+          <label>
+            <span>Variable name</span>
+            <input
+              value={draft.name}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="DWOLLA_KEY"
+              onChange={(e) => setDraft({ ...draft, name: e.target.value.toUpperCase() })}
+            />
+          </label>
+
+          <label>
+            <span>Type</span>
+            <select
+              value={draft.kind}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  kind: e.target.value,
+                  confirmValue: e.target.value === "secret" ? draft.confirmValue : draft.value,
+                })
+              }
+            >
+              <option value="secret">Secret</option>
+              <option value="config">Configuration value</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Environment</span>
+            <select
+              value={draft.environment}
+              onChange={(e) => setDraft({ ...draft, environment: e.target.value })}
+            >
+              <option>Sandbox</option>
+              <option>Production</option>
+              <option>Development</option>
+              <option>Staging</option>
+            </select>
+          </label>
+
+          <label className="secret-purpose-field">
+            <span>Purpose</span>
+            <input
+              value={draft.purpose}
+              placeholder="What this value is used for"
+              onChange={(e) => setDraft({ ...draft, purpose: e.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className="secret-value-grid">
+          <label>
+            <span>{isSecretDraft ? "Secret value" : "Value"}</span>
+            <div className="masked-secret-input">
+              <input
+                ref={valueInputRef}
+                type={showValue ? "text" : "password"}
+                value={draft.value}
+                autoComplete="new-password"
+                spellCheck={false}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    value: e.target.value,
+                    confirmValue: isSecretDraft ? draft.confirmValue : e.target.value,
+                  })
+                }
+              />
+              <button
+                type="button"
+                className="icon-action"
+                onClick={() => setShowValue((value) => !value)}
+                title={showValue ? "Hide value" : "Show while typing"}
+                aria-label={showValue ? "Hide value" : "Show value while typing"}
+              >
+                {showValue ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </label>
+
+          {isSecretDraft && (
+            <label>
+              <span>Confirm secret value</span>
+              <input
+                type="password"
+                value={draft.confirmValue}
+                autoComplete="new-password"
+                spellCheck={false}
+                onChange={(e) => setDraft({ ...draft, confirmValue: e.target.value })}
+              />
+            </label>
+          )}
+        </div>
+
+        <div className="secret-save-row">
+          <button type="button" className="primary-action" onClick={saveSecret} disabled={saving || !canSave}>
+            <Save size={15} /> {saving ? "Saving securely…" : "Save securely"}
+          </button>
+          <small>The saved value will disappear from this form after it is accepted.</small>
+        </div>
+
+        {saveMessage && <div className="secret-save-message success"><CheckCircle2 size={15} /> {saveMessage}</div>}
+        {saveError && <div className="secret-save-message error"><XCircle size={15} /> {saveError}</div>}
       </section>
     </WorkspacePage>
   );
 }
-
 
 function formatTokenCount(value) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
