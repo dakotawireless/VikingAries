@@ -1300,6 +1300,7 @@ function ChatWorkspace({ project, active = true }) {
     ]);
     setActiveThreadId(id);
     setDraft("");
+    setAttachments([]);
     try {
       window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
     } catch {
