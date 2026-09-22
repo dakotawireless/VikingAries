@@ -1930,6 +1930,64 @@ const worker = {
       }
     }
 
+    if (url.pathname === "/api/projects/smoke-pos/staging/deploy") {
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const projectConfig = registeredProjectConfig("smoke-pos");
+      if (
+        projectConfig?.repository !== "dakotawireless/Smoke-Signals-POS---New" ||
+        projectConfig?.defaultBranch !== "migration/remove-hercules" ||
+        projectConfig?.cloudflareWorker !== "smoke-signals-pos---new" ||
+        projectConfig?.backendDeployment !== "benevolent-bulldog-176"
+      ) {
+        return json(
+          { error: "Smoke Signals staging mapping failed the deployment safety check." },
+          { status: 409 }
+        );
+      }
+
+      const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+      if (!cloudflareToken) {
+        return json(
+          { error: "The shared Cloudflare connection is not configured." },
+          { status: 503 }
+        );
+      }
+
+      try {
+        await cloudflareWorkerRecord(cloudflareToken, projectConfig.cloudflareWorker);
+        const result = await cloudflareTriggerBuild(
+          cloudflareToken,
+          projectConfig.cloudflareWorker,
+          projectConfig.defaultBranch,
+          null
+        );
+        return json({
+          ok: true,
+          ...result,
+          backendDeployment: projectConfig.backendDeployment,
+          productionUntouched: true,
+        });
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not trigger the Smoke Signals staging build.",
+          },
+          { status: 502 }
+        );
+      }
+    }
+
     if (url.pathname === "/api/integrations/status") {
       const auth = await ownerAuthConfig(env);
       const authenticated = auth.configured

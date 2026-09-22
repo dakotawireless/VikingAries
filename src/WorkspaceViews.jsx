@@ -1727,8 +1727,148 @@ function VersionsView({ project }) {
   />;
 }
 
+function SmokeSignalsStagingDeployControl() {
+  const [state, setState] = useState({ status: "idle", message: "", buildUuid: "" });
+
+  const deploy = async () => {
+    if (state.status === "working") return;
+    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "" });
+    try {
+      const response = await fetch("/api/projects/smoke-pos/staging/deploy", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload.error || "Smoke Signals staging deployment failed to start.");
+      }
+      setState({
+        status: "success",
+        message: `Cloudflare staging build started for ${payload.worker} on ${payload.branch}. Live Hercules production was not changed.`,
+        buildUuid: payload.buildUuid || "",
+      });
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Smoke Signals staging deployment failed to start.",
+        buildUuid: "",
+      });
+    }
+  };
+
+  return (
+    <section className="workspace-card va-entry-panel">
+      <div className="va-entry-title">
+        <Rocket size={16} /> Smoke Signals staging deployment
+      </div>
+      <p>
+        Triggers the registered Cloudflare build for <code>smoke-signals-pos---new</code>
+        from <code>migration/remove-hercules</code>. The live Hercules POS and
+        <code>moonlit-mallard-698</code> remain untouched.
+      </p>
+      <button
+        type="button"
+        className="primary-action"
+        onClick={deploy}
+        disabled={state.status === "working"}
+      >
+        <Rocket size={15} />
+        {state.status === "working" ? "Starting staging build…" : "Deploy staging"}
+      </button>
+      {state.message && (
+        <div className="integration-feedback" role="status" aria-live="polite">
+          {state.message}
+          {state.buildUuid ? <><br /><small>Build UUID: {state.buildUuid}</small></> : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DeploymentsView({ project }) {
   const defaults = projectDefaults(project).deployments;
+
+  if (project.id === "smoke-pos") {
+    const [items, setItems] = useProjectStorage(project.id, "deployments-v2", defaults);
+    const columns = [
+      { key: "environment", label: "Environment" },
+      { key: "provider", label: "Provider" },
+      { key: "status", label: "Status" },
+      { key: "url", label: "URL" },
+    ];
+    const [draft, setDraft] = useState(() => Object.fromEntries(columns.map((column) => [column.key, ""])));
+
+    const add = () => {
+      const first = String(draft.environment || "").trim();
+      if (!first) return;
+      setItems((current) => [
+        ...current,
+        { id: `deployments-v2-${Date.now()}`, ...draft },
+      ]);
+      setDraft(Object.fromEntries(columns.map((column) => [column.key, ""])));
+    };
+
+    return (
+      <WorkspacePage>
+        <PageHeader
+          icon={Rocket}
+          title="Deployments"
+          description="Production, staging, and preview environments for the selected project."
+        />
+        <SmokeSignalsStagingDeployControl />
+        <section className="workspace-card">
+          <div className="va-data-table">
+            <div className="va-data-row va-data-head">
+              {columns.map((column) => <span key={column.key}>{column.label}</span>)}
+              <span />
+            </div>
+            {items.length === 0 && <EmptyState text="No deployment records yet." />}
+            {items.map((item) => (
+              <div className="va-data-row" key={item.id || item.environment}>
+                {columns.map((column) => (
+                  <input
+                    key={column.key}
+                    value={item[column.key] ?? ""}
+                    onChange={(e) =>
+                      setItems((current) =>
+                        current.map((row) =>
+                          row.id === item.id ? { ...row, [column.key]: e.target.value } : row
+                        )
+                      )
+                    }
+                    aria-label={column.label}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="va-entry-panel">
+            <div className="va-entry-title">Add environment</div>
+            <div className="va-entry-grid" style={{ "--entry-cols": columns.length }}>
+              {columns.map((column) => (
+                <label key={column.key}>
+                  <span>{column.label}</span>
+                  <input
+                    value={draft[column.key] ?? ""}
+                    onChange={(e) => setDraft({ ...draft, [column.key]: e.target.value })}
+                  />
+                </label>
+              ))}
+            </div>
+            <button type="button" className="primary-action" onClick={add}>
+              <Plus size={15} /> Add environment
+            </button>
+          </div>
+        </section>
+      </WorkspacePage>
+    );
+  }
+
   return <EditableListView
     project={project}
     storageKey="deployments-v2"
