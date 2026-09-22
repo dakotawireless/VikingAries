@@ -2888,3 +2888,36 @@ body.resizing-preview * {
   .app-shell.mobile-ui .project-trigger small { font-size:14px !important; }
   .app-shell.mobile-ui .brand-name { font-size:23px !important; }
 }
+
+
+/* Mobile Chat / Preview switch: prominent and safely below the browser/system gesture edge. */
+@media (max-width: 900px) {
+  .app-shell.mobile-ui .mobile-topbar {
+    min-height:76px !important;
+    padding:14px 14px 10px !important;
+    align-items:center !important;
+  }
+  .app-shell.mobile-ui .mobile-view-button {
+    min-width:104px !important;
+    min-height:48px !important;
+    padding:0 16px !important;
+    border:2px solid var(--blue-500) !important;
+    border-radius:12px !important;
+    background:var(--blue-600) !important;
+    color:#fff !important;
+    font-size:16px !important;
+    font-weight:800 !important;
+    box-shadow:0 4px 12px rgba(0,0,0,.18) !important;
+  }
+  .app-shell.mobile-ui .mobile-view-button svg {
+    width:20px !important;
+    height:20px !important;
+    margin-right:6px !important;
+  }
+  [data-theme="metal"].app-shell.mobile-ui .mobile-view-button {
+    color:#171009 !important;
+    border-color:#e0b76f !important;
+    background:linear-gradient(180deg,#ddb36d,#a76b2c) !important;
+    box-shadow:0 4px 14px rgba(0,0,0,.35), inset 0 1px rgba(255,238,194,.4) !important;
+  }
+}
