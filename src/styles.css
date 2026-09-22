@@ -123,3 +123,19 @@
 [data-theme="metal"] .hercules-secret-mask {
   color: #e5ded3;
 }
+
+/* The live Activity feed sits inside the dark chat surface. Override the
+   inherited muted utility text so completed work is readable beside its
+   status icons, while keeping secondary details slightly subdued. */
+[data-theme="metal"] .job-activity-heading,
+[data-theme="metal"] .job-activity-heading strong,
+[data-theme="metal"] .job-activity-copy strong {
+  color: #f4efe6;
+}
+[data-theme="metal"] .job-activity-copy small,
+[data-theme="metal"] .job-activity-row time {
+  color: #d7d0c6;
+}
+[data-theme="metal"] .job-activity-row {
+  color: #eee8df;
+}
