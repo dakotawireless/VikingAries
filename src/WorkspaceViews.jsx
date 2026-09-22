@@ -2648,6 +2648,14 @@ function ApiUsageView({ project }) {
               <option value={30}>30 days</option>
               <option value={90}>90 days</option>
             </select>
+            <a
+              className="secondary-action"
+              href="https://platform.openai.com/settings/organization/billing/overview"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink size={14} /> OpenAI billing
+            </a>
             <button type="button" className="secondary-action" onClick={loadUsage} disabled={loading}>
               <RefreshCw size={14} /> {loading ? "Loading…" : "Refresh"}
             </button>
