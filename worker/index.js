@@ -50,6 +50,38 @@ function registeredProjectConfig(projectId) {
   return PROJECT_RUNTIME_CONFIG[String(projectId || "").trim()] || null;
 }
 
+function projectSecretEnvironments(projectConfig) {
+  if (!projectConfig) return [];
+
+  const branch = String(projectConfig.defaultBranch || "").toLowerCase();
+  const status = String(projectConfig.status || "").toLowerCase();
+  const mappedId =
+    status === "migration" || branch.includes("staging") || branch.includes("migration")
+      ? "staging"
+      : "production";
+
+  const destination =
+    projectConfig.backend === "Convex" && projectConfig.backendDeployment
+      ? `Convex · ${projectConfig.backendDeployment}`
+      : projectConfig.cloudflareWorker
+        ? `Cloudflare Worker · ${projectConfig.cloudflareWorker}`
+        : "Secure project environment";
+
+  return ["production", "staging", "development"].map((id) => ({
+    id,
+    label: id === "production" ? "Production" : id === "staging" ? "Staging" : "Development",
+    available: id === mappedId,
+    destination: id === mappedId ? destination : null,
+  }));
+}
+
+function projectSecretEnvironmentConfig(projectConfig, environmentId) {
+  const environment = projectSecretEnvironments(projectConfig).find(
+    (item) => item.id === environmentId && item.available
+  );
+  return environment ? projectConfig : null;
+}
+
 const OWNER_SESSION_COOKIE = "va_owner_session";
 const OWNER_SESSION_SECONDS = 60 * 60 * 12;
 
@@ -2627,6 +2659,8 @@ const worker = {
         return json({ error: "This project is not registered in Viking Aries." }, { status: 400 });
       }
 
+      const environments = projectSecretEnvironments(projectConfig);
+
       if (request.method === "GET") {
         try {
           if (projectConfig.backend === "Convex" && projectConfig.backendDeployment) {
@@ -2643,6 +2677,7 @@ const worker = {
               projectId: resolvedProjectId,
               destination: `Convex · ${projectConfig.backendDeployment}`,
               provider: "Convex",
+              environments,
               names,
             });
           }
@@ -2661,6 +2696,7 @@ const worker = {
               projectId: resolvedProjectId,
               destination: `Cloudflare Worker · ${projectConfig.cloudflareWorker}`,
               provider: "Cloudflare",
+              environments,
               names: [],
             });
           }
@@ -2677,59 +2713,104 @@ const worker = {
       if (request.method === "POST") {
         const name = String(body?.name || "").trim().toUpperCase();
         const value = typeof body?.value === "string" ? body.value : "";
+        const requestedEnvironments = Array.isArray(body?.environments)
+          ? [...new Set(body.environments.map((item) => String(item || "").toLowerCase()))]
+          : [];
+        const mappedEnvironmentIds = environments
+          .filter((item) => item.available)
+          .map((item) => item.id);
+        const targetEnvironments = requestedEnvironments.filter((id) =>
+          mappedEnvironmentIds.includes(id)
+        );
+
         if (!/^[A-Z][A-Z0-9_]{0,255}$/.test(name)) {
           return json({ error: "Secret names must use letters, numbers, and underscores." }, { status: 400 });
         }
         if (!value || new TextEncoder().encode(value).length > 8192) {
           return json({ error: "Enter a value no larger than 8 KiB." }, { status: 400 });
         }
-
-        try {
-          if (projectConfig.backend === "Convex" && projectConfig.backendDeployment) {
-            const convexToken = await resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN);
-            if (!convexToken) {
-              return json(
-                { error: "Convex is not connected for secure environment management." },
-                { status: 503 }
-              );
-            }
-            await convexSetEnvironmentVariable(convexToken, projectConfig, name, value);
-            return json({
-              ok: true,
-              name,
-              configured: true,
-              destination: `Convex · ${projectConfig.backendDeployment}`,
-              provider: "Convex",
-            });
-          }
-
-          if (projectConfig.cloudflareWorker) {
-            const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
-            if (!cloudflareToken) {
-              return json(
-                { error: "Cloudflare is not connected for secure secret management." },
-                { status: 503 }
-              );
-            }
-            await cloudflareStoreWorkerSecret(
-              cloudflareToken,
-              projectConfig.cloudflareWorker,
-              name,
-              value
-            );
-            return json({
-              ok: true,
-              name,
-              configured: true,
-              destination: `Cloudflare Worker · ${projectConfig.cloudflareWorker}`,
-              provider: "Cloudflare",
-            });
-          }
-
+        if (!targetEnvironments.length) {
           return json(
-            { error: "This project does not have a supported secure runtime destination." },
+            { error: "Choose at least one environment that is mapped for this project." },
             { status: 400 }
           );
+        }
+        if (targetEnvironments.length !== requestedEnvironments.length) {
+          return json(
+            { error: "One or more selected environments are not mapped for this project." },
+            { status: 400 }
+          );
+        }
+
+        try {
+          // The current registry maps one secure runtime per environment. This
+          // loop already supports multiple targets once more mappings are added.
+          const savedDestinations = [];
+
+          for (const environmentId of targetEnvironments) {
+            const environmentConfig =
+              projectSecretEnvironmentConfig(projectConfig, environmentId);
+            if (!environmentConfig) {
+              throw new Error(`The ${environmentId} environment is not mapped for this project.`);
+            }
+
+            if (environmentConfig.backend === "Convex" && environmentConfig.backendDeployment) {
+              const convexToken = await resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN);
+              if (!convexToken) {
+                return json(
+                  { error: "Convex is not connected for secure environment management." },
+                  { status: 503 }
+                );
+              }
+              await convexSetEnvironmentVariable(convexToken, environmentConfig, name, value);
+              savedDestinations.push({
+                environment: environmentId,
+                destination: `Convex · ${environmentConfig.backendDeployment}`,
+                provider: "Convex",
+              });
+              continue;
+            }
+
+            if (environmentConfig.cloudflareWorker) {
+              const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+              if (!cloudflareToken) {
+                return json(
+                  { error: "Cloudflare is not connected for secure secret management." },
+                  { status: 503 }
+                );
+              }
+              await cloudflareStoreWorkerSecret(
+                cloudflareToken,
+                environmentConfig.cloudflareWorker,
+                name,
+                value
+              );
+              savedDestinations.push({
+                environment: environmentId,
+                destination: `Cloudflare Worker · ${environmentConfig.cloudflareWorker}`,
+                provider: "Cloudflare",
+              });
+              continue;
+            }
+
+            throw new Error("The selected environment does not have a supported secure runtime.");
+          }
+
+          return json({
+            ok: true,
+            name,
+            configured: true,
+            environments: targetEnvironments,
+            destinations: savedDestinations,
+            destination:
+              savedDestinations.length === 1
+                ? savedDestinations[0].destination
+                : `${savedDestinations.length} mapped environments`,
+            provider:
+              savedDestinations.length === 1
+                ? savedDestinations[0].provider
+                : "Multiple",
+          });
         } catch (error) {
           return json({ error: error.message || "Could not save the secure value." }, { status: 502 });
         }

@@ -2110,6 +2110,9 @@ function SecretsView({ project }) {
     value: "",
   });
   const [destination, setDestination] = useState("Secure project environment");
+  const [availableEnvironments, setAvailableEnvironments] = useState([]);
+  const [selectedEnvironments, setSelectedEnvironments] = useState([]);
+  const [environmentMenuOpen, setEnvironmentMenuOpen] = useState(false);
   const [configuredNames, setConfiguredNames] = useState([]);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2128,6 +2131,9 @@ function SecretsView({ project }) {
       value: "",
     });
     setDestination("Secure project environment");
+    setAvailableEnvironments([]);
+    setSelectedEnvironments([]);
+    setEnvironmentMenuOpen(false);
     setConfiguredNames([]);
     setSaveMessage("");
     setSaveError("");
@@ -2170,6 +2176,13 @@ function SecretsView({ project }) {
         : [];
 
       setDestination(payload.destination || "Secure project environment");
+      const environments = Array.isArray(payload.environments) ? payload.environments : [];
+      setAvailableEnvironments(environments);
+      const mappedIds = environments.filter((item) => item.available).map((item) => item.id);
+      setSelectedEnvironments((current) => {
+        const stillValid = current.filter((id) => mappedIds.includes(id));
+        return stillValid.length ? stillValid : mappedIds.slice(0, 1);
+      });
       setConfiguredNames(names);
 
       setItems((current) => {
@@ -2249,6 +2262,7 @@ function SecretsView({ project }) {
           name,
           value,
           kind: draft.kind,
+          environments: selectedEnvironments,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -2295,6 +2309,42 @@ function SecretsView({ project }) {
     }
   };
 
+  const mappedEnvironmentIds = availableEnvironments
+    .filter((item) => item.available)
+    .map((item) => item.id);
+
+  const allMappedSelected =
+    mappedEnvironmentIds.length > 0 &&
+    mappedEnvironmentIds.every((id) => selectedEnvironments.includes(id));
+
+  const toggleEnvironment = (environmentId) => {
+    const environment = availableEnvironments.find((item) => item.id === environmentId);
+    if (!environment?.available) return;
+    setSelectedEnvironments((current) =>
+      current.includes(environmentId)
+        ? current.filter((id) => id !== environmentId)
+        : [...current, environmentId]
+    );
+  };
+
+  const selectAllMappedEnvironments = () => {
+    setSelectedEnvironments(allMappedSelected ? [] : mappedEnvironmentIds);
+  };
+
+  const selectedEnvironmentLabel = (() => {
+    if (allMappedSelected && mappedEnvironmentIds.length > 1) {
+      return "All mapped environments";
+    }
+    if (selectedEnvironments.length === 1) {
+      return (
+        availableEnvironments.find((item) => item.id === selectedEnvironments[0])?.label ||
+        "Environment"
+      );
+    }
+    if (selectedEnvironments.length > 1) return `${selectedEnvironments.length} environments`;
+    return "Choose environment";
+  })();
+
   const filteredItems = items
     .filter((item) => {
       const query = searchQuery.trim().toLowerCase();
@@ -2305,7 +2355,9 @@ function SecretsView({ project }) {
     })
     .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
 
-  const canSave = Boolean(draft.name.trim() && draft.value);
+  const canSave =
+    Boolean(draft.name.trim() && draft.value) &&
+    selectedEnvironments.length > 0;
 
   return (
     <WorkspacePage>
@@ -2367,16 +2419,74 @@ function SecretsView({ project }) {
             </div>
           </label>
 
-          <label>
+          <div className="secret-environment-field">
             <span>Environment</span>
-            <select
-              value={draft.environment}
-              onChange={(e) => setDraft({ ...draft, environment: e.target.value })}
+            <button
+              type="button"
+              className="secret-environment-trigger"
+              onClick={() => setEnvironmentMenuOpen((open) => !open)}
+              aria-expanded={environmentMenuOpen}
             >
-              <option value="current">Current mapped environment</option>
-            </select>
+              <KeyRound size={14} />
+              <span>{selectedEnvironmentLabel}</span>
+              <span className="secret-environment-caret">⌄</span>
+            </button>
+
+            {environmentMenuOpen && (
+              <div className="secret-environment-menu">
+                <label className="secret-environment-option">
+                  <span className="secret-environment-option-copy">
+                    <strong>All mapped environments</strong>
+                    <small>Apply this value to every environment currently mapped for this project.</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={allMappedSelected}
+                    disabled={!mappedEnvironmentIds.length}
+                    onChange={selectAllMappedEnvironments}
+                  />
+                </label>
+
+                {["production", "staging", "development"].map((environmentId) => {
+                  const environment =
+                    availableEnvironments.find((item) => item.id === environmentId) || {
+                      id: environmentId,
+                      label:
+                        environmentId === "production"
+                          ? "Production"
+                          : environmentId === "staging"
+                            ? "Staging"
+                            : "Development",
+                      available: false,
+                    };
+
+                  return (
+                    <label
+                      className={`secret-environment-option ${environment.available ? "" : "disabled"}`}
+                      key={environment.id}
+                    >
+                      <span className="secret-environment-option-copy">
+                        <strong>{environment.label}</strong>
+                        <small>
+                          {environment.available
+                            ? environment.destination || "Mapped project environment"
+                            : "Not mapped for this project"}
+                        </small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={selectedEnvironments.includes(environment.id)}
+                        disabled={!environment.available}
+                        onChange={() => toggleEnvironment(environment.id)}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
             <small>{destination}</small>
-          </label>
+          </div>
 
           <label className="hercules-secret-sensitive-toggle">
             <input

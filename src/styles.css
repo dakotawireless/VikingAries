@@ -3035,3 +3035,87 @@ body.resizing-preview * {
   .hercules-secret-row > .compact-action { grid-row: 1; }
 }
 
+
+
+/* Hercules-style environment targeting for Secrets */
+.secret-environment-field {
+  position: relative;
+  display: grid;
+  gap: 5px;
+}
+.secret-environment-field > span:first-child {
+  color: #4b6174;
+  font-size: 10px;
+  font-weight: 700;
+}
+.secret-environment-field > small {
+  color: #8797a4;
+  font-size: 9px;
+}
+.secret-environment-trigger {
+  width: 100%;
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid #cedae4;
+  border-radius: 5px;
+  background: white;
+  color: #172b3c;
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+.secret-environment-caret {
+  color: #708394;
+  text-align: right;
+}
+.secret-environment-menu {
+  position: absolute;
+  z-index: 40;
+  top: 59px;
+  left: 0;
+  width: min(420px, 100%);
+  display: grid;
+  padding: 5px;
+  border: 1px solid #cbd8e3;
+  border-radius: 7px;
+  background: white;
+  box-shadow: 0 10px 28px rgba(24, 45, 62, .16);
+}
+.secret-environment-option {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 10px !important;
+  padding: 8px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.secret-environment-option:hover { background: #f5f8fb; }
+.secret-environment-option.disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.secret-environment-option-copy strong,
+.secret-environment-option-copy small {
+  display: block;
+}
+.secret-environment-option-copy strong {
+  color: #334d62;
+  font-size: 10px;
+}
+.secret-environment-option-copy small {
+  margin-top: 2px;
+  color: #8293a1;
+  font-size: 8px;
+  line-height: 1.35;
+}
+.secret-environment-option input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  justify-self: end;
+}
