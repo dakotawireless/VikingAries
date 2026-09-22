@@ -1728,27 +1728,113 @@ function VersionsView({ project }) {
 }
 
 function SmokeSignalsStagingDeployControl() {
-  const [state, setState] = useState({ status: "idle", message: "", buildUuid: "" });
+  const [state, setState] = useState({
+    status: "idle",
+    message: "",
+    buildUuid: "",
+    outcome: "",
+    logs: [],
+  });
+
+  const checkStatus = async (buildUuid = "") => {
+    try {
+      const query = buildUuid ? `?buildUuid=${encodeURIComponent(buildUuid)}` : "";
+      const response = await fetch(`/api/projects/smoke-pos/staging/build${query}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload.error || "Could not read staging build status.");
+      }
+      if (!payload.found) {
+        setState((current) => ({
+          ...current,
+          status: current.status === "working" ? "working" : "idle",
+          message: current.status === "working" ? current.message : "No Cloudflare staging build has been recorded yet.",
+        }));
+        return;
+      }
+
+      const outcome = String(payload.build?.outcome || "unknown");
+      const normalized = outcome.toLowerCase();
+      const succeeded = normalized.includes("success");
+      const failed =
+        normalized.includes("fail") ||
+        normalized.includes("error") ||
+        normalized.includes("cancel");
+      const inProgress = !succeeded && !failed;
+
+      setState({
+        status: succeeded ? "success" : failed ? "error" : "working",
+        message: succeeded
+          ? `Cloudflare staging build completed successfully for ${payload.worker}. Live Hercules production was not changed.`
+          : failed
+            ? `Cloudflare staging build ended with outcome: ${outcome}.`
+            : `Cloudflare staging build is still running. Current outcome: ${outcome}.`,
+        buildUuid: payload.build?.buildUuid || buildUuid || "",
+        outcome,
+        logs: Array.isArray(payload.logs?.lines) ? payload.logs.lines : [],
+      });
+
+      return { inProgress };
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: "error",
+        message: error instanceof Error ? error.message : "Could not read staging build status.",
+      }));
+      return { inProgress: false };
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+
+    const poll = async () => {
+      const result = await checkStatus();
+      if (!cancelled && result?.inProgress) {
+        timer = window.setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   const deploy = async () => {
     if (state.status === "working") return;
-    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "" });
+    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "", outcome: "", logs: [] });
     try {
       const response = await fetch("/api/projects/smoke-pos/staging/deploy", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) {
         throw new Error(payload.error || "Smoke Signals staging deployment failed to start.");
       }
+      const buildUuid = payload.buildUuid || "";
       setState({
-        status: "success",
+        status: "working",
         message: `Cloudflare staging build started for ${payload.worker} on ${payload.branch}. Live Hercules production was not changed.`,
-        buildUuid: payload.buildUuid || "",
+        buildUuid,
+        outcome: "queued",
+        logs: [],
       });
+
+      const pollBuild = async () => {
+        const result = await checkStatus(buildUuid);
+        if (result?.inProgress) {
+          window.setTimeout(pollBuild, 5000);
+        }
+      };
+      window.setTimeout(pollBuild, 2500);
     } catch (error) {
       setState({
         status: "error",
         message: error instanceof Error ? error.message : "Smoke Signals staging deployment failed to start.",
         buildUuid: "",
+        outcome: "",
+        logs: [],
       });
     }
   };
@@ -1763,19 +1849,35 @@ function SmokeSignalsStagingDeployControl() {
         from <code>migration/remove-hercules</code>. The live Hercules POS and
         <code>moonlit-mallard-698</code> remain untouched.
       </p>
-      <button
-        type="button"
-        className="primary-action"
-        onClick={deploy}
-        disabled={state.status === "working"}
-      >
-        <Rocket size={15} />
-        {state.status === "working" ? "Starting staging build…" : "Deploy staging"}
-      </button>
+      <div className="workspace-actions">
+        <button
+          type="button"
+          className="primary-action"
+          onClick={deploy}
+          disabled={state.status === "working"}
+        >
+          <Rocket size={15} />
+          {state.status === "working" ? "Staging build running…" : "Deploy staging"}
+        </button>
+        <button
+          type="button"
+          className="secondary-action"
+          onClick={() => checkStatus(state.buildUuid)}
+        >
+          <RefreshCw size={14} /> Check build status
+        </button>
+      </div>
       {state.message && (
         <div className="integration-feedback" role="status" aria-live="polite">
           {state.message}
           {state.buildUuid ? <><br /><small>Build UUID: {state.buildUuid}</small></> : null}
+          {state.outcome ? <><br /><small>Cloudflare outcome: {state.outcome}</small></> : null}
+        </div>
+      )}
+      {state.logs.length > 0 && (
+        <div className="integration-feedback">
+          <strong>Recent Cloudflare failure logs</strong>
+          <pre>{state.logs.join("\n")}</pre>
         </div>
       )}
     </section>
