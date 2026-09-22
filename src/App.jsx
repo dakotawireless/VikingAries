@@ -1079,6 +1079,11 @@ function ChatWorkspace({ project, active = true }) {
   useEffect(() => {
     const key = `viking-aries-draft:${project.id}`;
     try {
+      if (clearDraftRef.current) {
+        clearDraftRef.current = false;
+        window.localStorage.removeItem(key);
+        return;
+      }
       if (draft) {
         window.localStorage.setItem(key, draft);
       } else {
