@@ -947,6 +947,24 @@ async function cloudflareListBuildTriggers(token, workerName) {
   }));
 }
 
+async function cloudflareSetDeployCommand(token, triggerUuid, deployCommand) {
+  const safeUuid = String(triggerUuid || "").trim();
+  if (!safeUuid) throw new Error("Cloudflare did not return a build trigger UUID.");
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/triggers/${encodeURIComponent(safeUuid)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ deploy_command: deployCommand }),
+    }
+  );
+  const result = payload?.result || {};
+  return {
+    uuid: result.trigger_uuid || result.uuid || safeUuid,
+    deployCommand: result.deploy_command || deployCommand,
+  };
+}
+
 async function cloudflareTriggerBuild(token, workerName, branch, commitHash) {
   const triggers = await cloudflareListBuildTriggers(token, workerName);
   if (!triggers.length) throw new Error("No Cloudflare build trigger is configured for this Worker.");
@@ -2172,6 +2190,28 @@ const worker = {
 
       try {
         await cloudflareWorkerRecord(cloudflareToken, projectConfig.cloudflareWorker);
+
+        const triggers = await cloudflareListBuildTriggers(
+          cloudflareToken,
+          projectConfig.cloudflareWorker
+        );
+        const stagingTrigger =
+          triggers.find(
+            (item) =>
+              Array.isArray(item.branchIncludes) &&
+              item.branchIncludes.includes(projectConfig.defaultBranch)
+          ) || triggers[0];
+
+        if (!stagingTrigger?.uuid) {
+          throw new Error("No Cloudflare build trigger is configured for the Smoke Signals staging Worker.");
+        }
+
+        const triggerConfig = await cloudflareSetDeployCommand(
+          cloudflareToken,
+          stagingTrigger.uuid,
+          "npx wrangler deploy"
+        );
+
         const result = await cloudflareTriggerBuild(
           cloudflareToken,
           projectConfig.cloudflareWorker,
@@ -2181,6 +2221,7 @@ const worker = {
         return json({
           ok: true,
           ...result,
+          deployCommand: triggerConfig.deployCommand,
           backendDeployment: projectConfig.backendDeployment,
           productionUntouched: true,
         });
