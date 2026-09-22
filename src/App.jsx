@@ -1369,14 +1369,19 @@ function ChatWorkspace({ project, active = true }) {
       model: requestModel,
       role: "user",
       content,
-      attachmentMeta: attachment
-        ? {
-            kind: attachment.kind || "file",
-            name: attachment.name || "Attachment",
-            type: attachment.type || "application/octet-stream",
-          }
-        : null,
-      fullSizeImage: attachment?.kind === "image" ? attachment?.fullDataUrl || "" : "",
+      attachmentMeta: attachments.map((item) => ({
+        kind: item.kind || "file",
+        name: item.name || "Attachment",
+        type: item.type || "application/octet-stream",
+      })),
+      attachments: attachments.map((item) => ({
+        kind: item.kind || "file",
+        name: item.name || "Attachment",
+        type: item.type || "application/octet-stream",
+        dataUrl: item.dataUrl,
+        thumbnailDataUrl: item.thumbnailDataUrl || "",
+        fullDataUrl: item.fullDataUrl || "",
+      })),
       timestamp: formatChatTime(),
       queueStatus: "queued",
     };
