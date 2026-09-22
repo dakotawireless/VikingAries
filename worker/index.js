@@ -1988,6 +1988,95 @@ const worker = {
       }
     }
 
+    if (url.pathname === "/api/projects/smoke-pos/staging/build") {
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      if (request.method !== "GET") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const projectConfig = registeredProjectConfig("smoke-pos");
+      if (
+        projectConfig?.cloudflareWorker !== "smoke-signals-pos---new" ||
+        projectConfig?.defaultBranch !== "migration/remove-hercules"
+      ) {
+        return json(
+          { error: "Smoke Signals staging mapping failed the build-status safety check." },
+          { status: 409 }
+        );
+      }
+
+      const cloudflareToken = await resolveSecret(env.CLOUDFLARE_API_TOKEN);
+      if (!cloudflareToken) {
+        return json(
+          { error: "The shared Cloudflare connection is not configured." },
+          { status: 503 }
+        );
+      }
+
+      try {
+        const requestedBuildUuid = (url.searchParams.get("buildUuid") || "").trim();
+        const builds = await cloudflareListBuilds(
+          cloudflareToken,
+          projectConfig.cloudflareWorker
+        );
+        const build = requestedBuildUuid
+          ? builds.find((item) => item.buildUuid === requestedBuildUuid)
+          : builds[0];
+
+        if (!build) {
+          return json({
+            ok: true,
+            found: false,
+            worker: projectConfig.cloudflareWorker,
+          });
+        }
+
+        const outcome = String(build.outcome || "").toLowerCase();
+        const failed =
+          outcome.includes("fail") ||
+          outcome.includes("error") ||
+          outcome.includes("cancel");
+        let logs = null;
+        if (failed && build.buildUuid) {
+          try {
+            const result = await cloudflareGetBuildLogs(
+              cloudflareToken,
+              build.buildUuid
+            );
+            logs = {
+              truncated: result.truncated,
+              lines: result.lines.slice(-80),
+            };
+          } catch {
+            logs = null;
+          }
+        }
+
+        return json({
+          ok: true,
+          found: true,
+          worker: projectConfig.cloudflareWorker,
+          build,
+          logs,
+          productionUntouched: true,
+        });
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not read the Smoke Signals staging build status.",
+          },
+          { status: 502 }
+        );
+      }
+    }
+
     if (url.pathname === "/api/integrations/status") {
       const auth = await ownerAuthConfig(env);
       const authenticated = auth.configured
