@@ -2074,6 +2074,31 @@ const worker = {
           stagingUrl = null;
         }
 
+        let stagingHealth = null;
+        if (stagingUrl) {
+          try {
+            const response = await fetch(stagingUrl, { redirect: "follow" });
+            const contentType = response.headers.get("content-type") || "";
+            let sample = "";
+            if (contentType.includes("text/html")) {
+              sample = (await response.text()).slice(0, 300);
+            }
+            stagingHealth = {
+              reachable: response.ok,
+              status: response.status,
+              statusText: response.statusText || "",
+              contentType,
+              finalUrl: response.url || stagingUrl,
+              htmlDocument: /<html|<!doctype html/i.test(sample),
+            };
+          } catch (error) {
+            stagingHealth = {
+              reachable: false,
+              error: error instanceof Error ? error.message : "Staging URL request failed.",
+            };
+          }
+        }
+
         return json({
           ok: true,
           found: true,
@@ -2081,6 +2106,7 @@ const worker = {
           build,
           logs,
           stagingUrl,
+          stagingHealth,
           productionUntouched: true,
         });
       } catch (error) {

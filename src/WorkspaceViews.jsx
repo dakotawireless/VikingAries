@@ -1735,6 +1735,7 @@ function SmokeSignalsStagingDeployControl() {
     outcome: "",
     logs: [],
     stagingUrl: "",
+    stagingHealth: null,
   });
 
   const checkStatus = async (buildUuid = "") => {
@@ -1774,6 +1775,7 @@ function SmokeSignalsStagingDeployControl() {
         outcome,
         logs: Array.isArray(payload.logs?.lines) ? payload.logs.lines : [],
         stagingUrl: payload.stagingUrl || "",
+        stagingHealth: payload.stagingHealth || null,
       });
 
       return { inProgress };
@@ -1807,7 +1809,7 @@ function SmokeSignalsStagingDeployControl() {
 
   const deploy = async () => {
     if (state.status === "working") return;
-    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "", outcome: "", logs: [], stagingUrl: "" });
+    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "", outcome: "", logs: [], stagingUrl: "", stagingHealth: null });
     try {
       const response = await fetch("/api/projects/smoke-pos/staging/deploy", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
@@ -1822,6 +1824,7 @@ function SmokeSignalsStagingDeployControl() {
         outcome: "queued",
         logs: [],
         stagingUrl: "",
+        stagingHealth: null,
       });
 
       const pollBuild = async () => {
@@ -1839,6 +1842,7 @@ function SmokeSignalsStagingDeployControl() {
         outcome: "",
         logs: [],
         stagingUrl: "",
+        stagingHealth: null,
       });
     }
   };
@@ -1884,6 +1888,18 @@ function SmokeSignalsStagingDeployControl() {
               </a>
               <br />
               <small>{state.stagingUrl}</small>
+            </>
+          ) : null}
+          {state.stagingHealth ? (
+            <>
+              <br />
+              <small>
+                Staging HTTP check: {state.stagingHealth.reachable ? "reachable" : "not reachable"}
+                {Number.isFinite(state.stagingHealth.status) ? ` · HTTP ${state.stagingHealth.status}` : ""}
+                {state.stagingHealth.contentType ? ` · ${state.stagingHealth.contentType}` : ""}
+                {state.stagingHealth.htmlDocument ? " · HTML document detected" : ""}
+                {state.stagingHealth.error ? ` · ${state.stagingHealth.error}` : ""}
+              </small>
             </>
           ) : null}
         </div>
