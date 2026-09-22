@@ -2575,6 +2575,19 @@ function VikingAriesApp({ onLogout, authConfigured }) {
       )}
 
       <div className="main-column">
+        {!previewVisible && !previewExpanded && (
+          <button
+            type="button"
+            className="desktop-preview-restore"
+            onClick={() => setPreviewVisible(true)}
+            title="Show preview"
+            aria-label="Show preview"
+          >
+            <Monitor size={16} />
+            <span>Show Preview</span>
+          </button>
+        )}
+
         <header className="mobile-topbar">
           <button
             type="button"
@@ -2613,7 +2626,11 @@ function VikingAriesApp({ onLogout, authConfigured }) {
 
         <div
           className={resizingPreview ? "content-shell is-resizing" : "content-shell"}
-          style={{ "--preview-width": `${previewWidth}%` }}
+          style={{
+            "--preview-width": `${previewWidth}%`,
+            gridTemplateColumns:
+              !previewVisible && !previewExpanded ? "minmax(0, 1fr)" : undefined,
+          }}
         >
           {!previewExpanded && (
             <>
@@ -2664,21 +2681,23 @@ function VikingAriesApp({ onLogout, authConfigured }) {
               <GripVertical size={14} />
             </div>
           )}
-          <PreviewPane
-            project={project}
-            mode={previewMode}
-            onModeChange={setPreviewMode}
-            expanded={previewExpanded}
-            visible={previewVisible}
-            onExpand={() => {
-              if (!previewVisible) setPreviewVisible(true);
-              setPreviewExpanded((value) => !value);
-            }}
-            onToggleVisibility={() => {
-              if (previewVisible) setPreviewExpanded(false);
-              setPreviewVisible((value) => !value);
-            }}
-          />
+          {(previewVisible || previewExpanded) && (
+            <PreviewPane
+              project={project}
+              mode={previewMode}
+              onModeChange={setPreviewMode}
+              expanded={previewExpanded}
+              visible={previewVisible}
+              onExpand={() => {
+                if (!previewVisible) setPreviewVisible(true);
+                setPreviewExpanded((value) => !value);
+              }}
+              onToggleVisibility={() => {
+                if (previewVisible) setPreviewExpanded(false);
+                setPreviewVisible((value) => !value);
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
