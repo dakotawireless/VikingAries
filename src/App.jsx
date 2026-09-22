@@ -1327,12 +1327,12 @@ function ChatWorkspace({ project, active = true }) {
 
   const sendMessage = async () => {
     const typedContent = draft.trim();
-    const attachmentMarker = attachment
-      ? `[VA_FILE:${encodeURIComponent(attachment.name || "Attachment")}|${attachment.type || "application/octet-stream"}]`
-      : "";
-    const content = [typedContent, attachmentMarker].filter(Boolean).join("\n\n");
+    const attachmentMarkers = attachments.map(
+      (item) => `[VA_FILE:${encodeURIComponent(item.name || "Attachment")}|${item.type || "application/octet-stream"}]`
+    );
+    const content = [typedContent, ...attachmentMarkers].filter(Boolean).join("\n\n");
 
-    if ((!typedContent && !attachment) || submitGuardRef.current) return;
+    if ((!typedContent && !attachments.length) || submitGuardRef.current) return;
     if (!activeThread) {
       const id = `chat-${Date.now()}`;
       setThreads([{ id, title: "New Chat", messages: [] }]);
