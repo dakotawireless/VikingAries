@@ -901,7 +901,27 @@ function loadSelectedModel() {
 
 function loadProjectDraft(projectId) {
   try {
-    return window.localStorage.getItem(`viking-aries-draft:${projectId}`) || "";
+    const draft = window.localStorage.getItem(`viking-aries-draft:${projectId}`) || "";
+    if (!draft.trim()) return "";
+
+    // A previously submitted request can survive in localStorage when the
+    // browser refreshes between the send state update and its persistence
+    // effect. Never restore a draft that is already the latest user message.
+    const savedThreads = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
+    if (savedThreads) {
+      const parsed = JSON.parse(savedThreads);
+      const userMessages = Array.isArray(parsed)
+        ? parsed.flatMap((thread) => Array.isArray(thread?.messages) ? thread.messages : [])
+          .filter((message) => message?.role === "user" && typeof message.content === "string")
+        : [];
+      const latestUserMessage = userMessages[userMessages.length - 1]?.content?.trim();
+      if (latestUserMessage && latestUserMessage === draft.trim()) {
+        window.localStorage.removeItem(`viking-aries-draft:${projectId}`);
+        return "";
+      }
+    }
+
+    return draft;
   } catch {
     return "";
   }
