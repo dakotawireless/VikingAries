@@ -511,8 +511,13 @@ a.project-deployment-link:hover {
 .user-message:empty { display: none; }
 .assistant-message { background: #eaf4ff; }
 
-.chat-file-attachment {
+.chat-file-attachments {
+  display: grid;
+  gap: 7px;
   margin-top: 7px;
+}
+.chat-file-attachment {
+  margin-top: 0;
   width: min(360px, 100%);
   min-height: 58px;
   display: flex;
