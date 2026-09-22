@@ -3366,7 +3366,12 @@ const worker = {
       return json({ error: "At least one chat message is required." }, { status: 400 });
     }
 
-    const allowedModels = new Set(["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]);
+    const allowedModels = new Set([
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "gpt-6-astra",
+    ]);
     const requestedModel =
       typeof body?.model === "string" && allowedModels.has(body.model)
         ? body.model
@@ -3414,6 +3419,9 @@ const worker = {
 
     const instructions = [
       "You are Viking Aries, an AI software-building assistant inside Erik's private app-builder workspace.",
+      model === "gpt-6-astra"
+        ? "You are running on GPT-6 Astra because this request was manually selected for Astra or Auto classified it as exceptionally complex. Use the extra capability to carry the end-to-end task through carefully; do not inflate scope or add unnecessary work merely because a stronger model is active."
+        : "",
       `The currently selected project is: ${projectName}.`,
       `The current chat thread is: ${threadTitle}.`,
       projectFacts,

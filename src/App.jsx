@@ -775,7 +775,8 @@ const VA_MODEL_OPTIONS = [
   { id: VA_AUTO_MODEL, label: "Auto", note: "Routes each request by complexity" },
   { id: "gpt-5.6-luna", label: "Luna", note: "Fast / lowest cost" },
   { id: "gpt-5.6-terra", label: "Terra", note: "Build / balanced" },
-  { id: "gpt-5.6-sol", label: "Sol", note: "Deep / highest capability" },
+  { id: "gpt-5.6-sol", label: "Sol", note: "Advanced / complex work" },
+  { id: "gpt-6-astra", label: "Astra", note: "Maximum capability / hardest work" },
 ];
 
 const VA_MODEL_BY_ID = Object.fromEntries(
@@ -788,15 +789,34 @@ function recommendModelForTask(value) {
 
   const lower = text.toLowerCase();
 
-  // Sol is for broad project/system work, not merely a substantial edit to one
-  // page or UI area. Require wording that clearly scopes the change to the whole
-  // app/site/platform/system or to architecture/migration-level work.
+  // Astra is intentionally rare in Auto mode because it is the highest-cost
+  // option. Escalate only for the hardest end-to-end work: multi-system,
+  // high-risk, deeply ambiguous, or architecture-plus-migration requests.
+  const astraSignals = [
+    /\b(use|switch to|run with|choose)\s+astra\b/,
+    /\b(hardest|maximum capability|max capability|extremely complex|very complex|deepest reasoning)\b/,
+    /\b(cross-project|multi-system|across multiple systems|across multiple projects)\b[\s\S]{0,140}\b(migration|cutover|architecture|re-architect|rearchitect|security|payments?|payroll|authentication|data migration|production)\b/,
+    /\b(production|live)\b[\s\S]{0,120}\b(data migration|database migration|cutover|security incident|payment migration|auth migration|authentication migration)\b/,
+    /\b(entire|whole|full|complete)\b[\s\S]{0,100}\b(platform|system|architecture|codebase)\b[\s\S]{0,120}\b(re-architect|rearchitect|migrate|migration|rewrite|overhaul)\b[\s\S]{0,120}\b(database|backend|frontend|integrations?|auth|payments?|production)\b/,
+    /\b(architecture|migration|cutover|security|payments?|authentication|database)\b[\s\S]{0,160}\b(architecture|migration|cutover|security|payments?|authentication|database)\b[\s\S]{0,160}\b(architecture|migration|cutover|security|payments?|authentication|database)\b/,
+  ];
+
+  // Sol remains the normal escalation for large but well-defined project work.
+  // Astra is reserved for the exceptional cases above.
   const solSignals = [
     /\b(entire|whole|full|complete)\b[\s\S]{0,80}\b(app|application|website|site|platform|system|project|codebase|architecture)\b[\s\S]{0,80}\b(redo|redesign|rebuild|rewrite|refactor|overhaul|re-architect|rearchitect)\b/,
     /\b(redo|redesign|rebuild|rewrite|refactor|overhaul|re-architect|rearchitect)\b[\s\S]{0,80}\b(entire|whole|full|complete)\b[\s\S]{0,80}\b(app|application|website|site|platform|system|project|codebase|architecture)\b/,
     /\b(full migration|migrate the entire|migrate everything|system-wide|cross-project|across multiple projects|all projects)\b/,
     /\b(schema migration|data model redesign|security audit|performance overhaul|architecture overhaul|platform redesign|major architectural redesign)\b/,
   ];
+
+  if (astraSignals.some((pattern) => pattern.test(lower))) {
+    return {
+      id: "gpt-6-astra",
+      label: "Astra",
+      reason: "Hardest end-to-end, cross-system, or high-risk work",
+    };
+  }
 
   // Small, bounded UI requests should stay on Luna even when they use words
   // such as "add" or mention a dashboard. A single external link/button does
@@ -1444,7 +1464,7 @@ function ChatWorkspace({ project, active = true }) {
           },
           messages: requestMessages,
           // Auto mode chooses the least expensive model that satisfies the
-          // request. A manual Luna/Terra/Sol selection remains available when
+          // request. A manual Luna/Terra/Sol/Astra selection remains available when
           // the owner explicitly wants to override the router.
           model: requestModel,
         }),

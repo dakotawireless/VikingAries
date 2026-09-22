@@ -1,8 +1,9 @@
-// Standard USD rates verified 2026-09-20: https://developers.openai.com/api/docs/pricing
+// Standard USD rates verified 2026-09-22: https://developers.openai.com/api/docs/models
 const OPENAI_PRICING = {
   "gpt-5.6-luna": { input: 0.20, cached: 0.02, cacheWrite: 0.25, output: 1.20 },
   "gpt-5.6-terra": { input: 2.00, cached: 0.20, cacheWrite: 2.50, output: 12.00 },
   "gpt-5.6-sol": { input: 4.00, cached: 0.40, cacheWrite: 5.00, output: 20.00 },
+  "gpt-6-astra": { input: 10.00, cached: 1.00, cacheWrite: 12.50, output: 50.00 },
 };
 
 export function openAIUsageForResponse(model, payload) {
