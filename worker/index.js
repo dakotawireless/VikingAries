@@ -762,6 +762,14 @@ async function cloudflareWorkerRecord(token, workerName) {
   return worker;
 }
 
+async function cloudflareWorkersSubdomain(token) {
+  const payload = await cloudflareRequest(
+    token,
+    `/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain`
+  );
+  return payload?.result?.subdomain || null;
+}
+
 async function cloudflareListVersions(token, workerName) {
   const payload = await cloudflareRequest(
     token,
@@ -2056,12 +2064,23 @@ const worker = {
           }
         }
 
+        let stagingUrl = null;
+        try {
+          const subdomain = await cloudflareWorkersSubdomain(cloudflareToken);
+          stagingUrl = subdomain
+            ? `https://${projectConfig.cloudflareWorker}.${subdomain}.workers.dev`
+            : null;
+        } catch {
+          stagingUrl = null;
+        }
+
         return json({
           ok: true,
           found: true,
           worker: projectConfig.cloudflareWorker,
           build,
           logs,
+          stagingUrl,
           productionUntouched: true,
         });
       } catch (error) {
