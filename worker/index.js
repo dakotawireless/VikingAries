@@ -1715,11 +1715,17 @@ function expandAttachmentMarkers(messages) {
     }
 
     const attachments = [];
-    if (message?.attachment?.dataUrl) {
+    const structuredAttachments = Array.isArray(message?.attachments)
+      ? message.attachments
+      : message?.attachment?.dataUrl
+        ? [message.attachment]
+        : [];
+    for (const item of structuredAttachments) {
+      if (!item?.dataUrl) continue;
       attachments.push({
-        filename: String(message.attachment.name || "attached").slice(0, 180),
-        type: String(message.attachment.type || "application/octet-stream").slice(0, 180),
-        dataUrl: String(message.attachment.dataUrl),
+        filename: String(item.name || "attached").slice(0, 180),
+        type: String(item.type || "application/octet-stream").slice(0, 180),
+        dataUrl: String(item.dataUrl),
       });
     }
 
