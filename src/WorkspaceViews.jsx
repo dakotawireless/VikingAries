@@ -510,7 +510,7 @@ function smokePosDefaults(project) {
       { id: "github", name: "GitHub", provider: "dakotawireless/Smoke-Signals-POS---New", purpose: "Source control, migration branch, PRs, CI/CD", status: "Connected" },
       { id: "convex", name: "Convex — migration", provider: "benevolent-bulldog-176", purpose: "Isolated migration database/functions", status: "Deployed" },
       { id: "convex-production", name: "Convex — legacy production", provider: "moonlit-mallard-698", purpose: "Current live Hercules POS backend; read/protect during migration", status: "Protected" },
-      { id: "cloudflare", name: "Cloudflare", provider: "Worker: smoke-signals-pos---new", purpose: "Migration staging / future production hosting", status: "Needs verification" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Worker: smoke-signals-pos---new", purpose: "Migration staging / future production hosting", status: "Staging deployed" },
       { id: "valor", name: "Valor", provider: "Valor Connect Cloud / VP550", purpose: "Card payment processing", status: "Credentials pending migration backend configuration" },
     ],
     tables: [
@@ -535,7 +535,7 @@ function smokePosDefaults(project) {
     ],
     automations: [
       { id: "convex-deploy", name: "Deploy migration Convex", trigger: "GitHub Actions manual/trigger file", action: "Deploy schema/functions to benevolent-bulldog-176 then run diagnostics", enabled: true },
-      { id: "cloudflare-deploy", name: "Cloudflare migration deployment", trigger: "After project-specific Cloudflare verification", action: "Build migration branch and expose staging URL", enabled: false },
+      { id: "cloudflare-deploy", name: "Cloudflare migration deployment", trigger: "Manual from Viking Aries Deployments", action: "Build migration/remove-hercules and expose verified staging URL", enabled: true },
       { id: "convex-data-copy", name: "Production → migration Convex data copy", trigger: "Manual GitHub workflow with exact confirmation phrase", action: "Export moonlit-mallard-698, import benevolent-bulldog-176, then re-export and compare table counts/content hashes", enabled: false },
     ],
     diagnostics: [
@@ -543,7 +543,7 @@ function smokePosDefaults(project) {
       { id: "build", name: "Hercules-free production build", result: "Passed", detail: "Frozen pnpm install, Convex TypeScript check, and Vite production build passed after Hercules runtime removal." },
       { id: "convex-target", name: "Migration Convex deployment", result: "Passed", detail: "Schema/functions deployed to benevolent-bulldog-176 and diagnostics passed. Backend is intentionally empty before data migration: 0 products, 0 customers, 0 transactions." },
       { id: "production-protection", name: "Legacy production protection", result: "Passed", detail: "Hercules live POS and moonlit-mallard-698 remain untouched during migration." },
-      { id: "cloudflare-target", name: "Cloudflare migration target", result: "Packaging passed", detail: "Wrangler is pinned, React SPA routing is configured, and wrangler deploy --dry-run passes. Provider verification and the first real staging deployment remain pending." },
+      { id: "cloudflare-target", name: "Cloudflare migration target", result: "Passed", detail: "Cloudflare staging deployed successfully at https://smoke-signals-pos---new.erik-f2c.workers.dev from migration/remove-hercules. Live Hercules production remained unchanged." },
       { id: "data-migration-workflow", name: "Guarded production data-copy workflow", result: "Ready / blocked on keys", detail: "Manual-only workflow requires an exact confirmation phrase, refuses non-empty staging, keeps snapshots only in runner temp storage, re-exports staging after import, and compares table counts plus normalized content hashes." },
     ],
     versions: [
@@ -554,7 +554,7 @@ function smokePosDefaults(project) {
     deployments: [
       { id: "legacy-production", environment: "Live production — protected", provider: "Hercules", status: "Active", url: "https://smoke-signals-pos-224583.onhercules.app" },
       { id: "migration-backend", environment: "Migration backend", provider: "Convex", status: "Deployed / data migration pending", url: "https://benevolent-bulldog-176.convex.cloud" },
-      { id: "cloudflare-staging", environment: "Cloudflare staging", provider: "Cloudflare Workers", status: "Packaging validated / provider verification pending", url: "" },
+      { id: "cloudflare-staging", environment: "Cloudflare staging", provider: "Cloudflare Workers", status: "Deployed / staging validation", url: "https://smoke-signals-pos---new.erik-f2c.workers.dev" },
     ],
     domains: [
       { id: "legacy", host: "smoke-signals-pos-224583.onhercules.app", type: "Legacy Hercules host", status: "Active during migration", notes: "Current live POS; do not cut over until staging is fully tested." },
@@ -1900,6 +1900,40 @@ function SmokeSignalsStagingDeployControl() {
 
 function SmokeSignalsDeploymentsView({ project, defaults }) {
   const [items, setItems] = useProjectStorage(project.id, "deployments-v2", defaults);
+  useEffect(() => {
+    const verifiedUrl = project.deploymentUrl || "https://smoke-signals-pos---new.erik-f2c.workers.dev";
+    setItems((current) => {
+      let changed = false;
+      const next = current.map((item) => {
+        if (item.id !== "cloudflare-staging") return item;
+        const updated = {
+          ...item,
+          provider: "Cloudflare Workers",
+          status: "Deployed / staging validation",
+          url: verifiedUrl,
+        };
+        changed =
+          changed ||
+          item.provider !== updated.provider ||
+          item.status !== updated.status ||
+          item.url !== updated.url;
+        return updated;
+      });
+      const hasStaging = next.some((item) => item.id === "cloudflare-staging");
+      if (!hasStaging) {
+        changed = true;
+        next.push({
+          id: "cloudflare-staging",
+          environment: "Cloudflare staging",
+          provider: "Cloudflare Workers",
+          status: "Deployed / staging validation",
+          url: verifiedUrl,
+        });
+      }
+      return changed ? next : current;
+    });
+  }, [project.deploymentUrl, setItems]);
+
   const columns = [
     { key: "environment", label: "Environment" },
     { key: "provider", label: "Provider" },
