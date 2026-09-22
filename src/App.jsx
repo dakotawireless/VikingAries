@@ -1392,20 +1392,23 @@ function ChatWorkspace({ project, active = true }) {
           (message.role === "user" || message.role === "assistant") &&
           typeof message.content === "string"
       )
-      .map(({ id, jobId: messageJobId, role, content: text }) => ({
+      .map(({ id, jobId: messageJobId, role, content: text, attachments: messageAttachments }) => ({
         id,
         jobId: messageJobId,
         role,
         content: sanitizeLegacyAttachmentContent(text),
+        ...(Array.isArray(messageAttachments) && messageAttachments.length
+          ? { attachments: messageAttachments }
+          : {}),
       }));
 
-    if (attachment?.dataUrl && requestMessages.length) {
-      requestMessages[requestMessages.length - 1].attachment = {
-        kind: attachment.kind || "file",
-        name: attachment.name || "Attachment",
-        type: attachment.type || "application/octet-stream",
-        dataUrl: attachment.dataUrl,
-      };
+    if (attachments.length && requestMessages.length) {
+      requestMessages[requestMessages.length - 1].attachments = attachments.map((item) => ({
+        kind: item.kind || "file",
+        name: item.name || "Attachment",
+        type: item.type || "application/octet-stream",
+        dataUrl: item.dataUrl,
+      }));
     }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
