@@ -2024,22 +2024,26 @@ function ChatWorkspace({ project, active = true }) {
           <Mic size={18} />
         </button>
         <div className="composer-input-wrap">
-          {attachment && (
-            <div className="composer-image-thumbnail">
-              {attachment.thumbnailDataUrl ? (
-                <img src={attachment.thumbnailDataUrl} alt="Attached photo thumbnail" />
-              ) : (
-                <FileText size={20} />
-              )}
-              <span>{attachment.name || "Attachment ready"}</span>
-              <button
-                type="button"
-                onClick={() => setAttachment(null)}
-                title="Remove attachment"
-                aria-label="Remove attachment"
-              >
-                <X size={14} />
-              </button>
+          {attachments.length > 0 && (
+            <div className="composer-attachments" aria-label={`${attachments.length} selected attachment${attachments.length === 1 ? "" : "s"}`}>
+              {attachments.map((item, index) => (
+                <div className="composer-image-thumbnail" key={`${item.name || "attachment"}-${index}`}>
+                  {item.thumbnailDataUrl ? (
+                    <img src={item.thumbnailDataUrl} alt={`${item.name || "Attached photo"} thumbnail`} />
+                  ) : (
+                    <FileText size={20} />
+                  )}
+                  <span>{item.name || "Attachment ready"}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    title="Remove attachment"
+                    aria-label={`Remove ${item.name || "attachment"}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
           <textarea
