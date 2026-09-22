@@ -2853,3 +2853,38 @@ body.resizing-preview * {
   .app-shell.mobile-ui .assistant-message { padding:12px; }
   .app-shell.mobile-ui .composer { grid-template-columns:44px 44px minmax(0,1fr) 48px !important; }
 }
+
+
+/* Mobile readability pass 2 — intentionally phone-sized, not compressed desktop. */
+@media (max-width: 900px) {
+  .app-shell.mobile-ui .workspace-scroll { padding:16px 12px 170px !important; }
+  .app-shell.mobile-ui .project-heading { padding:16px 14px 13px !important; }
+  .app-shell.mobile-ui .project-title-row h1 { font-size:24px !important; }
+  .app-shell.mobile-ui .project-title-row small,
+  .app-shell.mobile-ui .project-status { font-size:14px !important; }
+  .app-shell.mobile-ui .chat-tab-row { min-height:56px !important; }
+  .app-shell.mobile-ui .chat-tab { min-height:54px !important; font-size:16px !important; padding:0 14px !important; }
+  .app-shell.mobile-ui .message-author { font-size:16px !important; }
+  .app-shell.mobile-ui .message-author time { font-size:13px !important; }
+  .app-shell.mobile-ui .user-message,
+  .app-shell.mobile-ui .assistant-message {
+    font-size:18px !important;
+    line-height:1.58 !important;
+    padding:15px 16px !important;
+  }
+  .app-shell.mobile-ui .assistant-message code,
+  .app-shell.mobile-ui .user-message code { font-size:.92em !important; }
+  .app-shell.mobile-ui .job-activity-feed { font-size:14px !important; }
+  .app-shell.mobile-ui .job-activity-feed summary,
+  .app-shell.mobile-ui .job-activity-feed > div { min-height:44px !important; font-size:14px !important; padding-top:8px !important; padding-bottom:8px !important; }
+  .app-shell.mobile-ui .composer textarea { min-height:62px !important; font-size:18px !important; padding:15px 13px !important; }
+  .app-shell.mobile-ui .model-picker label { font-size:13px !important; }
+  .app-shell.mobile-ui .model-picker select { min-height:44px !important; font-size:15px !important; }
+  .app-shell.mobile-ui .mobile-current-project strong { font-size:20px !important; }
+  .app-shell.mobile-ui .mobile-current-project small { font-size:14px !important; }
+  .app-shell.mobile-ui .mobile-view-button { font-size:15px !important; }
+  .app-shell.mobile-ui .sidebar-link { min-height:54px !important; font-size:18px !important; }
+  .app-shell.mobile-ui .project-trigger strong { font-size:19px !important; }
+  .app-shell.mobile-ui .project-trigger small { font-size:14px !important; }
+  .app-shell.mobile-ui .brand-name { font-size:23px !important; }
+}
