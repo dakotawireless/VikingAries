@@ -769,7 +769,10 @@ function loadProjectIntegrationMappings(project) {
   };
 }
 
+const VA_AUTO_MODEL = "auto";
+
 const VA_MODEL_OPTIONS = [
+  { id: VA_AUTO_MODEL, label: "Auto", note: "Routes each request by complexity" },
   { id: "gpt-5.6-luna", label: "Luna", note: "Fast / lowest cost" },
   { id: "gpt-5.6-terra", label: "Terra", note: "Build / balanced" },
   { id: "gpt-5.6-sol", label: "Sol", note: "Deep / highest capability" },
