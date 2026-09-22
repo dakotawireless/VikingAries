@@ -2237,10 +2237,10 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   const [mobileUi, setMobileUi] = useState(() => {
     if (typeof window === "undefined") return false;
     const embeddedPreview = window.self !== window.top;
-    return (
-      (!embeddedPreview && window.innerWidth <= 900) ||
-      window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches
-    );
+    const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    const narrowVisualViewport = (window.visualViewport?.width || window.innerWidth) <= 900;
+    const coarsePointer = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+    return !embeddedPreview && (narrowVisualViewport || coarsePointer || mobileUserAgent);
   });
 
   useEffect(() => {
@@ -2249,11 +2249,19 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     const embeddedPreview = window.self !== window.top;
 
     const updateMobileUi = () => {
-      // A narrow desktop preview iframe is not a phone. Keep its typography at
-      // the same scale as the adjacent chat while retaining mobile UI on actual
-      // narrow top-level windows and touch devices.
-      const nextMobileUi = (!embeddedPreview && widthQuery.matches) || touchQuery.matches;
+      // Detect the actual top-level phone independently of the CSS viewport.
+      // Some Android browser/PWA states report a desktop-like layout viewport,
+      // which previously left VA in the compact desktop typography even though
+      // the mobile shell was visible.
+      const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+      const narrowVisualViewport = (window.visualViewport?.width || window.innerWidth) <= 900;
+      const nextMobileUi =
+        !embeddedPreview &&
+        (widthQuery.matches || narrowVisualViewport || touchQuery.matches || mobileUserAgent);
+
       setMobileUi(nextMobileUi);
+      document.documentElement.classList.toggle("va-mobile-device", nextMobileUi);
+
       if (nextMobileUi) {
         setPreviewExpanded(false);
         setMobileSidebarOpen(false);
@@ -2263,9 +2271,14 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     updateMobileUi();
     widthQuery.addEventListener?.("change", updateMobileUi);
     touchQuery.addEventListener?.("change", updateMobileUi);
+    window.visualViewport?.addEventListener?.("resize", updateMobileUi);
+    window.addEventListener("orientationchange", updateMobileUi);
     return () => {
       widthQuery.removeEventListener?.("change", updateMobileUi);
       touchQuery.removeEventListener?.("change", updateMobileUi);
+      window.visualViewport?.removeEventListener?.("resize", updateMobileUi);
+      window.removeEventListener("orientationchange", updateMobileUi);
+      document.documentElement.classList.remove("va-mobile-device");
     };
   }, []);
 
