@@ -1727,8 +1727,92 @@ function VersionsView({ project }) {
   />;
 }
 
+function SmokeSignalsStagingDeployControl() {
+  const [state, setState] = useState({ status: "idle", message: "", buildUuid: "" });
+
+  const deploy = async () => {
+    if (state.status === "working") return;
+    setState({ status: "working", message: "Triggering Smoke Signals staging build…", buildUuid: "" });
+    try {
+      const response = await fetch("/api/projects/smoke-pos/staging/deploy", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload.error || "Smoke Signals staging deployment failed to start.");
+      }
+      setState({
+        status: "success",
+        message: `Cloudflare staging build started for ${payload.worker} on ${payload.branch}. Live Hercules production was not changed.`,
+        buildUuid: payload.buildUuid || "",
+      });
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Smoke Signals staging deployment failed to start.",
+        buildUuid: "",
+      });
+    }
+  };
+
+  return (
+    <section className="workspace-card va-entry-panel">
+      <div className="va-entry-title">
+        <Rocket size={16} /> Smoke Signals staging deployment
+      </div>
+      <p>
+        Triggers the registered Cloudflare build for <code>smoke-signals-pos---new</code>
+        from <code>migration/remove-hercules</code>. The live Hercules POS and
+        <code>moonlit-mallard-698</code> remain untouched.
+      </p>
+      <button
+        type="button"
+        className="primary-action"
+        onClick={deploy}
+        disabled={state.status === "working"}
+      >
+        <Rocket size={15} />
+        {state.status === "working" ? "Starting staging build…" : "Deploy staging"}
+      </button>
+      {state.message && (
+        <div className="integration-feedback" role="status" aria-live="polite">
+          {state.message}
+          {state.buildUuid ? <><br /><small>Build UUID: {state.buildUuid}</small></> : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DeploymentsView({ project }) {
   const defaults = projectDefaults(project).deployments;
+
+  if (project.id === "smoke-pos") {
+    return (
+      <WorkspacePage>
+        <PageHeader
+          icon={Rocket}
+          title="Deployments"
+          description="Production, staging, and preview environments for the selected project."
+        />
+        <SmokeSignalsStagingDeployControl />
+        <EditableListView
+          project={project}
+          storageKey="deployments-v2"
+          title="Deployment records"
+          description="Registered Smoke Signals environments."
+          icon={Rocket}
+          defaults={defaults}
+          addLabel="Add environment"
+          columns={[
+            { key: "environment", label: "Environment" },
+            { key: "provider", label: "Provider" },
+            { key: "status", label: "Status" },
+            { key: "url", label: "URL" },
+          ]}
+        />
+      </WorkspacePage>
+    );
+  }
+
   return <EditableListView
     project={project}
     storageKey="deployments-v2"
