@@ -798,6 +798,22 @@ function recommendModelForTask(value) {
     /\b(schema migration|data model redesign|security audit|performance overhaul|architecture overhaul|platform redesign|major architectural redesign)\b/,
   ];
 
+  // Small, bounded UI requests should stay on Luna even when they use words
+  // such as "add" or mention a dashboard. A single external link/button does
+  // not justify Terra's implementation cost.
+  const lightweightUiSignals = [
+    /\b(add|create|include|put|show|make)\b[\s\S]{0,100}\b(button|link|url|billing|balance|dashboard link|label|icon)\b/,
+    /\b(button|link|url|billing|balance|dashboard link|label|icon)\b[\s\S]{0,100}\b(to|for|that links|pointing)\b/,
+  ];
+
+  if (lightweightUiSignals.some((pattern) => pattern.test(lower))) {
+    return {
+      id: "gpt-5.6-luna",
+      label: "Luna",
+      reason: "Small, bounded UI or link change",
+    };
+  }
+
   const terraSignals = [
     /\b(create|build|add|implement|develop|make)\b[\s\S]{0,140}\b(page|screen|feature|workflow|integration|module|component|dashboard|form|api|endpoint|automation|sidebar|navigation|nav|header|footer|layout|ui|interface|section|menu)\b/,
     /\b(redo|redesign|rework|rebuild|rewrite|refactor|overhaul|revamp)\b[\s\S]{0,140}\b(page|screen|feature|workflow|integration|module|component|dashboard|form|sidebar|navigation|nav|header|footer|layout|ui|interface|section|menu)\b/,
