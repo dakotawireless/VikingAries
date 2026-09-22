@@ -839,7 +839,17 @@ function recommendModelForTask(value) {
 
 function loadSelectedModel() {
   const saved = window.localStorage.getItem("viking-aries:selected-model");
-  return VA_MODEL_OPTIONS.some((item) => item.id === saved) ? saved : "gpt-5.6-luna";
+  const routingVersion = window.localStorage.getItem("viking-aries:model-routing-version");
+
+  // The previous picker remembered a concrete model, which could make a simple
+  // question unexpectedly use Terra or Sol. Start the new request router in Auto
+  // mode once, while still preserving any explicit choice made afterward.
+  if (routingVersion !== "2") {
+    window.localStorage.setItem("viking-aries:model-routing-version", "2");
+    return VA_AUTO_MODEL;
+  }
+
+  return VA_MODEL_OPTIONS.some((item) => item.id === saved) ? saved : VA_AUTO_MODEL;
 }
 
 function loadProjectDraft(projectId) {
