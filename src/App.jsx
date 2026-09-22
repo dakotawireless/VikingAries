@@ -1150,6 +1150,7 @@ function ChatWorkspace({ project, active = true }) {
         next.push({
           id: job.userMessageId || `user-${job.jobId}`,
           jobId: job.jobId,
+          model: job.model || null,
           role: "user",
           content: job.userMessageContent,
           timestamp: formatChatTimestamp(job.createdAt),
