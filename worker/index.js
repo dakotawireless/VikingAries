@@ -530,6 +530,34 @@ async function githubListDirectory(token, repository, path = "", ref = "main") {
   };
 }
 
+function assertNonDestructiveFileUpdate(path, currentContent, nextContent) {
+  const current = String(currentContent || "");
+  const next = String(nextContent || "");
+  const currentSize = new TextEncoder().encode(current).length;
+  const nextSize = new TextEncoder().encode(next).length;
+
+  // New/small files are intentionally exempt. This guard is for catastrophic
+  // truncation of substantial existing source files, not ordinary refactors.
+  if (currentSize < 10000) return;
+
+  const retainedRatio = currentSize > 0 ? nextSize / currentSize : 1;
+  const removedBytes = Math.max(0, currentSize - nextSize);
+  const catastrophicShrink =
+    retainedRatio < 0.35 ||
+    (currentSize >= 50000 && removedBytes >= 40000 && retainedRatio < 0.5);
+
+  if (!catastrophicShrink) return;
+
+  throw new Error(
+    [
+      `Destructive write blocked for ${path}.`,
+      `Existing file: ${currentSize.toLocaleString()} bytes; proposed file: ${nextSize.toLocaleString()} bytes (${Math.round(retainedRatio * 100)}% retained).`,
+      "This looks like accidental truncation or partial-file replacement.",
+      "Re-read the complete file and use github_replace_text for targeted edits. If a true full rewrite is required, break it into reviewed incremental changes instead of replacing most of a large file at once.",
+    ].join(" ")
+  );
+}
+
 async function githubWriteFile(token, repository, { path, content, message, branch = "main" }) {
   const safeRepo = normalizeRepository(repository);
   if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
@@ -542,12 +570,18 @@ async function githubWriteFile(token, repository, { path, content, message, bran
   if (fileContent.length > 500000) throw new Error("File content is too large for this editor action.");
 
   let sha;
+  let currentContent = "";
   try {
     const existing = await githubRequest(
       token,
       `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch || "main")}`
     );
-    if (existing?.type === "file") sha = existing.sha;
+    if (existing?.type === "file") {
+      sha = existing.sha;
+      currentContent =
+        existing.encoding === "base64" ? base64ToUtf8(existing.content || "") : "";
+      assertNonDestructiveFileUpdate(safePath, currentContent, fileContent);
+    }
   } catch (error) {
     if (!/Not Found/i.test(error.message)) throw error;
   }
@@ -630,6 +664,7 @@ async function githubReplaceText(token, repository, {
   if (updatedContent.length > 500000) {
     throw new Error("Updated file content is too large for this editor action.");
   }
+  assertNonDestructiveFileUpdate(safePath, currentContent, updatedContent);
 
   const payload = await githubRequest(
     token,
@@ -697,7 +732,7 @@ function buildGithubTools() {
     {
       type: "function",
       name: "github_write_file",
-      description: "Create or replace one file in the currently selected project's mapped GitHub repository and commit the change. Use only when the user explicitly wants a repository edit.",
+      description: "Create a new file or replace a small existing file in the currently selected project's mapped GitHub repository and commit the change. For substantial existing files, prefer github_replace_text. The runtime blocks catastrophic shrinkage so a partial response cannot wipe most of a large file.",
       parameters: {
         type: "object",
         properties: {
@@ -714,7 +749,7 @@ function buildGithubTools() {
     {
       type: "function",
       name: "github_replace_text",
-      description: "Safely edit part of an existing file in the selected project's mapped GitHub repository. The runtime reads the latest file, requires oldText to match exactly the expected number of times, replaces it with newText, and commits using the current blob SHA. Prefer this for targeted edits to large files.",
+      description: "Safely edit part of an existing file in the selected project's mapped GitHub repository. The runtime reads the latest file, requires oldText to match exactly the expected number of times, rejects catastrophic file shrinkage, and commits using the current blob SHA. Prefer this for targeted edits to large files.",
       parameters: {
         type: "object",
         properties: {

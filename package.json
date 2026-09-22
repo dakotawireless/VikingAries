@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/validate-critical-files.mjs && vite build",
     "test": "node --test",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
