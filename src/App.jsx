@@ -2056,7 +2056,7 @@ function ChatWorkspace({ project, active = true }) {
             rows={1}
           />
         </div>
-        <button className="send-button" type="submit" disabled={queueing || (!draft.trim() && !attachment)}>
+        <button className="send-button" type="submit" disabled={queueing || (!draft.trim() && !attachments.length)}>
           <Send size={17} /> {queueing ? "Queuing…" : "Send"}
         </button>
         <button
