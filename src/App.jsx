@@ -1661,46 +1661,50 @@ function ChatWorkspace({ project, active = true }) {
     inputRef.current?.click();
   };
 
-  const handleSelectedAttachment = async (file) => {
-    if (!file) return;
+  const handleSelectedAttachments = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
     const maxAttachmentBytes = 8 * 1024 * 1024;
-    if (file.size > maxAttachmentBytes) {
-      setStatusText("Attachments are limited to 8 MB");
+    const oversized = files.find((file) => file.size > maxAttachmentBytes);
+    if (oversized) {
+      setStatusText(`${oversized.name} is over the 8 MB attachment limit`);
       return;
     }
     setAttachmentMenuOpen(false);
-    setStatusText(`Preparing ${file.name}…`);
+    setStatusText(`Preparing ${files.length} attachment${files.length === 1 ? "" : "s"}…`);
     try {
-      if (file.type.startsWith("image/")) {
-        const imageData = await prepareImageAttachment(file);
-        setAttachment({
-          kind: "image",
-          thumbnailDataUrl: imageData.thumbnailDataUrl,
-          fullDataUrl: imageData.fullDataUrl,
-          dataUrl: imageData.fullDataUrl,
-          name: file.name || "Photo",
-          type: file.type || "image/jpeg",
-        });
-      } else if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
-        const dataUrl = await readFileAsDataUrl(file);
-        setAttachment({
-          kind: "pdf",
-          name: file.name,
-          type: "application/pdf",
-          dataUrl,
-        });
-      } else {
-        const dataUrl = await readFileAsDataUrl(file);
-        setAttachment({
-          kind: "file",
-          name: file.name,
-          type: file.type || "application/octet-stream",
-          dataUrl,
-        });
+      const prepared = [];
+      for (const file of files) {
+        if (file.type.startsWith("image/")) {
+          const imageData = await prepareImageAttachment(file);
+          prepared.push({
+            kind: "image",
+            thumbnailDataUrl: imageData.thumbnailDataUrl,
+            fullDataUrl: imageData.fullDataUrl,
+            dataUrl: imageData.fullDataUrl,
+            name: file.name || "Photo",
+            type: file.type || "image/jpeg",
+          });
+        } else if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
+          prepared.push({
+            kind: "pdf",
+            name: file.name,
+            type: "application/pdf",
+            dataUrl: await readFileAsDataUrl(file),
+          });
+        } else {
+          prepared.push({
+            kind: "file",
+            name: file.name,
+            type: file.type || "application/octet-stream",
+            dataUrl: await readFileAsDataUrl(file),
+          });
+        }
       }
-      setStatusText("Attachment ready");
+      setAttachments((current) => [...current, ...prepared]);
+      setStatusText(`${prepared.length} attachment${prepared.length === 1 ? "" : "s"} ready`);
     } catch (error) {
-      setStatusText(error.message || "Could not attach that file");
+      setStatusText(error.message || "Could not attach those files");
     }
   };
 
