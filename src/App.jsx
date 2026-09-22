@@ -1420,7 +1420,13 @@ function ChatWorkspace({ project, active = true }) {
             title: activeThread.title,
           },
           messages: requestMessages,
-          model: selectedModel,
+          // Auto mode chooses the least expensive model that satisfies the
+          // request. A manual Luna/Terra/Sol selection remains available when
+          // the owner explicitly wants to override the router.
+          model:
+            selectedModel === VA_AUTO_MODEL
+              ? modelRecommendation?.id || "gpt-5.6-luna"
+              : selectedModel,
         }),
       });
 
