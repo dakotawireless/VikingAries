@@ -1439,7 +1439,7 @@ function ChatWorkspace({ project, active = true }) {
     }));
 
     setDraft("");
-    setAttachment(null);
+    setAttachments([]);
     try {
       window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
     } catch {
