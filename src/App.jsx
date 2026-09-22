@@ -2004,12 +2004,12 @@ function ChatWorkspace({ project, active = true }) {
               </button>
             </div>
           )}
-          <input ref={photoInputRef} type="file" accept="image/*" hidden onChange={(event) => {
-            handleSelectedAttachment(event.target.files?.[0]);
+          <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={(event) => {
+            handleSelectedAttachments(event.target.files);
             event.target.value = "";
           }} />
-          <input ref={fileInputRef} type="file" accept=".txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
-            handleSelectedAttachment(event.target.files?.[0]);
+          <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
+            handleSelectedAttachments(event.target.files);
             event.target.value = "";
           }} />
         </div>
