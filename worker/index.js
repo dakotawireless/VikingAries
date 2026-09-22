@@ -758,6 +758,34 @@ async function executeVikingAriesPlatformTool(call, token) {
   });
 }
 
+function latestUserText(rawMessages) {
+  if (!Array.isArray(rawMessages)) return "";
+  const latest = [...rawMessages]
+    .reverse()
+    .find((message) => message?.role === "user" && typeof message?.content === "string");
+  return String(latest?.content || "").trim();
+}
+
+function openAIModelKnowledgeQuestion(rawMessages) {
+  const text = latestUserText(rawMessages).toLowerCase();
+  if (!text) return false;
+
+  const modelSubject =
+    /\b(astra|sol|terra|luna|gpt[- ]?6|gpt[- ]?5\.6|openai model|api model|model pricing|model capability|context window|reasoning model)\b/.test(text);
+  if (!modelSubject) return false;
+
+  // These phrases indicate the owner is asking about Viking Aries configuration
+  // or requesting a platform change, not asking a generalized provider question.
+  const vaSpecific =
+    /\b(viking aries|vikingaries|\bva\b|model picker|model selector|routing logic|recommendation logic|worker allowlist|configured in|wired into|add astra|enable astra|use astra in)\b/.test(text);
+  if (vaSpecific) return false;
+
+  const knowledgeIntent =
+    /\b(what|why|how|compare|comparison|difference|benefit|advantage|better|stronger|capable|capability|when would|when should|which model|pricing|price|cost|current|latest|available|availability)\b/.test(text);
+
+  return knowledgeIntent;
+}
+
 function vikingAriesPlatformChangeRequested(projectId, rawMessages) {
   if (projectId === "viking-aries") return false;
   if (!Array.isArray(rawMessages)) return false;
@@ -3402,6 +3430,12 @@ const worker = {
       "When you make a code change, explain the business result first. Then give the commit/build detail briefly. Example: 'Done. I changed X so Y now happens. Z is unchanged. Commit: ...' Do not narrate each file read, tool call, or internal implementation step.",
       "If something is already working, say so plainly. If something is wrong, say what is wrong and what needs to change. Do not hide uncertainty, but do not pad straightforward answers with generic caveats.",
       "Correct Erik plainly when an assumption is wrong. Do not agree merely to sound agreeable, and do not flatter him.",
+      "Distinguish generalized knowledge questions from project-specific questions before using tools. A question like 'What is the benefit of Astra over Sol?' is about the models themselves, not about how Viking Aries is configured. Answer the generalized question directly; do not inspect the selected project's repository merely because a project is open.",
+      "For current facts about OpenAI models, API availability, model capabilities, pricing, limits, or provider behavior, use current provider documentation/search when that capability is available. Prefer OpenAI's own documentation over assumptions from Viking Aries source code.",
+      "Never treat 'not configured in Viking Aries' as evidence that a model or provider feature does not exist. App configuration and provider reality are separate questions.",
+      "If Erik challenges a factual statement, do not automatically say 'you're right'. Verify the disputed fact when verification is available, then either correct yourself or explain why the original statement still stands.",
+      "If a previous answer missed Erik's actual question, answer the original question immediately. Do not spend the response discussing your own mistake, tool limitations, or local app configuration unless that information is directly relevant.",
+      "Do not invent a generalized capability hierarchy from model names. When comparing current models, ground the comparison in current provider documentation and clearly distinguish documented capabilities from your own practical interpretation.",
       "A little personality or light humor is fine when appropriate, but technical accuracy and project safety come first.",
       "Do not dump every technically relevant observation into the answer. Suppress side findings, package inventory, unrelated migration status, warnings, dependency notes, architecture commentary, and historical context unless they directly affect the current request or explain the failure.",
       "For build or deployment logs, identify the first real failure or blocker and explain it plainly. Treat warnings as warnings, not failures. Do not recap successful steps unless they help locate where the failure occurred.",
@@ -3438,33 +3472,44 @@ const worker = {
       resolveSecret(env.CLOUDFLARE_API_TOKEN),
       resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
     ]);
-    const platformToolsRequested = vikingAriesPlatformChangeRequested(projectId, body?.messages);
-    const tools = [
-      ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
-        ? buildGithubTools()
-        : []),
-      ...(platformToolsRequested && ownerAuthenticated && githubToken
-        ? buildVikingAriesPlatformTools()
-        : []),
-      ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
-        ? buildCloudflareTools()
-        : []),
-      ...(convexToolsEnabled(ownerAuthenticated, convexToken, projectMetadata.backendDeployment)
-        ? buildConvexTools()
-        : []),
-    ];
+    const modelKnowledgeQuestion = openAIModelKnowledgeQuestion(body?.messages);
+    const platformToolsRequested =
+      !modelKnowledgeQuestion &&
+      vikingAriesPlatformChangeRequested(projectId, body?.messages);
+
+    const tools = modelKnowledgeQuestion
+      ? [{ type: "web_search" }]
+      : [
+          ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
+            ? buildGithubTools()
+            : []),
+          ...(platformToolsRequested && ownerAuthenticated && githubToken
+            ? buildVikingAriesPlatformTools()
+            : []),
+          ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
+            ? buildCloudflareTools()
+            : []),
+          ...(convexToolsEnabled(ownerAuthenticated, convexToken, projectMetadata.backendDeployment)
+            ? buildConvexTools()
+            : []),
+        ];
 
     const runtimeCapabilityNotes = [];
-    if (githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
+    if (modelKnowledgeQuestion) {
+      runtimeCapabilityNotes.push(
+        "This is a generalized/current OpenAI model question. Use web search to verify current OpenAI documentation, answer the model question directly, and do not discuss or inspect Viking Aries configuration unless the owner asks about configuration."
+      );
+    }
+    if (!modelKnowledgeQuestion && githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
       runtimeCapabilityNotes.push("GitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.");
     }
     if (platformToolsRequested && ownerAuthenticated && githubToken) {
       runtimeCapabilityNotes.push("The owner explicitly requested a Viking Aries platform UI change. va_platform_* tools are available and are hard-scoped to dakotawireless/VikingAries on main. Use them for the platform change while keeping ordinary github_* tools scoped to the selected project.");
     }
-    if (cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)) {
+    if (!modelKnowledgeQuestion && cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)) {
       runtimeCapabilityNotes.push("Cloudflare status, build-log, and build-trigger tools are available for the selected project's server-registered Worker. Trigger builds only when the user explicitly asks to deploy or rebuild.");
     }
-    if (convexToolsEnabled(ownerAuthenticated, convexToken, projectMetadata.backendDeployment)) {
+    if (!modelKnowledgeQuestion && convexToolsEnabled(ownerAuthenticated, convexToken, projectMetadata.backendDeployment)) {
       runtimeCapabilityNotes.push("Convex deployment-status tools are available for the selected project's server-registered deployment. Use GitHub tools to inspect or edit convex/schema.ts and convex function source, and use the project's existing deployment pipeline for backend deploys unless a direct Convex deployment action is explicitly available.");
     }
 
