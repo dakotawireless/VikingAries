@@ -1793,6 +1793,11 @@ function ChatWorkspace({ project, active = true }) {
                 <div className="message-meta">
                   <strong>{message.role === "user" ? "Erik" : "Viking Aries"}</strong>
                   <span>{message.timestamp}</span>
+                  {message.model && (
+                    <span className="message-model-badge" title="Model used for this request">
+                      {VA_MODEL_BY_ID[message.model]?.label || message.model}
+                    </span>
+                  )}
                   {message.role === "user" &&
                     (message.queueStatus === "queued" ||
                       message.queueStatus === "running" ||
