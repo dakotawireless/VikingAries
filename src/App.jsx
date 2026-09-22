@@ -165,6 +165,7 @@ const navItems = [
   { label: "Domains", icon: Globe2, group: "TEST & RELEASE" },
 
   { label: "Secrets", icon: KeyRound, group: "PROJECT" },
+  { label: "Theme", icon: WandSparkles, group: "PROJECT" },
   { label: "Settings", icon: SlidersHorizontal, group: "PROJECT" },
 ];
 
@@ -398,11 +399,12 @@ function Sidebar({
   onAddContractorProject,
   onLogout,
   authConfigured,
+  theme,
 }) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">VA</div>
+        <div className="brand-mark"><span className="brand-rune">ᚨ</span></div>
         <div>
           <div className="brand-name">Viking Aries</div>
           <div className="brand-tagline">BUILD. CONNECT. DEPLOY.</div>
@@ -2217,6 +2219,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     return personalProjectsState[0] || personalProjects[0];
   });
   const [activeView, setActiveView] = useState("AI Builder");
+  const [theme, setTheme] = useState(() => window.localStorage.getItem("va-local:theme") || "classic");
   const [previewMode, setPreviewMode] = useState("Desktop");
   const [previewVisible, setPreviewVisible] = useState(() => {
     // Keep this browser preference outside the shared "viking-aries" namespace.
@@ -2277,6 +2280,11 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   useEffect(() => {
     window.localStorage.setItem("va-local:preview-visible", String(previewVisible));
   }, [previewVisible]);
+
+  useEffect(() => {
+    window.localStorage.setItem("va-local:theme", theme);
+    document.documentElement.dataset.vaTheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     window.localStorage.setItem("va-local:active-workspace", workspace);
@@ -2452,8 +2460,10 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     window.localStorage.setItem("viking-aries-preview-width", "36");
   };
 
+  const themeView = activeView === "Theme";
+
   return (
-    <div className={`${layoutClass}${mobileSidebarOpen ? " mobile-sidebar-open" : ""}${mobileUi ? " mobile-ui" : ""}`}>
+    <div data-theme={theme} className={`${layoutClass}${mobileSidebarOpen ? " mobile-sidebar-open" : ""}${mobileUi ? " mobile-ui" : ""}`}>
       <Sidebar
         project={project}
         workspace={workspace}
@@ -2475,6 +2485,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
         onAddContractorProject={addContractorProject}
         onLogout={onLogout}
         authConfigured={authConfigured}
+        theme={theme}
       />
 
       {mobileSidebarOpen && (
@@ -2536,7 +2547,23 @@ function VikingAriesApp({ onLogout, authConfigured }) {
                   active={activeView === "AI Builder" && chatProject.id === project.id}
                 />
               ))}
-              {activeView !== "AI Builder" && (
+              {themeView && (
+                <main className="workspace theme-workspace">
+                  <div className="theme-page">
+                    <div className="theme-heading"><span className="theme-kicker">Appearance</span><h1>Color Schemes</h1><p>Change the look of Viking Aries without changing how it works.</p></div>
+                    <div className="theme-grid">
+                      <button type="button" className={theme === "classic" ? "theme-card selected" : "theme-card"} onClick={() => setTheme("classic")}>
+                        <span className="theme-swatch classic-swatch"><i/><i/><i/><i/></span><span className="theme-card-copy"><strong>Aries Classic</strong><small>The original navy, blue and clean white Viking Aries interface.</small></span><span className="theme-check">{theme === "classic" ? "✓ Active" : "Use theme"}</span>
+                      </button>
+                      <button type="button" className={theme === "metal" ? "theme-card selected" : "theme-card"} onClick={() => setTheme("metal")}>
+                        <span className="theme-swatch metal-swatch"><i/><i/><i/><i/></span><span className="theme-card-copy"><strong>Viking Aries Metal</strong><small>Black iron, burnished gold, bronze, brushed silver and dark leather.</small></span><span className="theme-check">{theme === "metal" ? "✓ Active" : "Use theme"}</span>
+                      </button>
+                    </div>
+                    <div className="theme-note"><strong>Viking Aries Metal</strong><span>Metal and leather details are intentionally restrained so the builder stays readable and professional.</span></div>
+                  </div>
+                </main>
+              )}
+              {activeView !== "AI Builder" && !themeView && (
                 <WorkspaceView
                   key={`${project.id}-${activeView}`}
                   view={activeView}
