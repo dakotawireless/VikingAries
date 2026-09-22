@@ -1338,9 +1338,14 @@ function ChatWorkspace({ project, active = true }) {
 
     const jobId = crypto.randomUUID();
     const threadId = activeThread.id;
+    const requestModel =
+      selectedModel === VA_AUTO_MODEL
+        ? modelRecommendation?.id || "gpt-5.6-luna"
+        : selectedModel;
     const userMessage = {
       id: `user-${jobId}`,
       jobId,
+      model: requestModel,
       role: "user",
       content,
       attachmentMeta: attachment
