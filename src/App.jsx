@@ -1414,7 +1414,7 @@ function ChatWorkspace({ project, active = true }) {
             ? typedContent.length > 28
               ? `${typedContent.slice(0, 28)}…`
               : typedContent
-            : attachment?.name || "Attachment"
+            : attachments[0]?.name || "Attachment"
           : thread.title,
       messages: [...thread.messages, userMessage],
     }));
