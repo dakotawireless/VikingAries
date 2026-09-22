@@ -1724,14 +1724,14 @@ function ChatWorkspace({ project, active = true }) {
     setStatusText("Preparing pasted image…");
     try {
       const imageData = await prepareImageAttachment(file);
-      setAttachment({
+      setAttachments((current) => [...current, {
         kind: "image",
         thumbnailDataUrl: imageData.thumbnailDataUrl,
         fullDataUrl: imageData.fullDataUrl,
         dataUrl: imageData.fullDataUrl,
         name: file.name || "Pasted image",
         type: file.type || "image/jpeg",
-      });
+      }]);
       setStatusText("Image attached");
     } catch (error) {
       setStatusText(error.message || "Could not attach image");
