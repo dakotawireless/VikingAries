@@ -1314,7 +1314,7 @@ function ChatWorkspace({ project, active = true }) {
       const nextThread = nextThreads[nextIndex] || nextThreads[0];
       setActiveThreadId(nextThread.id);
       setDraft("");
-      setAttachment(null);
+      setAttachments([]);
       try {
         window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
       } catch {
