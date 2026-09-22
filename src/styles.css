@@ -2786,3 +2786,70 @@ body.resizing-preview * {
   .theme-grid { grid-template-columns:1fr !important; gap:16px !important; }
   .theme-card { min-height:230px !important; }
 }
+
+
+/* Mobile UI overhaul — phone-first sizing, spacing and touch targets. */
+@media (max-width: 900px) {
+  html, body, #root { width:100%; min-width:0; overflow-x:hidden; }
+  .app-shell.mobile-ui { font-size:16px; }
+  .app-shell.mobile-ui .mobile-topbar { min-height:64px; padding:8px 12px; gap:10px; }
+  .app-shell.mobile-ui .mobile-icon-button { width:44px; height:44px; min-width:44px; border-radius:9px; }
+  .app-shell.mobile-ui .mobile-view-button { min-height:44px; padding:0 12px; border-radius:9px; font-size:14px; }
+  .app-shell.mobile-ui .mobile-current-project strong { font-size:18px; line-height:1.15; }
+  .app-shell.mobile-ui .mobile-current-project small { font-size:13px; margin-top:2px; }
+  .app-shell.mobile-ui .content-shell { min-width:0; width:100%; }
+  .app-shell.mobile-ui .workspace { min-width:0; width:100%; }
+  .app-shell.mobile-ui .project-heading { padding:14px 16px 12px; }
+  .app-shell.mobile-ui .project-title-row { gap:8px; flex-wrap:wrap; }
+  .app-shell.mobile-ui .project-title-row h1 { font-size:21px; line-height:1.2; }
+  .app-shell.mobile-ui .project-title-row small,
+  .app-shell.mobile-ui .project-status { font-size:12px; }
+  .app-shell.mobile-ui .chat-tab-row { min-height:50px; padding:0 10px; overflow-x:auto; }
+  .app-shell.mobile-ui .chat-tab { min-height:48px; padding:0 12px; font-size:14px; white-space:nowrap; }
+  .app-shell.mobile-ui .workspace-scroll { padding:14px 14px 150px; }
+  .app-shell.mobile-ui .message-row { gap:9px; margin-bottom:18px; }
+  .app-shell.mobile-ui .avatar,
+  .app-shell.mobile-ui .assistant-avatar { width:38px; height:38px; min-width:38px; font-size:13px; border-radius:10px; }
+  .app-shell.mobile-ui .message-author { font-size:14px; margin-bottom:6px; }
+  .app-shell.mobile-ui .message-author time { font-size:12px; }
+  .app-shell.mobile-ui .user-message,
+  .app-shell.mobile-ui .assistant-message { font-size:16px; line-height:1.55; padding:13px 14px; border-radius:10px; }
+  .app-shell.mobile-ui .assistant-message p,
+  .app-shell.mobile-ui .user-message p { margin-top:0; margin-bottom:12px; }
+  .app-shell.mobile-ui .assistant-message li,
+  .app-shell.mobile-ui .user-message li { margin:5px 0; }
+  .app-shell.mobile-ui .job-activity-feed { margin:8px 0 14px; border-radius:9px; }
+  .app-shell.mobile-ui .job-activity-feed summary,
+  .app-shell.mobile-ui .job-activity-feed > div { min-height:40px; font-size:13px; }
+  .app-shell.mobile-ui .message-actions button { min-height:38px; padding:0 11px; font-size:13px; }
+  .app-shell.mobile-ui .composer { padding:10px 12px max(10px, env(safe-area-inset-bottom)); gap:8px; border-top:1px solid var(--line); }
+  .app-shell.mobile-ui .composer textarea { min-height:54px; max-height:150px; padding:14px 12px; font-size:16px !important; line-height:1.35; border-radius:10px; }
+  .app-shell.mobile-ui .composer button { min-width:44px; min-height:44px; }
+  .app-shell.mobile-ui .model-picker { grid-column:1 / -1; display:flex; align-items:center; gap:8px; padding-top:2px; }
+  .app-shell.mobile-ui .model-picker label { font-size:12px; }
+  .app-shell.mobile-ui .model-picker select { min-height:40px; max-width:260px; font-size:14px; padding:0 10px; }
+  .app-shell.mobile-ui .jump-to-bottom-button { bottom:154px; min-height:40px; padding:0 12px; font-size:13px; }
+  .app-shell.mobile-ui .sidebar { width:min(88vw,360px); }
+  .app-shell.mobile-ui .sidebar-brand { padding:20px 18px 16px; }
+  .app-shell.mobile-ui .brand-mark { width:52px; height:52px; min-width:52px; }
+  .app-shell.mobile-ui .brand-name { font-size:21px; }
+  .app-shell.mobile-ui .brand-tagline { font-size:11px; }
+  .app-shell.mobile-ui .project-section,
+  .app-shell.mobile-ui .sidebar-nav { padding-left:14px; padding-right:14px; }
+  .app-shell.mobile-ui .project-trigger { min-height:62px; padding:10px 12px; border-radius:10px; }
+  .app-shell.mobile-ui .project-trigger strong { font-size:17px; }
+  .app-shell.mobile-ui .project-trigger small { font-size:13px; }
+  .app-shell.mobile-ui .sidebar-kicker { font-size:12px; margin-top:20px; margin-bottom:8px; }
+  .app-shell.mobile-ui .sidebar-link { min-height:50px; padding:0 12px; gap:12px; font-size:16px; border-radius:8px; }
+  .app-shell.mobile-ui .sidebar-link svg { width:21px; height:21px; }
+  .app-shell.mobile-ui .sidebar-footer { padding:14px; }
+}
+@media (max-width: 480px) {
+  .app-shell.mobile-ui .workspace-scroll { padding-left:10px; padding-right:10px; }
+  .app-shell.mobile-ui .message-row { gap:7px; }
+  .app-shell.mobile-ui .avatar,
+  .app-shell.mobile-ui .assistant-avatar { width:34px; height:34px; min-width:34px; }
+  .app-shell.mobile-ui .user-message,
+  .app-shell.mobile-ui .assistant-message { padding:12px; }
+  .app-shell.mobile-ui .composer { grid-template-columns:44px 44px minmax(0,1fr) 48px !important; }
+}
