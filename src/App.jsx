@@ -613,32 +613,43 @@ function stripAttachmentMarkers(content) {
 
 function ChatAttachmentCard({ message, onImageOpen }) {
   if (message?.role !== "user") return null;
-  const meta = message.attachmentMeta || attachmentMetaFromContent(message.content);
-  if (!meta) return null;
-
-  const isImage = meta.kind === "image" || String(meta.type || "").startsWith("image/");
-  const isPdf = meta.kind === "pdf" || meta.type === "application/pdf";
+  const legacyMeta = message.attachmentMeta || attachmentMetaFromContent(message.content);
+  const items = Array.isArray(message.attachments) && message.attachments.length
+    ? message.attachments
+    : legacyMeta
+      ? [{ ...legacyMeta, fullDataUrl: message.fullSizeImage || "" }]
+      : [];
+  if (!items.length) return null;
 
   return (
-    <div className="chat-file-attachment" aria-label={`Attached file ${meta.name}`}>
-      {isImage && message.fullSizeImage ? (
-        <button
-          className="chat-file-image-preview"
-          type="button"
-          onClick={() => onImageOpen?.(message.fullSizeImage)}
-          title="Open attached image"
-        >
-          <img src={message.fullSizeImage} alt={meta.name || "Attached image"} />
-        </button>
-      ) : (
-        <span className={isPdf ? "chat-file-icon pdf" : "chat-file-icon"}>
-          <FileText size={20} />
-        </span>
-      )}
-      <span className="chat-file-copy">
-        <strong>{meta.name || "Attachment"}</strong>
-        <small>{isPdf ? "PDF document" : isImage ? "Image" : meta.type || "File"} · available to Viking Aries</small>
-      </span>
+    <div className="chat-file-attachments" aria-label={`${items.length} attached file${items.length === 1 ? "" : "s"}`}>
+      {items.map((item, index) => {
+        const isImage = item.kind === "image" || String(item.type || "").startsWith("image/");
+        const isPdf = item.kind === "pdf" || item.type === "application/pdf";
+        const preview = item.fullDataUrl || item.dataUrl || "";
+        return (
+          <div className="chat-file-attachment" key={`${item.name || "attachment"}-${index}`}>
+            {isImage && preview ? (
+              <button
+                className="chat-file-image-preview"
+                type="button"
+                onClick={() => onImageOpen?.(preview)}
+                title="Open attached image"
+              >
+                <img src={preview} alt={item.name || "Attached image"} />
+              </button>
+            ) : (
+              <span className={isPdf ? "chat-file-icon pdf" : "chat-file-icon"}>
+                <FileText size={20} />
+              </span>
+            )}
+            <span className="chat-file-copy">
+              <strong>{item.name || "Attachment"}</strong>
+              <small>{isPdf ? "PDF document" : isImage ? "Image" : item.type || "File"} · available to Viking Aries</small>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
