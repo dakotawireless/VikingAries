@@ -1161,6 +1161,7 @@ function ChatWorkspace({ project, active = true }) {
         next[userIndex] = {
           ...next[userIndex],
           jobId: job.jobId,
+          model: job.model || next[userIndex].model || null,
           queueStatus: job.status,
           progress: Array.isArray(job.progress)
             ? job.progress
