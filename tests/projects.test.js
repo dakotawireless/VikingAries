@@ -60,3 +60,12 @@ test('Viking Aries registration repairs stale blank project mappings', () => {
   assert.equal(result.cloudflare.worker, 'vikingaries');
   assert.equal(result.github.repository, 'dakotawireless/VikingAries');
 });
+
+test('Smoke Signals registration records verified staging URL', () => {
+  const project = MIGRATED_PROJECTS['smoke-pos'];
+  assert.equal(
+    project.deploymentUrl,
+    'https://smoke-signals-pos---new.erik-f2c.workers.dev'
+  );
+  assert.match(project.contextSummary, /Cloudflare staging is deployed successfully/);
+});
