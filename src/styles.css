@@ -2923,154 +2923,115 @@ body.resizing-preview * {
 }
 
 
-/* Secure project secret manager */
-.secret-destination-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+/* Hercules-inspired secure project secret manager */
+.hercules-secret-add-card { padding: 16px; }
+.hercules-secret-card-heading {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; margin-bottom: 12px;
 }
-.secret-destination-card small,
-.secret-destination-card strong { display: block; }
-.secret-destination-card small {
-  color: #718496;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-.secret-destination-card strong {
-  margin-top: 3px;
-  color: #263f53;
-  font-size: 13px;
-}
+.hercules-secret-card-heading h2 { margin: 0; font-size: 13px; }
+.hercules-secret-card-heading p { margin: 4px 0 0; color: #718496; font-size: 10px; }
+.hercules-secret-card-heading p strong { color: #40596d; font-weight: 700; }
 .secret-storage-status {
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #e4f8ed;
-  color: #177e51;
-  font-size: 10px;
-  font-weight: 700;
+  flex: 0 0 auto; padding: 4px 8px; border-radius: 999px;
+  background: #e4f8ed; color: #177e51; font-size: 9px; font-weight: 700;
 }
-.secret-storage-status.checking {
-  background: #eef2f5;
-  color: #6b7f91;
+.secret-storage-status.checking { background: #eef2f5; color: #6b7f91; }
+.hercules-secret-form { display: grid; gap: 10px; }
+.hercules-secret-form label { display: grid; gap: 5px; }
+.hercules-secret-form label > span:first-child {
+  color: #4b6174; font-size: 10px; font-weight: 700;
 }
-.secret-presets-card { border-style: dashed; }
-.secret-preset-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+.hercules-secret-form label > span em {
+  color: #8a9aa7; font-size: 9px; font-style: normal; font-weight: 500;
 }
-.secret-manager-row {
-  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+.hercules-secret-form input,
+.hercules-secret-form select {
+  width: 100%; min-height: 36px; border: 1px solid #cedae4; border-radius: 5px;
+  background: white; color: #172b3c; padding: 7px 9px; font-size: 12px;
 }
-.secret-row-copy { min-width: 0; }
-.secret-row-copy em {
-  display: block;
-  margin-top: 3px;
-  color: #8a9aa7;
-  font-size: 9px;
-  font-style: normal;
+.hercules-secret-form label > small { color: #8797a4; font-size: 9px; }
+.hercules-secret-value-input {
+  display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 5px;
 }
-.secret-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.hercules-secret-value-input .icon-action {
+  width: 34px; height: 36px; border: 1px solid #cedae4; background: white;
 }
-.compact-action {
-  min-height: 28px;
-  padding: 0 8px;
-  font-size: 10px;
+.hercules-secret-sensitive-toggle {
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start; gap: 8px !important; width: fit-content; cursor: pointer;
 }
-.secure-secret-editor {
-  display: grid;
-  gap: 12px;
+.hercules-secret-sensitive-toggle input {
+  width: 15px; min-height: auto; height: 15px; margin: 1px 0 0;
 }
-.secret-editor-grid {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 160px 160px minmax(220px, 1.2fr);
-  gap: 9px;
+.hercules-secret-sensitive-toggle span strong,
+.hercules-secret-sensitive-toggle span small { display: block; }
+.hercules-secret-sensitive-toggle span strong { color: #445d71; font-size: 10px; }
+.hercules-secret-sensitive-toggle span small {
+  margin-top: 2px; color: #8293a1; font-size: 9px;
 }
-.secret-editor-grid label,
-.secret-value-grid label {
-  min-width: 0;
-  display: grid;
-  gap: 5px;
-}
-.secret-editor-grid label > span,
-.secret-value-grid label > span {
-  color: #42586c;
-  font-size: 10px;
-  font-weight: 700;
-}
-.secret-editor-grid input,
-.secret-editor-grid select,
-.secret-value-grid input {
-  width: 100%;
-  min-height: 36px;
-  border: 1px solid #cedae4;
-  border-radius: 5px;
-  background: white;
-  color: #172b3c;
-  padding: 7px 9px;
-  font-size: 12px;
-}
-.secret-value-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-.masked-secret-input {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
-  gap: 5px;
-}
-.masked-secret-input .icon-action {
-  border: 1px solid #cedae4;
-  background: white;
-}
-.secret-save-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.secret-save-row small {
-  color: #718496;
-  font-size: 10px;
-}
+.hercules-secret-save { width: 100%; min-height: 34px; }
 .secret-save-message {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 10px;
-  border-radius: 5px;
-  font-size: 11px;
-  font-weight: 600;
+  display: flex; align-items: center; gap: 7px; margin-top: 10px; padding: 9px 10px;
+  border-radius: 5px; font-size: 11px; font-weight: 600;
 }
 .secret-save-message.success {
-  color: #177e51;
-  background: #e9f8f0;
-  border: 1px solid #bde6ce;
+  color: #177e51; background: #e9f8f0; border: 1px solid #bde6ce;
 }
 .secret-save-message.error {
-  color: #a33636;
-  background: #fff0f0;
-  border: 1px solid #edc4c4;
+  color: #a33636; background: #fff0f0; border: 1px solid #edc4c4;
+}
+.hercules-secret-browser { display: grid; gap: 10px; }
+.hercules-secret-search-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px; align-items: center;
+}
+.hercules-secret-search {
+  min-height: 36px; display: grid; grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center; gap: 5px; padding: 0 9px; border: 1px solid #cedae4;
+  border-radius: 5px; background: white; color: #758899;
+}
+.hercules-secret-search input {
+  width: 100%; border: 0; outline: 0; background: transparent;
+  color: #172b3c; font-size: 11px;
+}
+.hercules-secret-list { display: grid; gap: 7px; }
+.hercules-secret-row {
+  min-height: 68px; display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 30px auto;
+  align-items: center; gap: 9px; padding: 10px 12px;
+  border: 1px solid #dbe4eb; border-radius: 6px; background: white;
+}
+.hercules-secret-row-main { min-width: 0; }
+.hercules-secret-row-main strong,
+.hercules-secret-row-main span,
+.hercules-secret-row-main small { display: block; }
+.hercules-secret-row-main strong { color: #253e52; font-size: 11px; letter-spacing: .01em; }
+.hercules-secret-mask {
+  margin-top: 6px; color: #526b80;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; letter-spacing: .12em;
+}
+.hercules-secret-row-main small {
+  margin-top: 5px; overflow: hidden; color: #81919e; font-size: 9px;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.hercules-secret-row-meta { display: flex; align-items: center; gap: 6px; }
+.secret-sensitive-badge {
+  padding: 4px 7px; border-radius: 999px;
+  background: #f2f4f6; color: #667b8e; font-size: 9px; font-weight: 700;
+}
+.hercules-secret-hidden-value { cursor: default; color: #7c8e9d; }
+.compact-action { min-height: 28px; padding: 0 8px; font-size: 10px; }
+
+@media (max-width: 760px) {
+  .hercules-secret-card-heading { align-items: flex-start; }
+  .hercules-secret-search-row { grid-template-columns: 1fr; }
+  .hercules-secret-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .hercules-secret-row-meta {
+    grid-column: 1 / -1; justify-content: flex-start;
+  }
+  .hercules-secret-hidden-value,
+  .hercules-secret-row > .compact-action { grid-row: 1; }
 }
 
-@media (max-width: 1100px) {
-  .secret-editor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 720px) {
-  .secret-manager-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
-  .secret-row-actions {
-    grid-column: 2 / -1;
-    justify-content: flex-start;
-  }
-  .secret-editor-grid,
-  .secret-value-grid { grid-template-columns: 1fr; }
-  .secret-save-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
