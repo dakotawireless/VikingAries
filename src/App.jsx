@@ -1059,6 +1059,7 @@ function ChatWorkspace({ project, active = true }) {
   const recognitionRef = useRef(null);
   const recognitionSessionRef = useRef(0);
   const submitGuardRef = useRef(false);
+  const clearDraftRef = useRef(false);
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
