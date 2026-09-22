@@ -620,9 +620,15 @@ a.project-deployment-link:hover {
   width: 100%; resize: none; min-height: 42px; max-height: 110px; padding: 11px 12px; border: 1px solid #cbd8e3;
   border-radius: 5px; color: var(--text); background: white; font-size: 13px;
 }
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
 .composer-image-thumbnail {
   width: max-content;
-  max-width: 100%;
+  max-width: min(100%, 280px);
   display: flex;
   align-items: center;
   gap: 7px;
