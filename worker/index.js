@@ -2735,6 +2735,35 @@ const worker = {
         return json({ error: "Private VA storage is not configured." }, { status: 503 });
       }
 
+      const legacyFileRoute =
+        url.pathname === "/api/files/legacy-download" ||
+        url.pathname === "/api/files/legacy-preview";
+      if (legacyFileRoute) {
+        const projectId = (url.searchParams.get("projectId") || "").trim();
+        const storagePath = (url.searchParams.get("path") || "").trim();
+        const fileName = safeUploadedFileName(url.searchParams.get("name") || storagePath.split("/").pop() || "file");
+        const type = inferMimeType(fileName);
+        const preview = url.pathname === "/api/files/legacy-preview";
+        if (preview && !type.startsWith("image/")) {
+          return json({ error: "Only image files can be previewed." }, { status: 415 });
+        }
+        const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+        if (!githubToken) {
+          return json({ error: "Legacy file access is not configured." }, { status: 503 });
+        }
+        try {
+          const response = await githubDownloadProjectFile(githubToken, { projectId, path: storagePath });
+          const headers = new Headers(response.headers);
+          headers.set("Content-Type", type);
+          headers.set("Content-Disposition", `${preview ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+          headers.set("Cache-Control", "private, no-store");
+          headers.set("X-Content-Type-Options", "nosniff");
+          return new Response(response.body, { status: response.status, headers });
+        } catch (error) {
+          return json({ error: error instanceof Error ? error.message : "Legacy file is unavailable." }, { status: 404 });
+        }
+      }
+
       const route = url.pathname.replace(/^\/api/, "");
       const target = new URL(`${VA_CONVEX_SITE_URL}${route}`);
       for (const [key, value] of url.searchParams) target.searchParams.append(key, value);
