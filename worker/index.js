@@ -1,5 +1,6 @@
+import { withRunControl, currentRunSignal } from "./run-control.js";
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
-import { budgetedFetch as fetch, withRequestBudget, setRequestAbortSignal, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
+import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_REQUEST_TIMEOUT_MS = 180000;
@@ -3456,8 +3457,6 @@ const worker = {
       return json({ error: "Invalid JSON request." }, { status: 400 });
     }
 
-    setRequestAbortSignal(request.signal);
-
     const jobId =
       typeof body?.jobId === "string" ? body.jobId.trim().slice(0, 120) : "";
     const jobProgress = [];
@@ -3841,7 +3840,7 @@ const worker = {
         instructions: runtimeInstructions,
         input: messages,
         tools,
-        abortSignal: request.signal,
+        abortSignal: currentRunSignal() || request.signal,
       });
       await captureUsage(payload);
       await finishProgress(analysisProgressId, "done");
@@ -3852,6 +3851,7 @@ const worker = {
 
         const outputs = [];
         for (const call of calls) {
+          currentRunSignal()?.throwIfAborted();
           // Reserve four provider calls, two audit operations, and finalization.
           if (budgetPaused || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8) {
             budgetPaused = true;
@@ -3920,7 +3920,7 @@ const worker = {
           input: outputs,
           tools,
           previousResponseId: payload.id,
-          abortSignal: request.signal,
+          abortSignal: currentRunSignal() || request.signal,
         });
         await captureUsage(payload);
         if (budgetPaused) break;
@@ -3988,9 +3988,30 @@ const worker = {
 };
 
 export default {
-  fetch(request, env) {
-    return new URL(request.url).pathname === "/api/chat"
-      ? withRequestBudget(() => worker.fetch(request, env))
-      : worker.fetch(request, env);
+  async fetch(request, env) {
+    if (new URL(request.url).pathname !== "/api/chat") return worker.fetch(request, env);
+    // Browser submissions must use the durable queue, including older open tabs.
+    if (!await internalJobAuthorized(request, env)) {
+      return json({ error: "This client must refresh and submit through the durable job queue." }, { status: 409 });
+    }
+    const body = await request.clone().json().catch(() => null);
+    if (!body?.jobId) return json({ error: "A durable job ID is required." }, { status: 400 });
+    const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+    const control = async (claim = false) => {
+      const response = await globalThis.fetch(VA_CONVEX_SITE_URL + "/jobs/control", {
+        method: "POST", headers: { Authorization: "Bearer " + secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: body.jobId, claim }), signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error("Execution control unavailable; stopping safely.");
+      return response.json();
+    };
+    try {
+      const claimed = await control(true);
+      if (claimed.status !== "running") return json({ error: "Execution is " + claimed.status }, { status: 409 });
+      return await withRunControl({ heartbeat: control, deadlineAt: claimed.deadlineAt },
+        () => withRequestBudget(() => worker.fetch(request, env)));
+    } catch (error) {
+      return json({ error: error.message || "Execution stopped." }, { status: 502 });
+    }
   },
 };

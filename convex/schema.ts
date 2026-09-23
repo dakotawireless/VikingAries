@@ -28,9 +28,16 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     heartbeatAt: v.optional(v.number()),
     cancelRequestedAt: v.optional(v.number()),
+    deadlineAt: v.optional(v.number()),
+    runnerClaimed: v.optional(v.boolean()),
+    lifecycleVersion: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   })
     .index("by_jobId", ["jobId"])
+    .index("by_status", ["status"])
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_project_thread_status", ["projectId", "threadId", "status"])
+    .index("by_project_thread_user", ["projectId", "threadId", "userMessageId"])
     .index("by_project_updatedAt", ["projectId", "updatedAt"])
     .index("by_project_thread_updatedAt", ["projectId", "threadId", "updatedAt"])
     .index("by_thread_updatedAt", ["threadId", "updatedAt"]),
