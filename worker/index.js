@@ -4272,6 +4272,85 @@ const worker = {
         usageRecorded = false;
       }
     };
+
+    const buildRecoveryResult = async (error, forcedStop = null) => {
+      const stop = forcedStop || classifyRunStop(error, budgetPaused);
+      beginRunRecoveryMode();
+      const state = currentRunRecoveryState() || runState;
+      updateRunRecoveryState({
+        stopReason: stop.label,
+        executionStatus: stop.code,
+        elapsedMs: Date.now() - Number(state.startedAt || Date.now()),
+        toolRounds,
+        toolExecutions: executedTools,
+        finalOperation: state.finalOperation || (error?.message ? String(error.message).slice(0, 500) : null),
+        writesOccurred: (state.writes || []).length > 0,
+      });
+
+      let recoveryText = "";
+      const recoveryPrompt = [
+        "The run must stop before normal completion. Produce a concise, factual recovery response using exactly these headings:",
+        "## Stop reason",
+        "## What was completed",
+        "## Where it stopped",
+        "## What remains",
+        "## Change safety",
+        "## Next best action",
+        `Actual stop reason: ${stop.label}.`,
+        `Run checkpoint: ${JSON.stringify(state)}.`,
+        "Use only supported findings from the conversation and checkpoint. State exactly which writes/deployments occurred or that none occurred. Recommend a specific bounded next step. Say that 'continue' resumes from saved progress without replaying writes. Do not call tools.",
+      ].join("\n");
+
+      if (!currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
+        try {
+          const recoveryPayload = await callOpenAI({
+            apiKey,
+            model,
+            instructions: runtimeInstructions,
+            input: recoveryPrompt,
+            tools: [],
+            previousResponseId: payload?.id || undefined,
+            finalOnly: true,
+            abortSignal: currentRunSignal() || request.signal,
+            timeoutMs: Math.max(1000, Math.min(40000, currentRunDeadlineAt() - Date.now() - 1000)),
+            maxOutputTokens: 2200,
+          });
+          await captureUsage(recoveryPayload);
+          recoveryText = extractResponseText(recoveryPayload);
+        } catch {
+          recoveryText = "";
+        }
+      }
+
+      if (!recoveryText) recoveryText = recoveryFallbackText(state, stop);
+      updateRunRecoveryState({ recoveryText });
+      await persistRecoveryCheckpoint(env, projectId, threadId, currentRunRecoveryState() || state);
+
+      return {
+        text: recoveryText + usageWarning(),
+        model,
+        responseId: payload?.id || null,
+        toolsAvailable: tools.map((tool) => tool.name),
+        usage: chatUsage,
+        usageRecorded,
+        actionReceipts,
+        executionStatus: stop.code,
+        continuationRequired: true,
+        diagnostics: {
+          runId: state.runId || jobId || null,
+          stopReason: stop.label,
+          elapsedMs: Date.now() - Number(state.startedAt || Date.now()),
+          toolRounds,
+          toolExecutions: executedTools,
+          lastSuccessfulOperation: state.lastSuccessfulOperation || null,
+          finalOperation: state.finalOperation || null,
+          provider: "OpenAI",
+          model,
+          writesOccurred: (state.writes || []).length > 0,
+        },
+      };
+    };
+
     try {
       const analysisProgressId = await beginProgress("Analyzing request");
       payload = await callOpenAI({
