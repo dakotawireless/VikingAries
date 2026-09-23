@@ -147,6 +147,28 @@ function getProjectIcon(project, fallback = Boxes) {
   return projectIconMap[project?.id] || fallback;
 }
 
+function projectNavigationHref(project, link) {
+  const explicit = String(link?.url || "").trim();
+  if (/^https?:\/\//i.test(explicit)) return explicit;
+  const base = String(project?.deploymentUrl || "").trim();
+  if (!base) return "";
+  try {
+    return new URL(String(link?.path || "/"), base.endsWith("/") ? base : `${base}/`).toString();
+  } catch {
+    return "";
+  }
+}
+
+function readProjectMetadataOverride(projectId) {
+  try {
+    const raw = window.localStorage.getItem(`viking-aries:project-metadata:${projectId}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 const navItems = [
   { label: "AI Builder", icon: MessageSquare, group: "BUILD" },
   { label: "Features", icon: PackageCheck, group: "BUILD" },
@@ -430,6 +452,31 @@ function Sidebar({
         onAddContractor={onAddContractor}
         onAddContractorProject={onAddContractorProject}
       />
+
+      {Array.isArray(project?.navigationLinks) && project.navigationLinks.length > 0 && (
+        <div className="sidebar-section sidebar-app-links">
+          <div className="sidebar-kicker">APP</div>
+          <nav className="sidebar-nav">
+            {project.navigationLinks.map((link) => {
+              const href = projectNavigationHref(project, link);
+              if (!href) return null;
+              return (
+                <a
+                  key={link.id || link.label || href}
+                  className="sidebar-link"
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={href}
+                >
+                  <Globe2 size={18} />
+                  <span>{link.label || "Open App"}</span>
+                </a>
+              );
+            })}
+          </nav>
+        </div>
+      )}
 
       <div className="sidebar-section sidebar-project-tools">
         {["BUILD", "DATA & LOGIC", "TEST & RELEASE", "PROJECT"].map((group) => (
@@ -2616,6 +2663,47 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   useEffect(() => {
     window.localStorage.setItem("viking-aries:personal-projects", JSON.stringify(personalProjectsState));
   }, [personalProjectsState]);
+
+  useEffect(() => {
+    const applyProjectMetadataOverrides = () => {
+      setPersonalProjectsState((current) => {
+        let changed = false;
+        const next = current.map((item) => {
+          const override = readProjectMetadataOverride(item.id);
+          if (!override) return item;
+          const safeOverride = {
+            ...(typeof override.name === "string" && override.name.trim() ? { name: override.name.trim() } : {}),
+            ...(typeof override.deploymentUrl === "string" ? { deploymentUrl: override.deploymentUrl } : {}),
+            ...(typeof override.status === "string" ? { status: override.status } : {}),
+            ...(typeof override.contextSummary === "string" ? { contextSummary: override.contextSummary } : {}),
+            ...(Array.isArray(override.navigationLinks) ? { navigationLinks: override.navigationLinks } : {}),
+          };
+          const differs = Object.entries(safeOverride).some(
+            ([key, value]) => JSON.stringify(item[key] ?? null) !== JSON.stringify(value ?? null)
+          );
+          if (!differs) return item;
+          changed = true;
+          return { ...item, ...safeOverride, icon: item.icon };
+        });
+        return changed ? next : current;
+      });
+    };
+
+    applyProjectMetadataOverrides();
+    const timer = window.setInterval(applyProjectMetadataOverrides, 1500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (workspace !== "Personal") return;
+    const latest = personalProjectsState.find((item) => item.id === project?.id);
+    if (!latest || latest === project) return;
+    const fields = ["name", "deploymentUrl", "status", "contextSummary", "navigationLinks"];
+    const differs = fields.some(
+      (key) => JSON.stringify(latest[key] ?? null) !== JSON.stringify(project?.[key] ?? null)
+    );
+    if (differs) setProject(latest);
+  }, [personalProjectsState, project, workspace]);
 
   useEffect(() => {
     window.localStorage.setItem("viking-aries:contractors", JSON.stringify(contractorsState));
