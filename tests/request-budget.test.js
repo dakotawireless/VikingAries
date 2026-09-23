@@ -99,6 +99,45 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
   });
 }
 
+test('cost ceiling stops the run without an extra recovery model call', async (t) => {
+  let modelCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    if (String(url).includes('/jobs/control')) {
+      return Response.json({ status: 'running', deadlineAt: Date.now() + 240000 });
+    }
+    if (String(url).endsWith('/state')) return Response.json({ entries: [] });
+    if (String(url).includes('/usage/record')) return Response.json({ ok: true, id: 'stored' });
+    if (String(url).includes('api.openai.com')) {
+      modelCalls++;
+      return Response.json({
+        id: 'expensive',
+        output_text: 'This response alone crossed the run ceiling.',
+        usage: { input_tokens: 100000, output_tokens: 10000, total_tokens: 110000 },
+      });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  const result = await worker.fetch(new Request('https://test/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-VA-Internal-Job-Secret': 'secret' },
+    body: JSON.stringify({
+      jobId: 'cost-ceiling-test',
+      model: 'gpt-5.6-sol',
+      project: { id: 'viking-aries' },
+      thread: { id: 'thread' },
+      messages: [{ role: 'user', content: 'Large task' }],
+    }),
+  }), { OPENAI_API_KEY: 'test', VA_USAGE_INGEST_SECRET: 'secret' });
+
+  const body = await result.json();
+  assert.equal(result.status, 200);
+  assert.equal(body.executionStatus, 'paused');
+  assert.match(body.text, /AI cost ceiling reached/);
+  assert.equal(modelCalls, 1);
+  assert.ok(body.usage.estimatedCostUsd >= MAX_AGENT_COST_USD);
+});
+
 test('failed network attempts consume budget', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline'); });
   await withRequestBudget(async () => {
