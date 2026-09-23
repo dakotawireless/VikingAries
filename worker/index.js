@@ -4312,7 +4312,10 @@ const worker = {
         "Use only supported findings from the conversation and checkpoint. State exactly which writes/deployments occurred or that none occurred. Recommend a specific bounded next step. Say that 'continue' resumes from saved progress without replaying writes. Do not call tools.",
       ].join("\n");
 
-      if (!currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
+      const costCeilingReached =
+        stop.label.startsWith("AI cost ceiling reached") ||
+        chatUsage.estimatedCostUsd >= MAX_AGENT_COST_USD;
+      if (!costCeilingReached && !currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
         try {
           const recoveryPayload = await callOpenAI({
             apiKey,
