@@ -788,8 +788,33 @@ function formatFileSize(bytes) {
 function FilesMediaView({ project }) {
   const defaults = projectDefaults(project).files;
   const [items, setItems] = useProjectStorage(project.id, "files-media-v2", defaults);
+  const [storedFiles, setStoredFiles] = useState([]);
   const [draft, setDraft] = useState({ name: "", type: "Screenshot", location: "", status: "Reference" });
   const [uploadMessage, setUploadMessage] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+  const uploadInputRef = useRef(null);
+
+  const loadStoredFiles = async () => {
+    setLoadingFiles(true);
+    try {
+      const response = await fetch(`/api/files/list?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not load project files.");
+      setStoredFiles(Array.isArray(payload.files) ? payload.files : []);
+      setUploadMessage("");
+    } catch (error) {
+      setUploadMessage(error.message || "Could not load project files.");
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  useEffect(() => {
+    setStoredFiles([]);
+    setUploadMessage("");
+    loadStoredFiles();
+  }, [project.id]);
 
   const add = () => {
     if (!draft.name.trim()) return;
@@ -797,19 +822,63 @@ function FilesMediaView({ project }) {
     setDraft({ name: "", type: "Screenshot", location: "", status: "Reference" });
   };
 
-  const deleteFile = (item) => {
-    setItems((current) => current.filter((row) => row.id !== item.id));
-    if (item.storage === "github") {
-      setUploadMessage(
-        "Removed the old GitHub storage reference from this view. The public GitHub-backed file vault has been retired."
-      );
+  const uploadFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length || uploading) return;
+    const oversized = files.find((file) => file.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setUploadMessage(`${oversized.name} is over the 10 MB file limit.`);
+      return;
+    }
+
+    setUploading(true);
+    setUploadMessage(`Uploading ${files.length} file${files.length === 1 ? "" : "s"}…`);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const form = new FormData();
+        form.append("projectId", project.id);
+        form.append("file", file, file.name);
+        const response = await fetch("/api/files/upload", { method: "POST", body: form });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `Could not upload ${file.name}.`);
+        if (payload.file) uploaded.push({ ...payload.file, status: "Stored", storage: "convex" });
+      }
+      setStoredFiles((current) => [...uploaded.reverse(), ...current]);
+      setUploadMessage(`${uploaded.length} file${uploaded.length === 1 ? "" : "s"} stored securely.`);
+    } catch (error) {
+      setUploadMessage(error.message || "Could not upload those files.");
+      await loadStoredFiles();
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
   };
 
-  const archiveText =
-    project.id === "dw-pos"
-      ? "Dakota Wireless POS migration files are preserved in the private Library under /Viking Aries/Dakota Wireless POS/Files & Media. Direct VA hardcopy uploads are temporarily disabled until a private storage backend is connected."
-      : "Direct VA hardcopy uploads are temporarily disabled while a private storage backend is connected. Existing registered file references remain available.";
+  const deleteFile = async (item) => {
+    if (item.storage === "convex") {
+      try {
+        const response = await fetch(
+          `/api/files/delete?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`,
+          { method: "DELETE" }
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Could not delete that file.");
+        setStoredFiles((current) => current.filter((row) => row.id !== item.id));
+        setUploadMessage(`${item.name} deleted.`);
+      } catch (error) {
+        setUploadMessage(error.message || "Could not delete that file.");
+      }
+      return;
+    }
+
+    setItems((current) => current.filter((row) => row.id !== item.id));
+    if (item.storage === "github") {
+      setUploadMessage("Removed the retired GitHub storage reference. The old archive was not changed.");
+    }
+  };
+
+  const visibleItems = [...storedFiles, ...items];
 
   return (
     <WorkspacePage>
@@ -818,34 +887,43 @@ function FilesMediaView({ project }) {
         title="Files & Media"
         description="Project screenshots, mockups, logos, documents, exports, and durable file references."
       />
-      <InfoBanner text={archiveText} />
-      {uploadMessage && <div className="integration-feedback">{uploadMessage}</div>}
+      <InfoBanner text="Hardcopies are stored privately in Viking Aries project storage. Files are isolated by project and require an authenticated owner session to list, download, or delete." />
+      {uploadMessage && <div className="integration-feedback" role="status">{uploadMessage}</div>}
 
       <section className="workspace-card upload-dropzone">
         <Upload size={24} />
         <div>
           <strong>Upload hardcopies</strong>
-          <p>
-            Temporarily disabled while private VA storage is being connected.
-            Existing migration files are preserved in the private Library.
-          </p>
+          <p>Select one or more images, documents, exports, or archives up to 10 MB each.</p>
         </div>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => uploadFiles(event.target.files)}
+        />
         <button
           type="button"
           className="primary-action"
-          disabled
-          title="Private storage migration in progress"
+          disabled={uploading}
+          onClick={() => uploadInputRef.current?.click()}
         >
-          <Upload size={15} /> Secure storage pending
+          <Upload size={15} /> {uploading ? "Uploading…" : "Choose files"}
         </button>
       </section>
 
+      {loadingFiles && <EmptyState text="Loading stored files…" />}
       <div className="media-grid">
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const retiredGithubUpload = item.storage === "github" && Boolean(item.storagePath);
           const browserCopy = Boolean(item.dataUrl);
+          const privateCopy = item.storage === "convex";
           const isImage = String(item.type || "").startsWith("image/");
           const Icon = isImage ? FileImage : FileText;
+          const downloadUrl = privateCopy
+            ? `/api/files/download?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`
+            : "";
 
           return (
             <section className="workspace-card media-card" key={item.id}>
@@ -859,8 +937,12 @@ function FilesMediaView({ project }) {
                   <h2>{item.name}</h2>
                   <StatusPill status={item.status} />
                 </div>
-                <p>{browserCopy ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
-                {browserCopy ? (
+                <p>{privateCopy || browserCopy ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
+                {privateCopy ? (
+                  <a className="media-download" href={downloadUrl} download={item.name}>
+                    <Download size={14} /> Download
+                  </a>
+                ) : browserCopy ? (
                   <a className="media-download" href={item.dataUrl} download={item.name}>
                     <Download size={14} /> Download browser copy
                   </a>
@@ -884,6 +966,7 @@ function FilesMediaView({ project }) {
                 className="icon-action danger"
                 type="button"
                 onClick={() => deleteFile(item)}
+                title={privateCopy ? "Delete stored file" : "Remove reference"}
               >
                 <Trash2 size={15} />
               </button>
