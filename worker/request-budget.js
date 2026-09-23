@@ -6,10 +6,12 @@ import {
 } from "./run-control.js";
 
 const requests = new AsyncLocalStorage();
-export const MAX_AGENT_ROUNDS = 32;
-export const MAX_AGENT_TOOLS = 120;
-// Viking Aries runs on Workers Paid. Keep an internal safety guard well below the platform ceiling.
-const MAX_SUBREQUESTS = 2500;
+export const MAX_AGENT_ROUNDS = 8;
+export const MAX_AGENT_TOOLS = 20;
+export const MAX_AGENT_COST_USD = 0.50;
+// Keep each invocation deliberately small even on Workers Paid. Continuations are
+// cheaper and safer than letting one runaway request consume minutes and dollars.
+const MAX_SUBREQUESTS = 44;
 
 export class RequestBudgetExceeded extends Error {
   constructor() {
