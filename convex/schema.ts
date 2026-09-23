@@ -33,6 +33,16 @@ export default defineSchema({
     .index("by_project_thread_updatedAt", ["projectId", "threadId", "updatedAt"])
     .index("by_thread_updatedAt", ["threadId", "updatedAt"]),
 
+  projectFiles: defineTable({
+    projectId: v.string(),
+    name: v.string(),
+    type: v.string(),
+    size: v.number(),
+    storageId: v.id("_storage"),
+    uploadedAt: v.number(),
+  })
+    .index("by_project_uploadedAt", ["projectId", "uploadedAt"]),
+
   apiUsage: defineTable({
     projectId: v.string(),
     projectName: v.string(),
