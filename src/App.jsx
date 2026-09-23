@@ -2039,7 +2039,7 @@ function ChatWorkspace({ project, active = true }) {
               {message.role === "user" ? (
                 <div className="avatar">EE</div>
               ) : (
-                <div className="assistant-avatar"><WandSparkles size={18} /></div>
+                <div className="assistant-avatar"><VikingAriesMark className="assistant-avatar-image" /></div>
               )}
 
               <div className="message-stack">
@@ -2138,7 +2138,7 @@ function ChatWorkspace({ project, active = true }) {
 
           {hasUnansweredRunningJob && (
             <article className="message-row">
-              <div className="assistant-avatar"><WandSparkles size={18} /></div>
+              <div className="assistant-avatar"><VikingAriesMark className="assistant-avatar-image" /></div>
               <div className="message-stack">
                 <div className="message-meta"><strong>Viking Aries</strong><span>now</span></div>
                 <div className="assistant-message typing-message" aria-label="Viking Aries is typing">
