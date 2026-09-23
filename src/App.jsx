@@ -1137,6 +1137,10 @@ function ChatWorkspace({ project, active = true }) {
       !answeredJobIds.has(message.jobId) &&
       !stoppedJobIdsRef.current.has(message.jobId)
   );
+  const hasPendingJob = (activeThread?.messages || []).some(
+    message => message.role === "user" && message.jobId &&
+      ["queued", "running"].includes(message.queueStatus)
+  );
 
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
   const projectDeploymentUrl =
@@ -1721,7 +1725,7 @@ function ChatWorkspace({ project, active = true }) {
   };
 
   const stopAiJobs = async () => {
-    if (!activeThread || !sending) return;
+    if (!activeThread || (!sending && !hasPendingJob)) return;
 
     jobSyncSequence.current += 1;
     setStatusText("Stopping…");
@@ -2253,7 +2257,7 @@ function ChatWorkspace({ project, active = true }) {
           className="stop-button"
           type="button"
           onClick={stopAiJobs}
-          disabled={!sending || queueing}
+          disabled={(!sending && !hasPendingJob) || queueing}
           title="Stop Viking Aries from continuing"
           aria-label="Stop Viking Aries from continuing"
         >
