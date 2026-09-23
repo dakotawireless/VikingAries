@@ -23,6 +23,8 @@ export default defineSchema({
     error: v.optional(v.string()),
     model: v.optional(v.string()),
     responseId: v.optional(v.string()),
+    stopReason: v.optional(v.string()),
+    diagnosticsJson: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     startedAt: v.optional(v.number()),
