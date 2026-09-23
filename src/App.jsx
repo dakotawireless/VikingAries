@@ -2038,7 +2038,9 @@ function ChatWorkspace({ project, active = true }) {
               {message.role === "user" ? (
                 <div className="avatar">EE</div>
               ) : (
-                <div className="assistant-avatar"><WandSparkles size={18} /></div>
+                <div className="assistant-avatar">
+                  <img src={VIKING_ARIES_MARK_URL} alt="Viking Aries" />
+                </div>
               )}
 
               <div className="message-stack">
