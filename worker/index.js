@@ -1663,7 +1663,16 @@ function retryDelayMs(response, payload, attempt) {
   return Math.min(8000, 750 * 2 ** attempt);
 }
 
-async function callOpenAI({ apiKey, model, instructions, input, tools, previousResponseId, finalOnly = false }) {
+async function callOpenAI({
+  apiKey,
+  model,
+  instructions,
+  input,
+  tools,
+  previousResponseId,
+  finalOnly = false,
+  abortSignal = null,
+}) {
   const body = {
     model,
     instructions,
@@ -1679,6 +1688,15 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
 
   let lastError = null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (abortSignal?.aborted) {
+      throw abortSignal.reason || new DOMException("Aborted", "AbortError");
+    }
+
+    const timeoutSignal = AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS);
+    const requestSignal = abortSignal
+      ? AbortSignal.any([abortSignal, timeoutSignal])
+      : timeoutSignal;
+
     const response = await fetch(OPENAI_RESPONSES_URL, {
       method: "POST",
       headers: {
@@ -1686,7 +1704,7 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
+      signal: requestSignal,
     });
 
     const payload = await response.json().catch(() => null);
@@ -1697,7 +1715,18 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
     lastError = error;
 
     if (response.status !== 429 || attempt === 3) throw error;
-    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(response, payload, attempt)));
+    if (abortSignal?.aborted) {
+      throw abortSignal.reason || new DOMException("Aborted", "AbortError");
+    }
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, retryDelayMs(response, payload, attempt));
+      if (!abortSignal) return;
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(abortSignal.reason || new DOMException("Aborted", "AbortError"));
+      };
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   throw lastError || new Error("The AI service returned an error.");
@@ -3683,6 +3712,7 @@ const worker = {
         instructions: runtimeInstructions,
         input: messages,
         tools,
+        abortSignal: request.signal,
       });
       await captureUsage(payload);
       await finishProgress(analysisProgressId, "done");
@@ -3759,6 +3789,7 @@ const worker = {
           input: outputs,
           tools,
           previousResponseId: payload.id,
+          abortSignal: request.signal,
         });
         await captureUsage(payload);
         if (budgetPaused) break;

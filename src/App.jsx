@@ -1080,6 +1080,7 @@ function ChatWorkspace({ project, active = true }) {
   const clearDraftRef = useRef(false);
   const directRequestControllerRef = useRef(null);
   const directJobIdRef = useRef("");
+  const stoppedJobIdsRef = useRef(new Set());
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
@@ -1249,7 +1250,17 @@ function ChatWorkspace({ project, active = true }) {
       (left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0)
     );
 
-    for (const job of sortedJobs) {
+    for (const rawJob of sortedJobs) {
+      const job = stoppedJobIdsRef.current.has(rawJob.jobId)
+        ? {
+            ...rawJob,
+            status: "canceled",
+            error: "Stopped by the owner.",
+            completedAt: rawJob.completedAt || Date.now(),
+            updatedAt: Date.now(),
+          }
+        : rawJob;
+
       let userIndex = next.findIndex(
         (message) =>
           message.role === "user" &&
@@ -1342,7 +1353,11 @@ function ChatWorkspace({ project, active = true }) {
         }))
       );
 
-      const activeJobs = jobs.filter((job) => job.threadId === activeThreadId);
+      const activeJobs = jobs.filter(
+        (job) =>
+          job.threadId === activeThreadId &&
+          !stoppedJobIdsRef.current.has(job.jobId)
+      );
       const running = activeJobs.filter((job) => job.status === "running");
       const queued = activeJobs.filter((job) => job.status === "queued");
       const hasPending = running.length > 0 || queued.length > 0;
@@ -1450,6 +1465,7 @@ function ChatWorkspace({ project, active = true }) {
     }
 
     const jobId = crypto.randomUUID();
+    stoppedJobIdsRef.current.delete(jobId);
     const threadId = activeThread.id;
     const threadAlreadyWorking =
       Boolean(directRequestControllerRef.current) ||
@@ -1776,9 +1792,43 @@ function ChatWorkspace({ project, active = true }) {
   const stopAiJobs = async () => {
     if (!activeThread || !sending) return;
 
-    setStatusText("Stopping Viking Aries…");
-    directRequestControllerRef.current?.abort();
+    const stoppedIds = new Set(
+      activeThread.messages
+        .filter(
+          (message) =>
+            message.jobId &&
+            (message.queueStatus === "running" || message.queueStatus === "queued")
+        )
+        .map((message) => message.jobId)
+    );
+    if (directJobIdRef.current) stoppedIds.add(directJobIdRef.current);
+    for (const jobId of stoppedIds) stoppedJobIdsRef.current.add(jobId);
 
+    const controller = directRequestControllerRef.current;
+    directRequestControllerRef.current = null;
+    directJobIdRef.current = "";
+    controller?.abort();
+
+    submitGuardRef.current = false;
+    setQueueing(false);
+    setSending(false);
+    setStatusText("Stopped");
+
+    updateThread(activeThread.id, (thread) => ({
+      ...thread,
+      messages: thread.messages.map((message) =>
+        message.jobId && stoppedIds.has(message.jobId)
+          ? {
+              ...message,
+              queueStatus:
+                message.role === "user" ? "canceled" : message.queueStatus,
+            }
+          : message
+      ),
+    }));
+
+    // Server-side cancellation is best effort. Local Stop is authoritative so a
+    // late queue poll or provider response cannot resurrect the stopped request.
     try {
       const response = await fetch("/api/jobs/cancel", {
         method: "POST",
@@ -1788,15 +1838,16 @@ function ChatWorkspace({ project, active = true }) {
           threadId: activeThread.id,
         }),
       });
-      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || "Could not stop the AI job.");
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "Could not cancel background jobs.");
       }
       await syncProjectJobs();
-      setStatusText(payload.canceled ? "Stopped" : "No active AI job to stop");
-    } catch (error) {
-      setStatusText(error.message || "Could not stop the AI job");
-      await syncProjectJobs();
+      setStatusText("Stopped");
+    } catch {
+      // Keep the owner-visible state stopped. The stopped-job guard continues
+      // discarding late background state even if the cancellation request fails.
+      setStatusText("Stopped");
     }
   };
 
@@ -2170,7 +2221,12 @@ function ChatWorkspace({ project, active = true }) {
             </article>
           ))}
 
-          {activeThread?.messages.some((message) => message.queueStatus === "running") && (
+          {activeThread?.messages.some(
+            (message) =>
+              message.queueStatus === "running" &&
+              message.jobId &&
+              !stoppedJobIdsRef.current.has(message.jobId)
+          ) && (
             <article className="message-row">
               <div className="assistant-avatar"><WandSparkles size={18} /></div>
               <div className="message-stack">
