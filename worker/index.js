@@ -4113,6 +4113,8 @@ const worker = {
               result = await executeCloudflareTool(call, cloudflareToken, projectMetadata);
             } else if (call.name.startsWith("convex_")) {
               result = await executeConvexTool(call, convexToken, projectMetadata);
+            } else if (call.name.startsWith("files_media_")) {
+              result = await executeProjectFilesTool(call, env, projectId);
             } else {
               throw new Error(`Unsupported runtime tool: ${call.name}`);
             }
