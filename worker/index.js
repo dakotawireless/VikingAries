@@ -62,6 +62,69 @@ function registeredProjectConfig(projectId) {
   return PROJECT_RUNTIME_CONFIG[String(projectId || "").trim()] || null;
 }
 
+const PROJECT_DISPLAY_NAMES = {
+  "dw-pos": "Dakota Wireless POS",
+  "dw-site": "Dakota Wireless Website",
+  "smoke-pos": "Smoke Signals POS",
+  "timekeeper": "Timekeeper",
+  "viking-aries": "Viking Aries",
+  "rez-lock": "Rez Lock & Key",
+};
+
+function registeredProjectName(projectId) {
+  const id = String(projectId || "").trim();
+  const config = registeredProjectConfig(id);
+  if (!config) return id || "Unknown project";
+  return PROJECT_DISPLAY_NAMES[id] || config.repository?.split("/").pop()?.replace(/[-_]+/g, " ") || id;
+}
+
+function safeOwnerProjectMetadata(projectId) {
+  const id = String(projectId || "").trim();
+  const config = registeredProjectConfig(id);
+  if (!config) return null;
+  return {
+    id,
+    name: registeredProjectName(id),
+    repository: config.repository || null,
+    defaultBranch: config.defaultBranch || "main",
+    backend: config.backend || null,
+    backendDeployment: config.backendDeployment || null,
+    backendUrl: config.backendUrl || null,
+    cloudflareWorker: config.cloudflareWorker || null,
+    deploymentUrl: config.deploymentUrl || null,
+    status: config.status || null,
+  };
+}
+
+function ownerProjectAliases(projectId) {
+  const id = String(projectId || "").trim();
+  const config = registeredProjectConfig(id);
+  const aliases = new Set([
+    id.toLowerCase(),
+    registeredProjectName(id).toLowerCase(),
+    String(config?.repository || "").split("/").pop()?.replace(/[-_]+/g, " ").toLowerCase(),
+  ].filter(Boolean));
+  if (id === "dw-pos") ["dakota wireless pos","dw pos"].forEach((v) => aliases.add(v));
+  if (id === "dw-site") ["dakota wireless website","dw website"].forEach((v) => aliases.add(v));
+  if (id === "smoke-pos") ["smoke signals pos"].forEach((v) => aliases.add(v));
+  if (id === "timekeeper") ["timekeeper app"].forEach((v) => aliases.add(v));
+  if (id === "rez-lock") ["rez lock","rez lock and key","rez lock & key"].forEach((v) => aliases.add(v));
+  if (id === "viking-aries") ["viking aries","vikingaries"].forEach((v) => aliases.add(v));
+  return [...aliases].filter((value) => value && value.length >= 3);
+}
+
+function crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMessages) {
+  const selected = String(selectedProjectId || "").trim();
+  const target = String(targetProjectId || "").trim();
+  if (!registeredProjectConfig(target)) return false;
+  if (target === selected) return true;
+  const text = latestUserText(rawMessages).toLowerCase();
+  if (!text) return false;
+  const targetNamed = ownerProjectAliases(target).some((alias) => text.includes(alias));
+  const writeIntent = /\b(copy|move|use|write|edit|modify|change|update|add|remove|create|implement|integrate|sync|commit|apply|deploy|replace|share)\b/.test(text);
+  return targetNamed && writeIntent;
+}
+
 function projectSecretEnvironments(projectConfig) {
   if (!projectConfig) return [];
 
