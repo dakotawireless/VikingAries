@@ -2313,24 +2313,35 @@ const worker = {
         return json({ error: "Owner login required." }, { status: 401 });
       }
 
-      if (url.pathname === "/api/files/list" && request.method === "GET") {
-        return json({
-          ok: true,
-          files: [],
-          storageStatus: "secure-storage-migration",
-          message:
-            "GitHub-backed hardcopy storage is retired. Project hardcopies are being kept in the private Library archive until a private VA storage backend is connected.",
-        });
+      const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+      if (!secret) {
+        return json({ error: "Private VA storage is not configured." }, { status: 503 });
       }
 
-      return json(
-        {
-          error:
-            "Hardcopy upload/download through VA is temporarily disabled while private storage is being connected. Use the project's private Files & Media Library archive for durable files.",
-          storageStatus: "secure-storage-migration",
-        },
-        { status: 503 }
-      );
+      const route = url.pathname.replace(/^\/api/, "");
+      const target = new URL(`${VA_CONVEX_SITE_URL}${route}`);
+      for (const [key, value] of url.searchParams) target.searchParams.append(key, value);
+
+      try {
+        const headers = new Headers({ Authorization: `Bearer ${secret}` });
+        const init = { method: request.method, headers };
+        if (request.method === "POST") {
+          init.body = await request.formData();
+        }
+        const response = await fetch(target.toString(), init);
+        const responseHeaders = new Headers(response.headers);
+        responseHeaders.set("Cache-Control", "private, no-store");
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+        });
+      } catch (error) {
+        return json(
+          { error: error instanceof Error ? error.message : "Private file storage request failed." },
+          { status: 502 }
+        );
+      }
     }
 
     if (url.pathname === "/api/projects/dw-pos/staging/convex") {
