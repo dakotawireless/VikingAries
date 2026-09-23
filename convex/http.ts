@@ -367,7 +367,7 @@ http.route({
       return Response.json({ error: "projectId is required." }, { status: 400 });
     }
 
-    await ctx.runMutation(internal.jobs.reconcileProjectJobs, { projectId });
+    await ctx.runMutation(internal.jobs.reconcileJobs, {});
     const jobs = await ctx.runQuery(internal.jobs.listProjectJobs, { projectId, limit });
     return Response.json({
       jobs: jobs.map((job) => ({
@@ -386,12 +386,20 @@ http.route({
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
         startedAt: job.startedAt,
-        heartbeatAt: job.heartbeatAt,
-        cancelRequestedAt: job.cancelRequestedAt,
         completedAt: job.completedAt,
       })),
     });
   }),
 });
 
+http.route({
+  path: "/jobs/control",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) return Response.json({ error: "Unauthorized." }, { status: 401 });
+    const body = await request.json();
+    if (typeof body.jobId !== "string") return Response.json({ error: "jobId required" }, { status: 400 });
+    return Response.json(await ctx.runMutation(internal.jobs.controlJob, { jobId: body.jobId, claim: body.claim === true }));
+  }),
+});
 export default http;

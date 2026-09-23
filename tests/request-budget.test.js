@@ -32,6 +32,7 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     let requests = 0, models = 0, writes = 0, stored = 0;
     let finalInput;
     t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+      if (String(url).includes('/jobs/control')) return Response.json({status:'running',deadlineAt:Date.now()+480000});
       requests++;
       assert.ok(requests <= requestLimit, 'exceeded request-wide cap');
       if (String(url).includes('api.openai.com')) {
@@ -65,7 +66,7 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     });
     const result = await worker.fetch(new Request('https://test/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VA-Internal-Job-Secret': 'secret' },
-      body: JSON.stringify({ project: { id: 'viking-aries' }, thread: { id: 'thread' }, messages: [{ role: 'user', content: 'Do a large task' }] }),
+      body: JSON.stringify({ jobId: 'budget-test', project: { id: 'viking-aries' }, thread: { id: 'thread' }, messages: [{ role: 'user', content: 'Do a large task' }] }),
     }), { OPENAI_API_KEY: 'test', GITHUB_TOKEN: 'test', VA_USAGE_INGEST_SECRET: 'secret' });
     const body = await result.json();
     assert.equal(result.status, 200);

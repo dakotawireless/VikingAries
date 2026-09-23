@@ -29,6 +29,8 @@ async function runChat(t, responses, { failStore = false, secret = "test-secret"
   const records = [];
   const order = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
+    if (String(url).includes("/jobs/control")) return Response.json({status:"running",deadlineAt:Date.now()+480000});
+    if (String(url).endsWith("/state")) return Response.json({ entries: [] });
     if (String(url).includes("/usage/record")) {
       order.push("record");
       records.push(JSON.parse(init.body));
@@ -43,8 +45,8 @@ async function runChat(t, responses, { failStore = false, secret = "test-secret"
     return Response.json(next);
   });
   const result = await worker.fetch(new Request("https://va.test/api/chat", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project: { id: "test-project", name: "Test project" },
+    method: "POST", headers: { "Content-Type": "application/json", "X-VA-Internal-Job-Secret": secret },
+    body: JSON.stringify({ jobId: "usage-test", project: { id: "test-project", name: "Test project" },
       thread: { id: "test-thread" }, messages: [{ role: "user", content: "Test" }] }),
   }), { OPENAI_API_KEY: "test-only", VA_USAGE_INGEST_SECRET: secret });
   return { status: result.status, body: await result.json(), records, order };
@@ -80,11 +82,11 @@ test("storage failure warns visibly without breaking chat", async (t) => {
   assert.equal(result.body.usageRecorded, false);
   assert.match(result.body.text, /Done\..*API Counter warning/);
 });
-test("missing ingestion secret warns without inventing stored totals", async (t) => {
+test("missing control secret refuses execution without spending tokens", async (t) => {
   const result = await runChat(t, [response("a")], { secret: "" });
   assert.equal(result.records.length, 0);
-  assert.equal(result.body.usageRecorded, false);
-  assert.match(result.body.text, /API Counter warning/);
+  assert.equal(result.status, 409);
+  assert.equal(result.order.length, 0);
 });
 test("missing provider usage is not recorded as a zero-cost call", async (t) => {
   const result = await runChat(t, [response("a", { usage: undefined })]);

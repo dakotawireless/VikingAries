@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { currentRunSignal } from './run-control.js';
 
 const requests = new AsyncLocalStorage();
 export const MAX_AGENT_ROUNDS = 32;
@@ -13,13 +14,7 @@ export class RequestBudgetExceeded extends Error {
 }
 
 export function withRequestBudget(callback) {
-  return requests.run({ used: 0, secrets: new Map(), abortSignal: null }, callback);
-}
-
-export function setRequestAbortSignal(signal) {
-  const state = requests.getStore();
-  if (!state) return;
-  state.abortSignal = signal || null;
+  return requests.run({ used: 0, secrets: new Map() }, callback);
 }
 
 export function remainingRequests() {
@@ -69,18 +64,16 @@ function redirectedInit(init, status, fromUrl, toUrl) {
 }
 
 export async function budgetedFetch(input, init) {
+  const signal = currentRunSignal();
+  if (signal) {
+    signal.throwIfAborted();
+    init = { ...init, signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal };
+  }
   const state = requests.getStore();
   if (!state) return globalThis.fetch(input, init);
 
   let currentInput = input;
   let currentInit = { ...(init || {}), redirect: "manual" };
-
-  if (state.abortSignal) {
-    currentInit.signal =
-      currentInit.signal && currentInit.signal !== state.abortSignal
-        ? AbortSignal.any([currentInit.signal, state.abortSignal])
-        : state.abortSignal;
-  }
 
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
     consume();

@@ -1120,6 +1120,8 @@ function ChatWorkspace({ project, active = true }) {
   const recognitionSessionRef = useRef(0);
   const submitGuardRef = useRef(false);
   const clearDraftRef = useRef(false);
+  const directRequestControllerRef = useRef(null);
+  const directJobIdRef = useRef("");
   const stoppedJobIdsRef = useRef(new Set());
 
   const answeredJobIds = new Set(
@@ -1136,11 +1138,8 @@ function ChatWorkspace({ project, active = true }) {
       !stoppedJobIdsRef.current.has(message.jobId)
   );
   const hasPendingJob = (activeThread?.messages || []).some(
-    (message) =>
-      message.role === "user" &&
-      (message.queueStatus === "running" || message.queueStatus === "queued") &&
-      message.jobId &&
-      !stoppedJobIdsRef.current.has(message.jobId)
+    message => message.role === "user" && message.jobId &&
+      ["queued", "running"].includes(message.queueStatus)
   );
 
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
@@ -1309,19 +1308,18 @@ function ChatWorkspace({ project, active = true }) {
     const sortedJobs = [...jobs].sort(
       (left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0)
     );
-    const serverJobIds = new Set(sortedJobs.map((job) => job.jobId));
 
-    for (const rawJob of sortedJobs) {
-      const canonicalStatus = rawJob.status === "canceled" ? "cancelled" : rawJob.status;
+    for (const entry of sortedJobs) {
+      const rawJob = entry.status === "cancelled" ? { ...entry, status: "canceled" } : entry;
       const job = stoppedJobIdsRef.current.has(rawJob.jobId)
         ? {
             ...rawJob,
-            status: "cancelled",
+            status: "canceled",
             error: "Stopped by the owner.",
             completedAt: rawJob.completedAt || Date.now(),
             updatedAt: Date.now(),
           }
-        : { ...rawJob, status: canonicalStatus };
+        : rawJob;
 
       let userIndex = next.findIndex(
         (message) =>
@@ -1338,7 +1336,6 @@ function ChatWorkspace({ project, active = true }) {
           role: "user",
           content: job.userMessageContent,
           timestamp: formatChatTimestamp(job.createdAt),
-          queuedAt: job.createdAt,
           queueStatus: job.status,
           progress: Array.isArray(job.progress) ? job.progress : [],
         });
@@ -1349,7 +1346,9 @@ function ChatWorkspace({ project, active = true }) {
           jobId: job.jobId,
           model: job.model || next[userIndex].model || null,
           queueStatus: job.status,
-          progress: Array.isArray(job.progress) ? job.progress : next[userIndex].progress || [],
+          progress: Array.isArray(job.progress)
+            ? job.progress
+            : next[userIndex].progress || [],
         };
       }
 
@@ -1359,16 +1358,12 @@ function ChatWorkspace({ project, active = true }) {
         if (
           message.role === "assistant" &&
           (message.jobId === job.jobId || message.id === assistantId)
-        ) next.splice(index, 1);
+        ) {
+          next.splice(index, 1);
+        }
       }
 
-      const terminal =
-        job.status === "completed" ||
-        job.status === "failed" ||
-        job.status === "cancelled" ||
-        job.status === "timed_out";
-
-      if (terminal && userIndex >= 0) {
+      if ((job.status === "completed" || job.status === "failed" || job.status === "timed_out" || job.status === "canceled") && userIndex >= 0) {
         userIndex = next.findIndex(
           (message) =>
             message.role === "user" &&
@@ -1376,19 +1371,16 @@ function ChatWorkspace({ project, active = true }) {
               (job.userMessageId && message.id === job.userMessageId))
         );
         const content =
-          job.status === "cancelled"
+          job.status === "canceled"
             ? "Stopped by the owner."
-            : job.status === "timed_out"
-              ? `I couldn’t complete that request. ${job.error || "The run timed out before completion."}`
-              : job.status === "failed"
-                ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
-                : job.resultText || "The background job completed without response text.";
+            : (job.status === "failed" || job.status === "timed_out")
+              ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
+              : job.resultText || "The background job completed without response text.";
 
         next.splice(userIndex + 1, 0, {
           id: assistantId,
           jobId: job.jobId,
           role: "assistant",
-          model: job.model || null,
           content,
           timestamp: formatChatTimestamp(job.completedAt || job.updatedAt),
           error: job.status === "failed" || job.status === "timed_out",
@@ -1396,47 +1388,16 @@ function ChatWorkspace({ project, active = true }) {
       }
     }
 
-    // Old browser-only runs have no server job after refresh. Reconcile them
-    // instead of showing Working forever. Fresh queue submissions get 15 seconds
-    // to appear server-side before being treated as orphaned.
-    const now = Date.now();
-    for (let index = 0; index < next.length; index += 1) {
-      const message = next[index];
-      if (
-        message.role !== "user" ||
-        !message.jobId ||
-        (message.queueStatus !== "running" && message.queueStatus !== "queued") ||
-        serverJobIds.has(message.jobId)
-      ) continue;
-
-      const queuedAt = Number(message.queuedAt || 0);
-      if (queuedAt && now - queuedAt < 15000) continue;
-
-      next[index] = { ...message, queueStatus: "timed_out" };
-      const assistantId = `assistant-${message.jobId}`;
-      const alreadyHasTerminal = next.some(
-        (candidate) =>
-          candidate.role === "assistant" &&
-          (candidate.jobId === message.jobId || candidate.id === assistantId)
-      );
-      if (!alreadyHasTerminal) {
-        next.splice(index + 1, 0, {
-          id: assistantId,
-          jobId: message.jobId,
-          role: "assistant",
-          content:
-            "I couldn’t complete that request. The previous run no longer exists on the backend and was reconciled as timed out.",
-          timestamp: formatChatTime(),
-          error: true,
-        });
-        index += 1;
-      }
-    }
-
-    return next;
+    const known = new Set(jobs.map(job => job.jobId));
+    return next.map(message => message.role === "user" && message.jobId &&
+      ["running", "queued"].includes(message.queueStatus) && !known.has(message.jobId) && !submitGuardRef.current
+      ? { ...message, queueStatus: "timed_out", progress: [], interrupted: true }
+      : message);
   };
 
+  const jobSyncSequence = useRef(0);
   const syncProjectJobs = async () => {
+    const sequence = ++jobSyncSequence.current;
     try {
       const response = await fetch(
         `/api/jobs?projectId=${encodeURIComponent(project.id)}`,
@@ -1447,6 +1408,7 @@ function ChatWorkspace({ project, active = true }) {
         throw new Error(payload.error || "Could not load background jobs.");
       }
 
+      if (sequence !== jobSyncSequence.current) return;
       const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
       setThreads((current) =>
         current.map((thread) => ({
@@ -1475,7 +1437,7 @@ function ChatWorkspace({ project, active = true }) {
         (job) => job.status === "queued" && !localAnsweredJobIds.has(job.jobId)
       );
       const hasPending = running.length > 0 || queued.length > 0;
-      setSending(hasPending);
+      setSending(hasPending || submitGuardRef.current);
 
       if (running.length) {
         setStatusText(
@@ -1498,7 +1460,10 @@ function ChatWorkspace({ project, active = true }) {
     const timer = window.setInterval(() => {
       if (active || sending) syncProjectJobs();
     }, 1800);
-    return () => window.clearInterval(timer);
+    const reconnect = () => syncProjectJobs();
+    window.addEventListener("online", reconnect);
+    window.addEventListener("focus", reconnect);
+    return () => { window.clearInterval(timer); window.removeEventListener("online", reconnect); window.removeEventListener("focus", reconnect); };
   }, [project.id, activeThreadId, active, sending]);
 
   const createNewChat = () => {
@@ -1570,19 +1535,31 @@ function ChatWorkspace({ project, active = true }) {
     const activeRecognition = recognitionRef.current;
     recognitionRef.current = null;
     if (activeRecognition) {
-      try { activeRecognition.abort?.(); } catch { activeRecognition.stop?.(); }
+      try {
+        activeRecognition.abort?.();
+      } catch {
+        activeRecognition.stop?.();
+      }
       setListening(false);
     }
 
     const jobId = crypto.randomUUID();
     stoppedJobIdsRef.current.delete(jobId);
     const threadId = activeThread.id;
+    const threadAlreadyWorking =
+      Boolean(directRequestControllerRef.current) ||
+      hasUnansweredRunningJob;
     const sendRecommendation =
-      repairFailureEscalation(activeThread.messages, typedContent) || modelRecommendation;
+      repairFailureEscalation(activeThread.messages, typedContent) ||
+      modelRecommendation;
     const requestModel =
       selectedModel === VA_AUTO_MODEL
         ? sendRecommendation?.id || "gpt-5.6-luna"
         : selectedModel;
+
+    // Model choices apply to one submission only. Always return the picker to
+    // Auto immediately after accepting the request, including when the owner
+    // selected a recommendation or manually chose a higher-cost model.
     setSelectedModel(VA_AUTO_MODEL);
 
     const userMessage = {
@@ -1609,10 +1586,13 @@ function ChatWorkspace({ project, active = true }) {
           }
         : {}),
       timestamp: formatChatTime(),
-      queuedAt: Date.now(),
-      queueStatus: "queued",
+      queueStatus: threadAlreadyWorking ? "queued" : "running",
     };
 
+    // Conversation history keeps text only. Re-sending historical binary
+    // attachments on every later message made tiny prompts carry old screenshots
+    // and PDFs again, bloating jobs and provider requests. Only this request's
+    // newly attached files are sent as binary inputs.
     const requestMessages = [...activeThread.messages, userMessage]
       .filter(
         (message) =>
@@ -1636,6 +1616,7 @@ function ChatWorkspace({ project, active = true }) {
     }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
+    const alreadyWorking = threadAlreadyWorking;
 
     updateThread(threadId, (thread) => ({
       ...thread,
@@ -1650,71 +1631,92 @@ function ChatWorkspace({ project, active = true }) {
       messages: [...thread.messages, userMessage],
     }));
 
+    // Clear the persisted composer synchronously before the state update. The
+    // guard also prevents the draft persistence effect from writing the just-
+    // submitted request back during the same render cycle.
     clearDraftRef.current = true;
-    try { window.localStorage.removeItem(`viking-aries-draft:${project.id}`); } catch {}
+    try {
+      window.localStorage.removeItem(`viking-aries-draft:${project.id}`);
+    } catch {
+      // Ignore browser storage failures.
+    }
     setDraft("");
     setAttachments([]);
+
     setSending(true);
-    setStatusText("Message queued…");
+    setStatusText(alreadyWorking ? "Message queued…" : "Viking Aries is starting…");
 
     try {
-      const response = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          project: {
-            id: project.id,
-            name: project.name,
-            repository: integrationMappings.github?.enabled
-              ? integrationMappings.github.repository || project.repository || null
-              : project.repository || null,
-            defaultBranch: integrationMappings.github?.branch || "main",
-            deploymentUrl: integrationMappings.cloudflare?.enabled
-              ? integrationMappings.cloudflare.deploymentUrl || project.deploymentUrl || null
-              : project.deploymentUrl || null,
-            cloudflareWorker: integrationMappings.cloudflare?.worker || null,
-            backend: project.backend || (integrationMappings.convex?.enabled ? "Convex" : null),
-            backendDeployment: integrationMappings.convex?.deployment || null,
-            backendUrl: integrationMappings.convex?.enabled
-              ? integrationMappings.convex.url || project.backendUrl || null
-              : project.backendUrl || null,
-            convexDashboardUrl: integrationMappings.convex?.dashboardUrl || project.convexDashboardUrl || null,
-            driveFolderUrl: integrationMappings.drive?.enabled ? integrationMappings.drive.folderUrl || null : null,
-            gmailIdentity: integrationMappings.gmail?.enabled ? integrationMappings.gmail.identity || null : null,
-            status: project.status || null,
-            contextSummary: project.contextSummary || null,
-          },
-          thread: { id: threadId, title: activeThread.title },
-          messages: requestMessages,
-          model: requestModel,
-        }),
-      });
+      {
+        const response = await fetch("/api/jobs", {
+          signal: AbortSignal.timeout(20000),
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId,
+            project: {
+              id: project.id,
+              name: project.name,
+              repository: integrationMappings.github?.enabled
+                ? integrationMappings.github.repository || project.repository || null
+                : project.repository || null,
+              defaultBranch: integrationMappings.github?.branch || "main",
+              deploymentUrl: integrationMappings.cloudflare?.enabled
+                ? integrationMappings.cloudflare.deploymentUrl || project.deploymentUrl || null
+                : project.deploymentUrl || null,
+              cloudflareWorker: integrationMappings.cloudflare?.worker || null,
+              backend: project.backend || (integrationMappings.convex?.enabled ? "Convex" : null),
+              backendDeployment: integrationMappings.convex?.deployment || null,
+              backendUrl: integrationMappings.convex?.enabled
+                ? integrationMappings.convex.url || project.backendUrl || null
+                : project.backendUrl || null,
+              convexDashboardUrl: integrationMappings.convex?.dashboardUrl || project.convexDashboardUrl || null,
+              driveFolderUrl: integrationMappings.drive?.enabled ? integrationMappings.drive.folderUrl || null : null,
+              gmailIdentity: integrationMappings.gmail?.enabled ? integrationMappings.gmail.identity || null : null,
+              status: project.status || null,
+              contextSummary: project.contextSummary || null,
+            },
+            thread: {
+              id: threadId,
+              title: activeThread.title,
+            },
+            messages: requestMessages,
+            model: requestModel,
+          }),
+        });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Could not queue the AI job.");
-      setStatusText("Viking Aries is starting…");
-      window.setTimeout(syncProjectJobs, 250);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not queue the AI job.");
+        }
+
+        setStatusText("Message queued…");
+        window.setTimeout(syncProjectJobs, 250);
+      }
     } catch (error) {
       updateThread(threadId, (thread) => ({
         ...thread,
         messages: thread.messages.map((message) =>
-          message.jobId === jobId ? { ...message, queueStatus: "failed" } : message
+          message.jobId === jobId
+            ? { ...message, queueStatus: "failed" }
+            : message
         ),
       }));
+
+      const errorMessage = {
+        id: `error-${jobId}`,
+        jobId,
+        role: "assistant",
+        content: `I couldn’t queue that request. ${error.message}`,
+        timestamp: formatChatTime(),
+        error: true,
+      };
       updateThread(threadId, (thread) => ({
         ...thread,
-        messages: [...thread.messages, {
-          id: `error-${jobId}`,
-          jobId,
-          role: "assistant",
-          content: `I couldn’t queue that request. ${error.message}`,
-          timestamp: formatChatTime(),
-          error: true,
-        }],
+        messages: [...thread.messages, errorMessage],
       }));
-      setSending(false);
       setStatusText("Queue needs attention");
+      window.setTimeout(syncProjectJobs, 250);
     } finally {
       submitGuardRef.current = false;
       setQueueing(false);
@@ -1722,59 +1724,22 @@ function ChatWorkspace({ project, active = true }) {
     }
   };
 
-    const stopAiJobs = async () => {
-    if (!activeThread) return;
+  const stopAiJobs = async () => {
+    if (!activeThread || (!sending && !hasPendingJob)) return;
 
-    const stoppedIds = new Set(
-      activeThread.messages
-        .filter(
-          (message) =>
-            message.jobId &&
-            (message.queueStatus === "running" || message.queueStatus === "queued")
-        )
-        .map((message) => message.jobId)
-    );
-    for (const jobId of stoppedIds) stoppedJobIdsRef.current.add(jobId);
-
-    submitGuardRef.current = false;
-    setQueueing(false);
-    setSending(false);
-    setStatusText("Stopped");
-
-    updateThread(activeThread.id, (thread) => ({
-      ...thread,
-      messages: thread.messages.map((message) =>
-        message.jobId && stoppedIds.has(message.jobId)
-          ? {
-              ...message,
-              queueStatus:
-                message.role === "user" ? "cancelled" : message.queueStatus,
-            }
-          : message
-      ),
-    }));
-
-    // Server-side cancellation is best effort. Local Stop is authoritative so a
-    // late queue poll or provider response cannot resurrect the stopped request.
+    jobSyncSequence.current += 1;
+    setStatusText("Stopping…");
     try {
       const response = await fetch("/api/jobs/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: project.id,
-          threadId: activeThread.id,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, threadId: activeThread.id }),
+        signal: AbortSignal.timeout(15000),
       });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Could not cancel background jobs.");
-      }
+      if (!response.ok) throw new Error("Server did not confirm cancellation. Try Stop again.");
       await syncProjectJobs();
-      setStatusText("Stopped");
-    } catch {
-      // Keep the owner-visible state stopped. The stopped-job guard continues
-      // discarding late background state even if the cancellation request fails.
-      setStatusText("Stopped");
+      setStatusText("Stopped; in-flight requests are being aborted.");
+    } catch (error) {
+      setStatusText(error.message || "Cancellation not confirmed. Try Stop again.");
     }
   };
 
@@ -2072,18 +2037,15 @@ function ChatWorkspace({ project, active = true }) {
                     (message.queueStatus === "queued" ||
                       message.queueStatus === "running" ||
                       message.queueStatus === "failed" ||
-                      message.queueStatus === "cancelled" ||
-                      message.queueStatus === "timed_out") && (
+                      message.queueStatus === "timed_out" ||
+                      message.queueStatus === "canceled") && (
                       <span className={`message-queue-status ${message.queueStatus}`}>
                         {message.queueStatus === "queued"
                           ? "Queued"
                           : message.queueStatus === "running"
                             ? "Working"
-                            : message.queueStatus === "cancelled"
-                              ? "Stopped"
-                              : message.queueStatus === "timed_out"
-                                ? "Timed out"
-                                : "Failed"}
+                            : message.queueStatus === "timed_out" ? "Interrupted — not replayed"
+                            : message.queueStatus === "canceled" ? "Cancelled" : "Failed"}
                       </span>
                     )}
 
@@ -2295,7 +2257,7 @@ function ChatWorkspace({ project, active = true }) {
           className="stop-button"
           type="button"
           onClick={stopAiJobs}
-          disabled={!hasPendingJob || queueing}
+          disabled={(!sending && !hasPendingJob) || queueing}
           title="Stop Viking Aries from continuing"
           aria-label="Stop Viking Aries from continuing"
         >
