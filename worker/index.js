@@ -4008,6 +4008,9 @@ const worker = {
         "This is a generalized/current OpenAI model question. Use web search to verify current OpenAI documentation, answer the model question directly, and do not discuss or inspect Viking Aries configuration unless the owner asks about configuration."
       );
     }
+    if (!modelKnowledgeQuestion && projectFilesToolEnabled(ownerAuthenticated, env, projectId)) {
+      runtimeCapabilityNotes.push("The read-only Files & Media tool is available for the currently selected project. Use it first for filenames, file types, sizes, upload times, and file record identifiers shown in Files & Media. It reads only that project's live Convex records and does not expose private storage URLs or secrets.");
+    }
     if (!modelKnowledgeQuestion && githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
       runtimeCapabilityNotes.push("GitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.");
     }
