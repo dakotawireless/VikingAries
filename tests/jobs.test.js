@@ -62,3 +62,22 @@ test('job list includes active jobs outside recent completed history',async()=>{
  const {ctx}=database([...history,{...queued(),_id:'active',jobId:'active'}]);
  assert.ok((await call('listProjectJobs',ctx,{projectId:'p',limit:100})).some(r=>r.jobId==='active'));
 });
+
+test('interrupted finalization preserves the recovery response and diagnostics',async()=>{
+ const now=Date.now();
+ const {ctx,rows,scheduled}=database([{...queued(),status:'running',startedAt:now,deadlineAt:now+60000}]);
+ const result=await call('finalizeInterruptedJob',ctx,{
+   jobId:'a',
+   status:'paused',
+   resultText:'## Stop reason\nExecution/tool budget reached.\n\n## Next best action\nSend **continue**.',
+   stopReason:'Execution/tool budget reached',
+   diagnosticsJson:JSON.stringify({toolRounds:8,toolExecutions:20,writesOccurred:true}),
+   completedAt:now+100,
+ });
+ assert.equal(result,true);
+ assert.equal(rows[0].status,'paused');
+ assert.match(rows[0].resultText,/## Stop reason/);
+ assert.equal(rows[0].stopReason,'Execution/tool budget reached');
+ assert.match(rows[0].diagnosticsJson,/"toolExecutions":20/);
+ assert.equal(scheduled.length,1);
+});
