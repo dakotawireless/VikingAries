@@ -1612,6 +1612,32 @@ async function executeConvexTool(call, token, projectMetadata) {
   return convexGetDeployment(token, projectMetadata.backendDeployment);
 }
 
+function projectFilesToolEnabled(authenticated, env, projectId) {
+  return Boolean(authenticated && env.VA_USAGE_INGEST_SECRET && registeredProjectConfig(projectId));
+}
+
+function buildProjectFilesTools() {
+  return [{
+    type: "function",
+    name: "files_media_list_project_files",
+    description:
+      "List the live Files & Media records for the currently selected Viking Aries project. Use this tool first for any question about files shown in Files & Media, including what files exist, their filenames, MIME types, sizes, upload dates, or file record identifiers. This is project-scoped Convex data, not repository content: do not inspect GitHub to answer those questions.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+    strict: false,
+  }];
+}
+
+async function executeProjectFilesTool(call, env, projectId) {
+  if (call.name !== "files_media_list_project_files") {
+    throw new Error(`Unsupported Files & Media tool: ${call.name}`);
+  }
+  return listVAProjectFiles(env, projectId);
+}
+
 function extractFunctionCalls(payload) {
   return (payload?.output || []).filter((item) => item?.type === "function_call");
 }
