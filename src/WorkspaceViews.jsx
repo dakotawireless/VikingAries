@@ -952,12 +952,12 @@ function FilesMediaView({ project }) {
                   <StatusPill status={item.status} />
                 </div>
                 <p>{privateCopy || browserCopy ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
-                {privateCopy ? (
+                {privateCopy || retiredGithubUpload ? (
                   <div className="media-card-actions">
                     {isImage && (
                       <a
                         className="media-download"
-                        href={`/api/files/preview?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`}
+                        href={previewUrl}
                         target="_blank"
                         rel="noreferrer"
                       >
