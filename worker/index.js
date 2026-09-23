@@ -3219,6 +3219,7 @@ const worker = {
       url.pathname === "/api/files/preview" ||
       url.pathname === "/api/files/delete" ||
       url.pathname === "/api/files/list" ||
+      url.pathname === "/api/files/copy" ||
       url.pathname === "/api/files/legacy-download" ||
       url.pathname === "/api/files/legacy-preview"
     ) {
@@ -3230,6 +3231,77 @@ const worker = {
       const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
       if (!secret) {
         return json({ error: "Private VA storage is not configured." }, { status: 503 });
+      }
+
+      if (url.pathname === "/api/files/list" && (url.searchParams.get("projectId") || "").trim() === "all") {
+        try {
+          const results = await Promise.all(
+            Object.keys(PROJECT_RUNTIME_CONFIG).sort().map(async (id) => {
+              const response = await fetch(
+                `${VA_CONVEX_SITE_URL}/files/list?projectId=${encodeURIComponent(id)}`,
+                { headers: { Authorization: `Bearer ${secret}` } }
+              );
+              const payload = await response.json().catch(() => ({}));
+              return {
+                projectId: id,
+                projectName: registeredProjectName(id),
+                files: response.ok && Array.isArray(payload.files)
+                  ? payload.files.map((file) => ({
+                      ...file,
+                      projectId: id,
+                      projectName: registeredProjectName(id),
+                    }))
+                  : [],
+                error: response.ok ? null : (payload.error || `Files query failed with status ${response.status}`),
+              };
+            })
+          );
+          return json({
+            ok: true,
+            scope: "all-owner-projects",
+            projects: results.map(({ projectId, projectName, error }) => ({ projectId, projectName, error })),
+            files: results.flatMap((result) => result.files)
+              .sort((a, b) => Number(b.uploadedAt || 0) - Number(a.uploadedAt || 0)),
+          }, { headers: { "Cache-Control": "private, no-store" } });
+        } catch (error) {
+          return json(
+            { error: error instanceof Error ? error.message : "Could not list owner project files." },
+            { status: 502 }
+          );
+        }
+      }
+
+      if (url.pathname === "/api/files/copy" && request.method === "POST") {
+        const bodyText = await request.text();
+        let body = {};
+        try { body = JSON.parse(bodyText || "{}"); } catch { body = {}; }
+        const sourceProjectId = String(body?.sourceProjectId || "").trim();
+        const destinationProjectId = String(body?.destinationProjectId || "").trim();
+        if (!registeredProjectConfig(sourceProjectId) || !registeredProjectConfig(destinationProjectId)) {
+          return json({ error: "Both source and destination must be registered owner projects." }, { status: 400 });
+        }
+        try {
+          const response = await fetch(`${VA_CONVEX_SITE_URL}/files/copy`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              "Content-Type": "application/json",
+            },
+            body: bodyText,
+          });
+          const responseHeaders = new Headers(response.headers);
+          responseHeaders.set("Cache-Control", "private, no-store");
+          return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+          });
+        } catch (error) {
+          return json(
+            { error: error instanceof Error ? error.message : "Cross-project file copy failed." },
+            { status: 502 }
+          );
+        }
       }
 
       const legacyFileRoute =
@@ -3269,7 +3341,13 @@ const worker = {
         const headers = new Headers({ Authorization: `Bearer ${secret}` });
         const init = { method: request.method, headers };
         if (request.method === "POST") {
-          init.body = await request.formData();
+          const contentType = request.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            headers.set("Content-Type", "application/json");
+            init.body = await request.text();
+          } else {
+            init.body = await request.formData();
+          }
         }
         const response = await fetch(target.toString(), init);
         const responseHeaders = new Headers(response.headers);
