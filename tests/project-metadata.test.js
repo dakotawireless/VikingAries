@@ -26,7 +26,18 @@ test("AI can update Dakota Wireless POS metadata without changing provider mappi
         if (payload.key === "viking-aries:project-metadata:dw-pos") metadataWrite = payload;
         return Response.json({ ok: true, updatedAt: payload.updatedAt || Date.now() });
       }
-      return Response.json({ entries: [] });
+      return Response.json({
+        entries: [{
+          key: "viking-aries:project-metadata:dw-pos",
+          value: JSON.stringify({
+            deploymentUrl: "https://migration-staging-dakota-wireless-pos---new.erik-f2c.workers.dev",
+            status: "Migration",
+            navigationLinks: [{ id: "open-app", label: "Open App", path: "/" }],
+          }),
+          updatedAt: 1,
+          deleted: false,
+        }],
+      });
     }
 
     if (target.includes("api.openai.com")) {
