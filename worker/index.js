@@ -4486,18 +4486,14 @@ const worker = {
         if (budgetPaused) break;
       }
     } catch (error) {
-      if (budgetPaused || error instanceof RequestBudgetExceeded) {
-        return json({
-          text: "Execution paused at the batch limit. The progress summary could not be generated. Send continue to inspect the current state and finish remaining work. Do not repeat completed writes.\n" + formatVerifiedActionHistory(actionReceipts) + usageWarning(),
-          model, responseId: null, toolsAvailable: tools.map((tool) => tool.name),
-          usage: chatUsage, usageRecorded, actionReceipts,
-          executionStatus: "paused", continuationRequired: true,
-        });
-      }
-      return json(
-        { error: (error.message || "Could not reach the AI service.") + usageWarning(), usage: chatUsage, usageRecorded, actionReceipts },
-        { status: error.status || 502 }
-      );
+      return json(await buildRecoveryResult(error));
+    }
+
+    if (budgetPaused) {
+      return json(await buildRecoveryResult(
+        new RequestBudgetExceeded(),
+        { code: "paused", label: "Execution/tool budget reached" }
+      ));
     }
 
     const pauseNotice = "Execution paused at the batch limit. Completed actions are preserved. Send continue to work on the remaining steps.";
