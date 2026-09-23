@@ -1,181 +1,59 @@
-/* Chat action layout refinements */
-.message-actions {
-  display: flex;
-  justify-content: flex-end;
-  min-height: 26px;
-  padding-top: 4px;
+/* High-contrast message metadata badges: model and run-status pills must remain
+   readable in every theme and against every chat surface. */
+.message-model-badge,
+.message-queue-status {
+  color: #ffffff !important;
+  background: #163f5d !important;
+  border: 1px solid #0a2b43 !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .35);
 }
 
-.copy-message-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin: 0;
+.message-queue-status.queued {
+  color: #241d00 !important;
+  background: #ffe88a !important;
+  border-color: #c9a900 !important;
+  text-shadow: none;
 }
 
-.jump-to-bottom-button {
-  /* Keep Latest clear of the composer/send control. */
-  bottom: 128px;
+.message-queue-status.running {
+  color: #ffffff !important;
+  background: #075e9f !important;
+  border-color: #034b80 !important;
 }
 
-/* Keep the image data in the submitted message, but present it as a compact
-   visual attachment instead of exposing the long data URL in the composer. */
-.composer {
-  position: relative;
+.message-queue-status.failed,
+.message-queue-status.timed_out,
+.message-queue-status.paused,
+.message-queue-status.canceled {
+  color: #ffffff !important;
+  background: #8f2f2a !important;
+  border-color: #641d1a !important;
 }
 
-.pasted-image-preview {
-  position: absolute;
-  left: 48px;
-  bottom: calc(100% + 8px);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 220px;
-  padding: 5px 8px 5px 5px;
-  border: 1px solid var(--border, #d9e1ea);
-  border-radius: 10px;
-  background: var(--surface, #fff);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
-  color: var(--text-muted, #64748b);
-  font-size: 12px;
-  pointer-events: auto;
+[data-theme="metal"] .message-model-badge,
+[data-theme="metal"] .message-queue-status {
+  color: #ffffff !important;
+  background: #3b291a !important;
+  border-color: #d6a354 !important;
 }
 
-.pasted-image-preview img {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  object-fit: cover;
-  border-radius: 6px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+[data-theme="metal"] .message-queue-status.queued {
+  color: #171009 !important;
+  background: #e0b66f !important;
+  border-color: #f0ce91 !important;
 }
 
-.pasted-image-remove {
-  width: 22px;
-  height: 22px;
-  margin-left: 2px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
+[data-theme="metal"] .message-queue-status.running {
+  color: #ffffff !important;
+  background: #245979 !important;
+  border-color: #7fb4d2 !important;
 }
 
-.pasted-image-remove:hover,
-.pasted-image-remove:focus-visible {
-  background: rgba(15, 23, 42, 0.08);
-  outline: none;
-}
-
-/* Render pasted photos in the conversation as images, never as their
-   underlying data-URL/markdown source. The surrounding link opens the
-   original image at full size in a new tab. */
-.chat-pasted-image-link {
-  display: block;
-  width: fit-content;
-  max-width: 100%;
-  border-radius: 10px;
-  cursor: zoom-in;
-}
-
-.chat-pasted-image-link:focus-visible {
-  outline: 2px solid #4aa7f3;
-  outline-offset: 3px;
-}
-
-.chat-pasted-image {
-  display: block;
-  width: min(100%, 280px);
-  max-height: 220px;
-  margin: 2px 0;
-  object-fit: contain;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 10px;
-  background: #fff;
-}
-
-.chat-pasted-image-link:hover .chat-pasted-image {
-  border-color: #79b7e6;
-  box-shadow: 0 0 0 2px rgba(8, 120, 223, 0.1);
-}
-
-/* Keep the hidden-preview toolbar reachable on desktop. Previously its
-   auto-sized pane could collapse behind the workspace, leaving no visible
-   control for restoring the preview. */
-.preview-hidden .preview-pane {
-  width: min(430px, calc(100vw - 20px));
-  min-width: 300px;
-}
-
-.preview-hidden .preview-toolbar {
-  min-width: 300px;
-}
-
-/* The preview container intentionally hides helper labels in a narrow pane,
-   but the helper-app icon buttons must remain available. */
-@container previewpane (max-width: 430px) {
-  .preview-integrations {
-    display: flex !important;
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow-x: auto;
-  }
-
-  .preview-integrations .tool-button {
-    display: inline-flex;
-    flex: 0 0 28px;
-    width: 28px;
-    min-width: 28px;
-    height: 28px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .preview-integrations .tool-button span {
-    display: none;
-  }
-}
-
-/* Keep the chat composer reachable on phones. The desktop flex layout can
-   otherwise place the sticky composer below the mobile viewport after the
-   top bar changes the available height. */
-@media (max-width: 900px) {
-  .chat-workspace-host {
-    position: relative;
-    height: calc(100dvh - 56px);
-    min-height: calc(100dvh - 56px);
-  }
-
-  .chat-workspace-host .workspace-scroll {
-    padding-bottom: 116px;
-  }
-
-  .chat-workspace-host .composer {
-    position: sticky;
-    bottom: 0;
-    z-index: 20;
-    flex: 0 0 auto;
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
-    background: rgba(247, 249, 251, 0.98);
-  }
-
-  .chat-workspace-host .composer textarea {
-    min-width: 0;
-    width: 100%;
-    opacity: 1;
-  }
-}
-
-@media (max-width: 620px) {
-  .chat-workspace-host .composer {
-    grid-template-columns: 31px 31px minmax(0, 1fr) 42px;
-  }
-
-  .chat-workspace-host .send-button {
-    min-width: 42px;
-  }
+[data-theme="metal"] .message-queue-status.failed,
+[data-theme="metal"] .message-queue-status.timed_out,
+[data-theme="metal"] .message-queue-status.paused,
+[data-theme="metal"] .message-queue-status.canceled {
+  color: #ffffff !important;
+  background: #7f302c !important;
+  border-color: #db8880 !important;
 }
