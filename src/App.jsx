@@ -1148,6 +1148,40 @@ function ChatWorkspace({ project, active = true }) {
     };
   }, [project.id, activeThreadId, active]);
 
+  // A completed request must never remain marked Working. This also repairs
+  // stale state persisted by older builds after refresh.
+  useEffect(() => {
+    if (!activeThread) return;
+
+    const assistantJobIds = new Set(
+      activeThread.messages
+        .filter((message) => message.role === "assistant" && message.jobId)
+        .map((message) => message.jobId)
+    );
+
+    const hasStaleRunning = activeThread.messages.some(
+      (message) =>
+        message.role === "user" &&
+        message.queueStatus === "running" &&
+        message.jobId &&
+        assistantJobIds.has(message.jobId)
+    );
+
+    if (!hasStaleRunning) return;
+
+    updateThread(activeThread.id, (thread) => ({
+      ...thread,
+      messages: thread.messages.map((message) =>
+        message.role === "user" &&
+        message.queueStatus === "running" &&
+        message.jobId &&
+        assistantJobIds.has(message.jobId)
+          ? { ...message, queueStatus: undefined }
+          : message
+      ),
+    }));
+  }, [activeThread?.messages]);
+
   // New messages keep following only if the owner has not manually scrolled up.
   useEffect(() => {
     if (!active || !autoFollowRef.current) return;
@@ -1417,9 +1451,18 @@ function ChatWorkspace({ project, active = true }) {
 
     const jobId = crypto.randomUUID();
     const threadId = activeThread.id;
-    const threadAlreadyWorking = activeThread.messages.some(
-      (message) => message.queueStatus === "running"
-    );
+    const threadAlreadyWorking =
+      Boolean(directRequestControllerRef.current) ||
+      activeThread.messages.some(
+        (message) =>
+          message.queueStatus === "running" &&
+          !activeThread.messages.some(
+            (reply) =>
+              reply.role === "assistant" &&
+              reply.jobId &&
+              reply.jobId === message.jobId
+          )
+      );
     const requestModel =
       selectedModel === VA_AUTO_MODEL
         ? modelRecommendation?.id || "gpt-5.6-luna"
@@ -1521,12 +1564,19 @@ function ChatWorkspace({ project, active = true }) {
         let progressTimer = null;
         const syncDirectProgress = async () => {
           try {
+            if (directJobIdRef.current !== jobId) return;
+
             const progressResponse = await fetch(
               `/api/progress?jobId=${encodeURIComponent(jobId)}`,
               { cache: "no-store" }
             );
             const progressPayload = await progressResponse.json().catch(() => ({}));
+
+            // The request may have completed while this poll was in flight.
+            // Never let a late progress response restore a stale Working state.
+            if (directJobIdRef.current !== jobId) return;
             if (!progressResponse.ok || !Array.isArray(progressPayload.progress)) return;
+
             updateThread(threadId, (thread) => ({
               ...thread,
               messages: thread.messages.map((message) =>
@@ -1588,6 +1638,10 @@ function ChatWorkspace({ project, active = true }) {
 
           await syncDirectProgress();
 
+          if (directJobIdRef.current === jobId) {
+            directJobIdRef.current = "";
+          }
+
           updateThread(threadId, (thread) => ({
             ...thread,
             messages: [
@@ -1609,6 +1663,9 @@ function ChatWorkspace({ project, active = true }) {
           setStatusText("Ready");
         } catch (error) {
           const stopped = error?.name === "AbortError";
+          if (directJobIdRef.current === jobId) {
+            directJobIdRef.current = "";
+          }
           updateThread(threadId, (thread) => ({
             ...thread,
             messages: [
@@ -1632,8 +1689,10 @@ function ChatWorkspace({ project, active = true }) {
           setStatusText(stopped ? "Stopped" : "Connection needs attention");
         } finally {
           if (progressTimer) window.clearInterval(progressTimer);
-          if (directJobIdRef.current === jobId) {
+          if (directRequestControllerRef.current === controller) {
             directRequestControllerRef.current = null;
+          }
+          if (directJobIdRef.current === jobId) {
             directJobIdRef.current = "";
           }
           setSending(false);
