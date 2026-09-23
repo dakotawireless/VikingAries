@@ -2147,7 +2147,7 @@ async function writeVAState(env, entry) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
 
-  const response = await fetch(`${VA_CONVEX_SITE_URL}/state`, {
+  const response = await globalThis.fetch(`${VA_CONVEX_SITE_URL}/state`, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${secret}`,
