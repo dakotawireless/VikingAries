@@ -409,7 +409,9 @@ function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark"><span className="brand-rune">ᚨ</span></div>
+        <div className="brand-mark">
+          <img src={VIKING_ARIES_MARK_URL} alt="Viking Aries" />
+        </div>
         <div>
           <div className="brand-name">Viking Aries</div>
           <div className="brand-tagline">BUILD. CONNECT. DEPLOY.</div>
