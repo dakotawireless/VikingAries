@@ -6,6 +6,12 @@ export const currentRunSignal = () => runs.getStore()?.signal;
 export const currentRunDeadlineAt = () => runs.getStore()?.deadlineAt || Infinity;
 export const currentRunRecoveryAt = () => runs.getStore()?.recoveryAt || Infinity;
 export const currentRunRecoveryState = () => runs.getStore()?.recoveryState || null;
+export const currentRunIsRecovering = () => Boolean(runs.getStore()?.recovering);
+
+export function beginRunRecoveryMode() {
+  const state = runs.getStore();
+  if (state) state.recovering = true;
+}
 
 export function updateRunRecoveryState(patch) {
   const state = runs.getStore();
