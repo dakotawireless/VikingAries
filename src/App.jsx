@@ -750,9 +750,36 @@ function loadProjectThreads(projectId) {
 
 function loadProjectIntegrationMappings(project) {
   if (MIGRATED_PROJECTS[project.id]) {
+    let migrated;
     try {
-      return migrateProjectMappings(project.id, JSON.parse(window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`)) || {});
-    } catch { return migrateProjectMappings(project.id); }
+      migrated = migrateProjectMappings(
+        project.id,
+        JSON.parse(window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`)) || {}
+      );
+    } catch {
+      migrated = migrateProjectMappings(project.id);
+    }
+    return {
+      ...migrated,
+      github: {
+        ...migrated.github,
+        repository: project.repository || migrated.github?.repository || "",
+        branch: project.defaultBranch || migrated.github?.branch || "main",
+      },
+      cloudflare: {
+        ...migrated.cloudflare,
+        enabled: Boolean(project.cloudflareWorker || project.deploymentUrl || migrated.cloudflare?.enabled),
+        worker: project.cloudflareWorker || migrated.cloudflare?.worker || "",
+        deploymentUrl: project.deploymentUrl || migrated.cloudflare?.deploymentUrl || "",
+      },
+      convex: {
+        ...migrated.convex,
+        enabled: project.backend === "Convex" || Boolean(project.backendUrl || migrated.convex?.enabled),
+        deployment: project.backendDeployment || migrated.convex?.deployment || "",
+        url: project.backendUrl || migrated.convex?.url || "",
+        dashboardUrl: project.convexDashboardUrl || migrated.convex?.dashboardUrl || "",
+      },
+    };
   }
   try {
     const saved = window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`);
@@ -783,13 +810,12 @@ function loadProjectIntegrationMappings(project) {
     convex: {
       enabled: project.backend === "Convex" || Boolean(project.backendUrl),
       deployment:
-        project.id === "dw-pos"
-          ? "sleek-bear-647"
-          : project.id === "timekeeper"
-            ? "aware-caiman-251"
-            : project.id === "viking-aries"
-              ? "flippant-mandrill-487"
-              : "",
+        project.backendDeployment ||
+        (project.id === "timekeeper"
+          ? "aware-caiman-251"
+          : project.id === "viking-aries"
+            ? "flippant-mandrill-487"
+            : ""),
       url: project.backendUrl || "",
       dashboardUrl: project.convexDashboardUrl || "",
     },
