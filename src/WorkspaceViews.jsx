@@ -923,7 +923,14 @@ function FilesMediaView({ project }) {
           const Icon = isImage ? FileImage : FileText;
           const downloadUrl = privateCopy
             ? `/api/files/download?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`
-            : "";
+            : retiredGithubUpload
+              ? `/api/files/legacy-download?projectId=${encodeURIComponent(project.id)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name)}`
+              : "";
+          const previewUrl = privateCopy
+            ? `/api/files/preview?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`
+            : retiredGithubUpload
+              ? `/api/files/legacy-preview?projectId=${encodeURIComponent(project.id)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name)}`
+              : "";
 
           return (
             <section className="workspace-card media-card" key={item.id}>
