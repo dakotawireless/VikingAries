@@ -4555,10 +4555,71 @@ export default {
     try {
       const claimed = await control(true);
       if (claimed.status !== "running") return json({ error: "Execution is " + claimed.status }, { status: 409 });
-      return await withRunControl({ heartbeat: control, deadlineAt: claimed.deadlineAt },
-        () => withRequestBudget(() => worker.fetch(request, env)));
+      return await withRunControl(
+        { heartbeat: control, deadlineAt: claimed.deadlineAt },
+        () => withRequestBudget(async () => {
+          try {
+            return await worker.fetch(request, env);
+          } catch (error) {
+            const stop = classifyRunStop(error);
+            const state = currentRunRecoveryState() || {
+              runId: body.jobId,
+              startedAt: Date.now(),
+              completedOperations: [],
+              writes: [],
+              finalOperation: error?.message || "Worker execution failed",
+            };
+            updateRunRecoveryState({
+              stopReason: stop.label,
+              executionStatus: stop.code,
+              elapsedMs: Date.now() - Number(state.startedAt || Date.now()),
+            });
+            return json({
+              text: recoveryFallbackText(state, stop),
+              executionStatus: stop.code,
+              continuationRequired: true,
+              diagnostics: {
+                runId: body.jobId,
+                stopReason: stop.label,
+                elapsedMs: Date.now() - Number(state.startedAt || Date.now()),
+                toolRounds: state.toolRounds || 0,
+                toolExecutions: state.toolExecutions || 0,
+                lastSuccessfulOperation: state.lastSuccessfulOperation || null,
+                finalOperation: state.finalOperation || null,
+                provider: state.provider || "OpenAI",
+                model: state.model || body.model || null,
+                writesOccurred: (state.writes || []).length > 0,
+              },
+            });
+          }
+        })
+      );
     } catch (error) {
-      return json({ error: error.message || "Execution stopped." }, { status: 502 });
+      const stop = classifyRunStop(error);
+      const state = {
+        runId: body.jobId,
+        startedAt: Date.now(),
+        completedOperations: [],
+        writes: [],
+        finalOperation: error?.message || "Execution control failed",
+      };
+      return json({
+        text: recoveryFallbackText(state, stop),
+        executionStatus: stop.code,
+        continuationRequired: true,
+        diagnostics: {
+          runId: body.jobId,
+          stopReason: stop.label,
+          elapsedMs: 0,
+          toolRounds: 0,
+          toolExecutions: 0,
+          lastSuccessfulOperation: null,
+          finalOperation: state.finalOperation,
+          provider: "OpenAI",
+          model: body.model || null,
+          writesOccurred: false,
+        },
+      });
     }
   },
 };
