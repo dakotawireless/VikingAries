@@ -4084,6 +4084,9 @@ const worker = {
       verifiedActionText
         ? `Verified prior action receipts from the Viking Aries runtime:\n${verifiedActionText}`
         : "",
+      priorRecoveryCheckpoint
+        ? `Saved interrupted-run checkpoint for this continuation request:\n${JSON.stringify(priorRecoveryCheckpoint)}\nResume from these findings. Do not reread completed files unless verification requires it, and never replay a recorded write or destructive action automatically.`
+        : "",
     ].filter(Boolean).join("\n");
 
     const instructions = [
