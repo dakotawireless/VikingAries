@@ -613,12 +613,30 @@ function stripAttachmentMarkers(content) {
 
 function ChatAttachmentCard({ message, onImageOpen }) {
   if (message?.role !== "user") return null;
-  const legacyMeta = message.attachmentMeta || attachmentMetaFromContent(message.content);
-  const items = Array.isArray(message.attachments) && message.attachments.length
-    ? message.attachments
-    : legacyMeta
-      ? [{ ...legacyMeta, fullDataUrl: message.fullSizeImage || "" }]
+
+  const storedItems =
+    Array.isArray(message.attachments) && message.attachments.length
+      ? message.attachments
       : [];
+  const metadataItems =
+    Array.isArray(message.attachmentMeta) && message.attachmentMeta.length
+      ? message.attachmentMeta
+      : message.attachmentMeta && !Array.isArray(message.attachmentMeta)
+        ? [message.attachmentMeta]
+        : [];
+  const contentMeta = attachmentMetaFromContent(message.content);
+
+  const items = storedItems.length
+    ? storedItems
+    : metadataItems.length
+      ? metadataItems.map((item) => ({
+          ...item,
+          fullDataUrl: message.fullSizeImage || "",
+        }))
+      : contentMeta
+        ? [{ ...contentMeta, fullDataUrl: message.fullSizeImage || "" }]
+        : [];
+
   if (!items.length) return null;
 
   return (
@@ -1407,37 +1425,42 @@ function ChatWorkspace({ project, active = true }) {
       model: requestModel,
       role: "user",
       content,
-      attachmentMeta: attachments.map((item) => ({
-        kind: item.kind || "file",
-        name: item.name || "Attachment",
-        type: item.type || "application/octet-stream",
-      })),
-      attachments: attachments.map((item) => ({
-        kind: item.kind || "file",
-        name: item.name || "Attachment",
-        type: item.type || "application/octet-stream",
-        dataUrl: item.dataUrl,
-        thumbnailDataUrl: item.thumbnailDataUrl || "",
-        fullDataUrl: item.fullDataUrl || "",
-      })),
+      ...(attachments.length
+        ? {
+            attachmentMeta: attachments.map((item) => ({
+              kind: item.kind || "file",
+              name: item.name || "Attachment",
+              type: item.type || "application/octet-stream",
+            })),
+            attachments: attachments.map((item) => ({
+              kind: item.kind || "file",
+              name: item.name || "Attachment",
+              type: item.type || "application/octet-stream",
+              dataUrl: item.dataUrl,
+              thumbnailDataUrl: item.thumbnailDataUrl || "",
+              fullDataUrl: item.fullDataUrl || "",
+            })),
+          }
+        : {}),
       timestamp: formatChatTime(),
       queueStatus: "queued",
     };
 
+    // Conversation history keeps text only. Re-sending historical binary
+    // attachments on every later message made tiny prompts carry old screenshots
+    // and PDFs again, bloating jobs and provider requests. Only this request's
+    // newly attached files are sent as binary inputs.
     const requestMessages = [...activeThread.messages, userMessage]
       .filter(
         (message) =>
           (message.role === "user" || message.role === "assistant") &&
           typeof message.content === "string"
       )
-      .map(({ id, jobId: messageJobId, role, content: text, attachments: messageAttachments }) => ({
+      .map(({ id, jobId: messageJobId, role, content: text }) => ({
         id,
         jobId: messageJobId,
         role,
         content: sanitizeLegacyAttachmentContent(text),
-        ...(Array.isArray(messageAttachments) && messageAttachments.length
-          ? { attachments: messageAttachments }
-          : {}),
       }));
 
     if (attachments.length && requestMessages.length) {
@@ -1953,7 +1976,7 @@ function ChatWorkspace({ project, active = true }) {
             </article>
           ))}
 
-          {sending && (
+          {activeThread?.messages.some((message) => message.queueStatus === "running") && (
             <article className="message-row">
               <div className="assistant-avatar"><WandSparkles size={18} /></div>
               <div className="message-stack">

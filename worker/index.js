@@ -2,6 +2,7 @@ import { MIGRATED_PROJECTS } from "../shared/projects.js";
 import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const OPENAI_REQUEST_TIMEOUT_MS = 180000;
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 const CONVEX_MANAGEMENT_API_BASE = "https://api.convex.dev/v1";
 const CLOUDFLARE_ACCOUNT_ID = "f2ca2f43ab364db1c4391a015d6698fe";
@@ -1685,6 +1686,7 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
     });
 
     const payload = await response.json().catch(() => null);
@@ -1704,9 +1706,16 @@ async function callOpenAI({ apiKey, model, instructions, input, tools, previousR
 function expandAttachmentMarkers(messages) {
   const legacyAttachmentPattern = /\[VA_ATTACHMENT:([^|]*)\|([^|]*)\|(data:[^\]]+)\]/gi;
   const legacyPdfPattern = /\[VA_PDF_ATTACHMENT:(data:application\/pdf;base64,[A-Za-z0-9+/=\r\n]+)\]/i;
-  const fileMarkerPattern = /\[VA_FILE:[^\]]+\]/gi;
+  const fileMarkerPattern = /\[VA_FILE:([^|\]]+)\|([^\]]+)\]/gi;
 
-  return messages.map((message) => {
+  const lastUserIndex = (() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === "user") return index;
+    }
+    return -1;
+  })();
+
+  return messages.map((message, messageIndex) => {
     if (message?.role !== "user") {
       return {
         role: message?.role,
@@ -1714,54 +1723,79 @@ function expandAttachmentMarkers(messages) {
       };
     }
 
+    const isCurrentUserMessage = messageIndex === lastUserIndex;
     const attachments = [];
-    const structuredAttachments = Array.isArray(message?.attachments)
-      ? message.attachments
-      : message?.attachment?.dataUrl
-        ? [message.attachment]
-        : [];
-    for (const item of structuredAttachments) {
-      if (!item?.dataUrl) continue;
-      attachments.push({
-        filename: String(item.name || "attached").slice(0, 180),
-        type: String(item.type || "application/octet-stream").slice(0, 180),
-        dataUrl: String(item.dataUrl),
-      });
+
+    // Binary attachments are valid only on the current request. Older chat files
+    // stay in history as filename references but are never uploaded repeatedly.
+    if (isCurrentUserMessage) {
+      const structuredAttachments = Array.isArray(message?.attachments)
+        ? message.attachments
+        : message?.attachment?.dataUrl
+          ? [message.attachment]
+          : [];
+
+      for (const item of structuredAttachments) {
+        if (!item?.dataUrl) continue;
+        attachments.push({
+          filename: String(item.name || "attached").slice(0, 180),
+          type: String(item.type || "application/octet-stream").slice(0, 180),
+          dataUrl: String(item.dataUrl),
+        });
+      }
     }
 
     let visibleText = typeof message?.content === "string" ? message.content : "";
 
-    // Backward compatibility for jobs queued by older VA builds.
     visibleText = visibleText.replace(
       legacyAttachmentPattern,
       (_match, encodedName, type, dataUrl) => {
         let filename = "attached";
         try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
-        attachments.push({ filename, type, dataUrl });
-        return "";
+
+        if (isCurrentUserMessage) {
+          attachments.push({ filename, type, dataUrl });
+          return "";
+        }
+        return `[Previously attached file: ${filename}]`;
       }
     );
 
     const legacyPdfMatch = visibleText.match(legacyPdfPattern);
     if (legacyPdfMatch) {
-      attachments.push({
-        filename: "attached.pdf",
-        type: "application/pdf",
-        dataUrl: legacyPdfMatch[1],
-      });
-      visibleText = visibleText.replace(legacyPdfPattern, "");
+      if (isCurrentUserMessage) {
+        attachments.push({
+          filename: "attached.pdf",
+          type: "application/pdf",
+          dataUrl: legacyPdfMatch[1],
+        });
+        visibleText = visibleText.replace(legacyPdfPattern, "");
+      } else {
+        visibleText = visibleText.replace(legacyPdfPattern, "[Previously attached PDF]");
+      }
     } else {
-      // A truncated old marker cannot be sent as a valid file. Remove the raw
-      // payload from model-visible text rather than leaking base64 into context.
       const incompletePdf = visibleText.indexOf("[VA_PDF_ATTACHMENT:data:application/pdf;base64,");
-      if (incompletePdf >= 0) visibleText = visibleText.slice(0, incompletePdf);
+      if (incompletePdf >= 0) {
+        visibleText =
+          visibleText.slice(0, incompletePdf).trimEnd() +
+          (isCurrentUserMessage ? "" : "\n[Previously attached PDF]");
+      }
       const incompleteGeneric = visibleText.indexOf("[VA_ATTACHMENT:");
       if (incompleteGeneric >= 0 && visibleText.indexOf("|data:", incompleteGeneric) >= 0) {
-        visibleText = visibleText.slice(0, incompleteGeneric);
+        visibleText =
+          visibleText.slice(0, incompleteGeneric).trimEnd() +
+          (isCurrentUserMessage ? "" : "\n[Previously attached file]");
       }
     }
 
-    visibleText = visibleText.replace(fileMarkerPattern, "").trim();
+    visibleText = visibleText.replace(
+      fileMarkerPattern,
+      (_match, encodedName) => {
+        let filename = "attachment";
+        try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
+        return isCurrentUserMessage ? "" : `[Previously attached file: ${filename}]`;
+      }
+    ).trim();
 
     if (!attachments.length) {
       return { role: "user", content: visibleText };
