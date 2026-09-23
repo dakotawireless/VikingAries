@@ -689,6 +689,58 @@ async function githubWriteFile(token, repository, { path, content, message, bran
   };
 }
 
+async function githubWriteBinaryFile(token, repository, { path, bytes, message, branch = "main" }) {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+  const safePath = String(path || "").replace(/^\/+/, "").trim();
+  const commitMessage = String(message || "").trim().slice(0, 240);
+  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  if (!safePath) throw new Error("A repository file path is required.");
+  if (!commitMessage) throw new Error("A commit message is required.");
+  if (!byteArray.length) throw new Error("The binary asset is empty.");
+  if (byteArray.length > 10 * 1024 * 1024) throw new Error("Binary asset exceeds the 10 MB Files & Media limit.");
+
+  let sha;
+  try {
+    const existing = await githubRequest(
+      token,
+      `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch || "main")}`
+    );
+    if (existing?.type === "file") sha = existing.sha;
+  } catch (error) {
+    if (!/Not Found/i.test(error.message)) throw error;
+  }
+
+  const body = {
+    message: commitMessage,
+    content: bytesToBase64(byteArray),
+    branch: branch || "main",
+  };
+  if (sha) body.sha = sha;
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+
+  return {
+    ok: true,
+    repository: safeRepo,
+    path: payload?.content?.path || safePath,
+    branch: branch || "main",
+    contentSha: payload?.content?.sha || null,
+    commitSha: payload?.commit?.sha || null,
+    commitUrl: payload?.commit?.html_url || null,
+    binary: true,
+    size: byteArray.length,
+  };
+}
+
 async function githubReplaceText(token, repository, {
   path,
   oldText,
