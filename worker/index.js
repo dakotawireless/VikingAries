@@ -2539,6 +2539,7 @@ const worker = {
     if (
       url.pathname === "/api/files/upload" ||
       url.pathname === "/api/files/download" ||
+      url.pathname === "/api/files/preview" ||
       url.pathname === "/api/files/delete" ||
       url.pathname === "/api/files/list"
     ) {
