@@ -182,7 +182,7 @@ test("POS can reuse Timekeeper Bear Paw media directly as a favicon asset", asyn
 
   assert.equal(response.status, 200);
   assert.ok(writePayload);
-  assert.equal(writePayload.branch, "migration-staging");
+  assert.equal(writePayload.branch, "main");
   assert.deepEqual(Buffer.from(writePayload.content, "base64"), Buffer.from(bear));
   assert.match(body.text, /copied into the POS repository/);
   assert.equal(body.actionReceipts.some((receipt) => receipt.commitSha === "favicon-commit"), true);
