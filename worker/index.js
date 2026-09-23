@@ -1689,6 +1689,17 @@ async function executeCloudflareTool(call, token, projectMetadata) {
     return cloudflareGetBuildLogs(token, args.buildUuid);
   }
 
+  if (call.name === "owner_project_update_metadata" && result?.ok) {
+    return {
+      provider: "Viking Aries",
+      action: "project_metadata_update",
+      tool: call.name,
+      projectId: result.projectId || String(args.projectId || "").trim() || null,
+      changedFields: Array.isArray(result.changedFields) ? result.changedFields : [],
+      recordedAt,
+    };
+  }
+
   if (call.name === "files_media_copy_project_file" && result?.file?.id) {
     return {
       provider: "Files & Media",
