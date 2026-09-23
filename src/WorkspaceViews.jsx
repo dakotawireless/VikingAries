@@ -38,14 +38,35 @@ import {
   Zap,
 } from "lucide-react";
 
+function migrateDwPosStoredMetadata(key, stored, initialValue) {
+  if (key === "settings-v2" && stored && typeof stored === "object") {
+    return { ...stored, ...initialValue };
+  }
+
+  if ((key === "deployments-v2" || key === "diagnostics-v2" || key === "domains-v2") && Array.isArray(initialValue)) {
+    const staleIds = key === "deployments-v2"
+      ? new Set(["legacy-production", "cloudflare-staging", "cloudflare-target"])
+      : key === "diagnostics-v2"
+        ? new Set(["convex-map", "data-preservation", "migration-preview", "cloudflare"])
+        : new Set(["legacy"]);
+    const authoritativeIds = new Set(initialValue.map((item) => item?.id).filter(Boolean));
+    const custom = Array.isArray(stored)
+      ? stored.filter((item) => !staleIds.has(item?.id) && !authoritativeIds.has(item?.id))
+      : [];
+    return [...initialValue, ...custom];
+  }
+
+  return stored;
+}
+
 function readProjectStorage(projectId, key, initialValue) {
   const storageKey = `viking-aries:${projectId}:${key}`;
   try {
     const saved = window.localStorage.getItem(storageKey);
     const stored = saved ? JSON.parse(saved) : initialValue;
-    return key === "integration-mappings-v1"
-      ? migrateProjectMappings(projectId, stored)
-      : stored;
+    if (key === "integration-mappings-v1") return migrateProjectMappings(projectId, stored);
+    if (projectId === "dw-pos") return migrateDwPosStoredMetadata(key, stored, initialValue);
+    return stored;
   } catch {
     return initialValue;
   }
@@ -508,7 +529,7 @@ function dwPosDefaults(project) {
       { id: "backend", environment: "Production backend", provider: "Convex", status: "Active", url: "https://energized-crane-577.convex.cloud" },
     ],
     domains: [
-      { id: "legacy", host: "dakota-wireless-pos-301249.onhercules.app", type: "Legacy Hercules host", status: "Active during migration", notes: "Do not cut over until the Cloudflare deployment passes end-to-end POS and website integration tests." },
+      { id: "production", host: "dakota-wireless-pos---new.erik-f2c.workers.dev", type: "Cloudflare Workers", status: "Active", notes: "Production Dakota Wireless POS host." },
     ],
     secrets: [
       { id: "convex", name: "CONVEX_DEPLOY_KEY / VITE_CONVEX_URL", provider: "Cloudflare + Convex", purpose: "Future Cloudflare build/deploy connection to existing Convex deployment", status: "Migration" },
