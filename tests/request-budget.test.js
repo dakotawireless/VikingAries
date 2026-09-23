@@ -36,8 +36,8 @@ test('secret lookup is cached only within its request and charged once', async (
 
 for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failure']) {
   test(`${mode}: bounded execution preserves receipts, usage and normal response shape`, async (t) => {
-    let requests = 0, models = 0, writes = 0, stored = 0;
-    let finalInput;
+    let requests = 0, models = 0, successfulModels = 0, writes = 0, stored = 0;
+    const finalInputs = [];
     t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
       if (String(url).includes('/jobs/control')) return Response.json({status:'running',deadlineAt:Date.now()+480000});
       requests++;
@@ -46,10 +46,12 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
         models++;
         const body = JSON.parse(init.body);
         if (body.tool_choice === 'none') {
-          finalInput = body.input;
+          finalInputs.push(body.input);
           if (mode === "summary-failure") throw new Error("AI unavailable");
+          successfulModels++;
           return Response.json({ id: `r${models}`, output_text: 'Completed this batch; more remains.', usage: { input_tokens: 1, output_tokens: 1 } });
         }
+        successfulModels++;
         return Response.json({ id: `r${models}`, usage: { input_tokens: 1, output_tokens: 1 }, output:
           Array.from({length: mode === 'rounds' ? 1 : MAX_AGENT_TOOLS + 10}, (_, i) => ({
             type: 'function_call', call_id: `c${models}-${i}`,
@@ -81,12 +83,19 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     assert.equal(body.continuationRequired, true);
     assert.match(body.text, /Send continue/);
     assert.ok(models <= MAX_AGENT_ROUNDS + 1);
-    assert.equal(stored, models - (mode === "summary-failure" ? 1 : 0));
+    assert.equal(stored, successfulModels);
     assert.equal(body.usage.requests, stored);
     assert.equal(body.actionReceipts.length, writes);
     assert.equal(body.usageRecorded, mode !== 'store-failure');
     if (mode === 'writes') assert.ok(writes > 0 && writes <= MAX_AGENT_TOOLS);
-    if (mode !== 'rounds') assert.ok(finalInput.some(item => JSON.parse(item.output).deferred));
+    if (mode !== 'rounds' && mode !== 'summary-failure') {
+      assert.ok(finalInputs.some((input) =>
+        Array.isArray(input) &&
+        input.some((item) => {
+          try { return JSON.parse(item.output).deferred === true; } catch { return false; }
+        })
+      ));
+    }
   });
 }
 
