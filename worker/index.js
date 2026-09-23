@@ -2721,7 +2721,9 @@ const worker = {
       url.pathname === "/api/files/download" ||
       url.pathname === "/api/files/preview" ||
       url.pathname === "/api/files/delete" ||
-      url.pathname === "/api/files/list"
+      url.pathname === "/api/files/list" ||
+      url.pathname === "/api/files/legacy-download" ||
+      url.pathname === "/api/files/legacy-preview"
     ) {
       const auth = await ownerAuthConfig(env);
       if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
