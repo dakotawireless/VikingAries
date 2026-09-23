@@ -2187,6 +2187,7 @@ function describeRuntimeTool(call) {
     cloudflare_trigger_build: "Starting Cloudflare build",
     convex_get_deployment_status: "Checking Convex deployment status",
     files_media_list_project_files: "Reading live Files & Media records",
+    files_media_get_project_file_preview: "Preparing a secure image preview",
   };
 
   return labels[call?.name] || "Running project tool";
