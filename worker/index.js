@@ -2535,7 +2535,7 @@ function recoveryFallbackText(state, stop) {
     `## Where it stopped\n${state?.finalOperation || "The active model/provider step ended before normal completion."}`,
     `## What remains\n${remains}`,
     `## Change safety\n${safety}`,
-    `## Next best action\nSend **continue** to resume from this checkpoint. Viking Aries will use the saved progress and will not automatically replay writes or destructive actions.`,
+    `## Next best action\nSend continue to resume from this checkpoint. Viking Aries will use the saved progress and will not automatically replay writes or destructive actions.`,
   ].join("\n\n");
 }
 
@@ -4333,7 +4333,18 @@ const worker = {
         }
       }
 
-      if (!recoveryText) recoveryText = recoveryFallbackText(state, stop);
+      const requiredRecoveryHeadings = [
+        "## Stop reason",
+        "## What was completed",
+        "## Where it stopped",
+        "## What remains",
+        "## Change safety",
+        "## Next best action",
+      ];
+      const recoveryIsStructured =
+        recoveryText &&
+        requiredRecoveryHeadings.every((heading) => recoveryText.includes(heading));
+      if (!recoveryIsStructured) recoveryText = recoveryFallbackText(state, stop);
       updateRunRecoveryState({ recoveryText });
       await persistRecoveryCheckpoint(env, projectId, threadId, currentRunRecoveryState() || state);
 
