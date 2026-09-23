@@ -3393,3 +3393,136 @@ body.resizing-preview * {
 [data-theme="metal"] .composer-hint {
   text-shadow: 0 1px 2px #000;
 }
+
+
+/* True phone-scale layout. Keep VA readable/touchable instead of shrinking the
+   desktop canvas to fit a handset. Scoped to the runtime mobile-device marker
+   so desktop and embedded preview behavior stay unchanged. */
+html.va-mobile-device {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html.va-mobile-device body,
+html.va-mobile-device #root,
+html.va-mobile-device .app-shell.mobile-ui {
+  width: 100%;
+  min-width: 0;
+  max-width: 100vw;
+}
+html.va-mobile-device .app-shell.mobile-ui .mobile-topbar {
+  min-height: 76px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .content-shell,
+html.va-mobile-device .app-shell.mobile-ui .workspace,
+html.va-mobile-device .app-shell.mobile-ui .chat-workspace-host {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100vw !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .project-heading {
+  padding: 16px 16px 14px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .project-title-row h1 {
+  font-size: 24px !important;
+  line-height: 1.2 !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .project-status,
+html.va-mobile-device .app-shell.mobile-ui .project-title-row small {
+  font-size: 14px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .chat-tab-row {
+  min-height: 52px !important;
+  padding: 5px 10px !important;
+  gap: 6px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .chat-tab,
+html.va-mobile-device .app-shell.mobile-ui .chat-tab-main,
+html.va-mobile-device .app-shell.mobile-ui .chat-tab.new-chat {
+  min-height: 42px !important;
+  font-size: 16px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .conversation {
+  padding: 16px 12px 170px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .message-row {
+  grid-template-columns: 38px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  margin-bottom: 22px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .avatar,
+html.va-mobile-device .app-shell.mobile-ui .assistant-avatar {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  font-size: 13px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .message-stack {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .message-meta {
+  font-size: 14px !important;
+  gap: 7px !important;
+  margin-bottom: 6px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .user-message,
+html.va-mobile-device .app-shell.mobile-ui .assistant-message {
+  font-size: 18px !important;
+  line-height: 1.55 !important;
+  padding: 14px 15px !important;
+  border-radius: 12px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .user-message p,
+html.va-mobile-device .app-shell.mobile-ui .assistant-message p,
+html.va-mobile-device .app-shell.mobile-ui .user-message li,
+html.va-mobile-device .app-shell.mobile-ui .assistant-message li {
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .job-activity-feed {
+  margin-top: 8px !important;
+  font-size: 14px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .job-activity-heading {
+  min-height: 40px !important;
+  padding: 8px 10px !important;
+  font-size: 14px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .job-activity-row {
+  min-height: 42px !important;
+  padding: 8px 10px !important;
+  gap: 8px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .job-activity-copy strong {
+  font-size: 14px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .job-activity-copy small,
+html.va-mobile-device .app-shell.mobile-ui .job-activity-row time {
+  font-size: 12px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .composer {
+  padding: 10px 10px max(12px, env(safe-area-inset-bottom)) !important;
+  gap: 8px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .composer textarea {
+  min-height: 56px !important;
+  font-size: 18px !important;
+  line-height: 1.4 !important;
+  padding: 14px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .send-button,
+html.va-mobile-device .app-shell.mobile-ui .composer button {
+  min-width: 48px !important;
+  min-height: 48px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .model-picker,
+html.va-mobile-device .app-shell.mobile-ui .composer select {
+  min-height: 44px !important;
+  font-size: 15px !important;
+}
+html.va-mobile-device .app-shell.mobile-ui .mobile-view-button {
+  min-width: 112px !important;
+  min-height: 50px !important;
+  font-size: 16px !important;
+}
