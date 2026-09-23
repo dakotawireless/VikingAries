@@ -3060,6 +3060,40 @@ const worker = {
       }
     }
 
+    if (url.pathname === "/api/progress") {
+      const auth = await ownerAuthConfig(env);
+      const ownerAuthenticated = auth.configured
+        ? await verifyOwnerSession(request, auth.sessionSecret)
+        : true;
+
+      if (auth.configured && !ownerAuthenticated) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+      if (request.method !== "GET") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const jobId = (url.searchParams.get("jobId") || "").trim().slice(0, 120);
+      if (!jobId) {
+        return json({ error: "jobId is required." }, { status: 400 });
+      }
+
+      try {
+        const state = await readVAState(env);
+        const key = `viking-aries:progress:${jobId}`;
+        const entry = (Array.isArray(state?.entries) ? state.entries : []).find(
+          (item) => item?.key === key && !item?.deleted
+        );
+        if (!entry || typeof entry.value !== "string") {
+          return json({ progress: [] });
+        }
+        const parsed = JSON.parse(entry.value || "[]");
+        return json({ progress: Array.isArray(parsed) ? parsed.slice(-60) : [] });
+      } catch (error) {
+        return json({ error: error.message || "Could not load job progress." }, { status: 502 });
+      }
+    }
+
     if (url.pathname === "/api/jobs/cancel") {
       const auth = await ownerAuthConfig(env);
       const ownerAuthenticated = auth.configured

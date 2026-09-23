@@ -1078,6 +1078,8 @@ function ChatWorkspace({ project, active = true }) {
   const recognitionSessionRef = useRef(0);
   const submitGuardRef = useRef(false);
   const clearDraftRef = useRef(false);
+  const directRequestControllerRef = useRef(null);
+  const directJobIdRef = useRef("");
 
   const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
@@ -1415,6 +1417,9 @@ function ChatWorkspace({ project, active = true }) {
 
     const jobId = crypto.randomUUID();
     const threadId = activeThread.id;
+    const threadAlreadyWorking = activeThread.messages.some(
+      (message) => message.queueStatus === "running"
+    );
     const requestModel =
       selectedModel === VA_AUTO_MODEL
         ? modelRecommendation?.id || "gpt-5.6-luna"
@@ -1443,7 +1448,7 @@ function ChatWorkspace({ project, active = true }) {
           }
         : {}),
       timestamp: formatChatTime(),
-      queueStatus: "queued",
+      queueStatus: threadAlreadyWorking ? "queued" : "running",
     };
 
     // Conversation history keeps text only. Re-sending historical binary
@@ -1473,7 +1478,7 @@ function ChatWorkspace({ project, active = true }) {
     }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
-    const alreadyWorking = sending;
+    const alreadyWorking = threadAlreadyWorking;
 
     updateThread(threadId, (thread) => ({
       ...thread,
@@ -1504,52 +1509,180 @@ function ChatWorkspace({ project, active = true }) {
     setStatusText(alreadyWorking ? "Message queued…" : "Viking Aries is starting…");
 
     try {
-      const response = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          project: {
-            id: project.id,
-            name: project.name,
-            repository: integrationMappings.github?.enabled
-              ? integrationMappings.github.repository || project.repository || null
-              : project.repository || null,
-            defaultBranch: integrationMappings.github?.branch || "main",
-            deploymentUrl: integrationMappings.cloudflare?.enabled
-              ? integrationMappings.cloudflare.deploymentUrl || project.deploymentUrl || null
-              : project.deploymentUrl || null,
-            cloudflareWorker: integrationMappings.cloudflare?.worker || null,
-            backend: project.backend || (integrationMappings.convex?.enabled ? "Convex" : null),
-            backendDeployment: integrationMappings.convex?.deployment || null,
-            backendUrl: integrationMappings.convex?.enabled
-              ? integrationMappings.convex.url || project.backendUrl || null
-              : project.backendUrl || null,
-            convexDashboardUrl: integrationMappings.convex?.dashboardUrl || project.convexDashboardUrl || null,
-            driveFolderUrl: integrationMappings.drive?.enabled ? integrationMappings.drive.folderUrl || null : null,
-            gmailIdentity: integrationMappings.gmail?.enabled ? integrationMappings.gmail.identity || null : null,
-            status: project.status || null,
-            contextSummary: project.contextSummary || null,
-          },
-          thread: {
-            id: threadId,
-            title: activeThread.title,
-          },
-          messages: requestMessages,
-          // Auto mode chooses the least expensive model that satisfies the
-          // request. A manual Luna/Terra/Sol/Astra selection remains available when
-          // the owner explicitly wants to override the router.
-          model: requestModel,
-        }),
-      });
+      if (!alreadyWorking) {
+        // Normal idle messages execute immediately. The persistent background
+        // queue is only for follow-up messages sent while VA is already working.
+        const controller = new AbortController();
+        directRequestControllerRef.current = controller;
+        directJobIdRef.current = jobId;
+        setQueueing(false);
+        setStatusText("Viking Aries is working…");
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not queue the AI job.");
+        let progressTimer = null;
+        const syncDirectProgress = async () => {
+          try {
+            const progressResponse = await fetch(
+              `/api/progress?jobId=${encodeURIComponent(jobId)}`,
+              { cache: "no-store" }
+            );
+            const progressPayload = await progressResponse.json().catch(() => ({}));
+            if (!progressResponse.ok || !Array.isArray(progressPayload.progress)) return;
+            updateThread(threadId, (thread) => ({
+              ...thread,
+              messages: thread.messages.map((message) =>
+                message.jobId === jobId
+                  ? { ...message, progress: progressPayload.progress, queueStatus: "running" }
+                  : message
+              ),
+            }));
+          } catch {
+            // Progress is supplemental; never fail the actual AI request for it.
+          }
+        };
+
+        progressTimer = window.setInterval(syncDirectProgress, 900);
+        window.setTimeout(syncDirectProgress, 250);
+
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              jobId,
+              project: {
+                id: project.id,
+                name: project.name,
+                repository: integrationMappings.github?.enabled
+                  ? integrationMappings.github.repository || project.repository || null
+                  : project.repository || null,
+                defaultBranch: integrationMappings.github?.branch || "main",
+                deploymentUrl: integrationMappings.cloudflare?.enabled
+                  ? integrationMappings.cloudflare.deploymentUrl || project.deploymentUrl || null
+                  : project.deploymentUrl || null,
+                cloudflareWorker: integrationMappings.cloudflare?.worker || null,
+                backend: project.backend || (integrationMappings.convex?.enabled ? "Convex" : null),
+                backendDeployment: integrationMappings.convex?.deployment || null,
+                backendUrl: integrationMappings.convex?.enabled
+                  ? integrationMappings.convex.url || project.backendUrl || null
+                  : project.backendUrl || null,
+                convexDashboardUrl: integrationMappings.convex?.dashboardUrl || project.convexDashboardUrl || null,
+                driveFolderUrl: integrationMappings.drive?.enabled ? integrationMappings.drive.folderUrl || null : null,
+                gmailIdentity: integrationMappings.gmail?.enabled ? integrationMappings.gmail.identity || null : null,
+                status: project.status || null,
+                contextSummary: project.contextSummary || null,
+              },
+              thread: {
+                id: threadId,
+                title: activeThread.title,
+              },
+              messages: requestMessages,
+              model: requestModel,
+            }),
+          });
+
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.error || "The AI service did not return a response.");
+          }
+
+          await syncDirectProgress();
+
+          updateThread(threadId, (thread) => ({
+            ...thread,
+            messages: [
+              ...thread.messages.map((message) =>
+                message.jobId === jobId
+                  ? { ...message, queueStatus: undefined }
+                  : message
+              ),
+              {
+                id: `assistant-${jobId}`,
+                jobId,
+                role: "assistant",
+                model: payload.model || requestModel,
+                content: payload.text || "I’m connected, but I didn’t receive any text back.",
+                timestamp: formatChatTime(),
+              },
+            ],
+          }));
+          setStatusText("Ready");
+        } catch (error) {
+          const stopped = error?.name === "AbortError";
+          updateThread(threadId, (thread) => ({
+            ...thread,
+            messages: [
+              ...thread.messages.map((message) =>
+                message.jobId === jobId
+                  ? { ...message, queueStatus: undefined }
+                  : message
+              ),
+              {
+                id: `${stopped ? "stopped" : "error"}-${jobId}`,
+                jobId,
+                role: "assistant",
+                content: stopped
+                  ? "Stopped by the owner."
+                  : `I couldn’t complete that request. ${error.message}`,
+                timestamp: formatChatTime(),
+                error: !stopped,
+              },
+            ],
+          }));
+          setStatusText(stopped ? "Stopped" : "Connection needs attention");
+        } finally {
+          if (progressTimer) window.clearInterval(progressTimer);
+          if (directJobIdRef.current === jobId) {
+            directRequestControllerRef.current = null;
+            directJobIdRef.current = "";
+          }
+          setSending(false);
+        }
+      } else {
+        const response = await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId,
+            project: {
+              id: project.id,
+              name: project.name,
+              repository: integrationMappings.github?.enabled
+                ? integrationMappings.github.repository || project.repository || null
+                : project.repository || null,
+              defaultBranch: integrationMappings.github?.branch || "main",
+              deploymentUrl: integrationMappings.cloudflare?.enabled
+                ? integrationMappings.cloudflare.deploymentUrl || project.deploymentUrl || null
+                : project.deploymentUrl || null,
+              cloudflareWorker: integrationMappings.cloudflare?.worker || null,
+              backend: project.backend || (integrationMappings.convex?.enabled ? "Convex" : null),
+              backendDeployment: integrationMappings.convex?.deployment || null,
+              backendUrl: integrationMappings.convex?.enabled
+                ? integrationMappings.convex.url || project.backendUrl || null
+                : project.backendUrl || null,
+              convexDashboardUrl: integrationMappings.convex?.dashboardUrl || project.convexDashboardUrl || null,
+              driveFolderUrl: integrationMappings.drive?.enabled ? integrationMappings.drive.folderUrl || null : null,
+              gmailIdentity: integrationMappings.gmail?.enabled ? integrationMappings.gmail.identity || null : null,
+              status: project.status || null,
+              contextSummary: project.contextSummary || null,
+            },
+            thread: {
+              id: threadId,
+              title: activeThread.title,
+            },
+            messages: requestMessages,
+            model: requestModel,
+          }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not queue the AI job.");
+        }
+
+        setStatusText("Message queued…");
+        window.setTimeout(syncProjectJobs, 250);
       }
-
-      setStatusText(alreadyWorking ? "Message queued…" : "Viking Aries is working in the background…");
-      window.setTimeout(syncProjectJobs, 250);
     } catch (error) {
       updateThread(threadId, (thread) => ({
         ...thread,
@@ -1585,6 +1718,8 @@ function ChatWorkspace({ project, active = true }) {
     if (!activeThread || !sending) return;
 
     setStatusText("Stopping Viking Aries…");
+    directRequestControllerRef.current?.abort();
+
     try {
       const response = await fetch("/api/jobs/cancel", {
         method: "POST",
