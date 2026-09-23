@@ -1916,15 +1916,34 @@ function projectFilesToolEnabled(authenticated, env, projectId) {
 }
 
 function buildProjectFilesTools() {
+  const projectIds = Object.keys(PROJECT_RUNTIME_CONFIG).sort().join(", ");
   return [
     {
       type: "function",
       name: "files_media_list_project_files",
       description:
-        "List the live Files & Media records for the currently selected Viking Aries project. Use this tool first for any question about files shown in Files & Media, including what files exist, their filenames, MIME types, sizes, upload dates, or file record identifiers. This is project-scoped Convex data, not repository content: do not inspect GitHub to answer those questions.",
+        "List live Files & Media metadata from any registered owner project. projectId defaults to the selected project; pass 'all' for all registered Personal projects. Registered project IDs: " + projectIds + ".",
       parameters: {
         type: "object",
-        properties: {},
+        properties: {
+          projectId: { type: "string", description: "Optional project ID or 'all'. Defaults to the selected project." },
+        },
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "files_media_search_files",
+      description:
+        "Search Files & Media by filename/type across all registered owner projects or within one project. Returns metadata only and never exposes storage secrets or raw bytes.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          projectId: { type: "string", description: "Optional project ID. Defaults to all registered owner projects." },
+        },
+        required: ["query"],
         additionalProperties: false,
       },
       strict: false,
@@ -1933,13 +1952,52 @@ function buildProjectFilesTools() {
       type: "function",
       name: "files_media_get_project_file_preview",
       description:
-        "Create a secure, owner-authenticated image preview reference for one live Files & Media record in the currently selected Viking Aries project. Use files_media_list_project_files first to get the file ID. This is for showing an image to the owner, not for repository inspection. It never returns a private Convex storage URL, storage secret, or file bytes to the model.",
+        "Create a secure owner-authenticated preview reference for an image in any registered owner project's Files & Media. Raw storage URLs and bytes are never returned to the model.",
       parameters: {
         type: "object",
         properties: {
-          fileId: { type: "string", description: "The Files & Media record ID returned by files_media_list_project_files." },
+          projectId: { type: "string", description: "Source project ID. Defaults to the selected project." },
+          fileId: { type: "string", description: "Files & Media record ID." },
         },
         required: ["fileId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "files_media_copy_project_file",
+      description:
+        "Securely copy a Files & Media asset from one registered owner project to another. The destination write must be the selected project or explicitly named/authorized by the user's latest instruction. The copied record preserves source provenance.",
+      parameters: {
+        type: "object",
+        properties: {
+          sourceProjectId: { type: "string" },
+          destinationProjectId: { type: "string" },
+          fileId: { type: "string" },
+          name: { type: "string" },
+        },
+        required: ["sourceProjectId", "destinationProjectId", "fileId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "files_media_copy_file_to_project_repository",
+      description:
+        "Copy a binary Files & Media asset directly into a registered owner's GitHub repository without exposing raw bytes to the model. Use this for logos, favicons, images, PDFs, and other binary assets. The destination project must be selected or explicitly authorized by the user's latest instruction.",
+      parameters: {
+        type: "object",
+        properties: {
+          sourceProjectId: { type: "string" },
+          fileId: { type: "string" },
+          destinationProjectId: { type: "string" },
+          destinationPath: { type: "string" },
+          message: { type: "string" },
+          branch: { type: "string" },
+        },
+        required: ["sourceProjectId", "fileId", "destinationProjectId", "destinationPath", "message"],
         additionalProperties: false,
       },
       strict: false,
@@ -1969,19 +2027,84 @@ async function getVAProjectFilePreview(env, projectId, fileId) {
   };
 }
 
-async function executeProjectFilesTool(call, env, projectId) {
+async function executeProjectFilesTool(call, env, selectedProjectId, githubToken, rawMessages) {
+  let args = {};
+  try {
+    args = JSON.parse(call.arguments || "{}");
+  } catch {
+    throw new Error("The Files & Media tool arguments were invalid JSON.");
+  }
+
   if (call.name === "files_media_list_project_files") {
-    return listVAProjectFiles(env, projectId);
+    const requested = String(args.projectId || selectedProjectId || "").trim();
+    return requested === "all" ? listVAAllProjectFiles(env) : listVAProjectFiles(env, requested);
+  }
+  if (call.name === "files_media_search_files") {
+    const query = String(args.query || "").trim().toLowerCase();
+    if (!query) throw new Error("A Files & Media search query is required.");
+    const requested = String(args.projectId || "all").trim();
+    const listed = requested === "all" ? await listVAAllProjectFiles(env) : await listVAProjectFiles(env, requested);
+    return {
+      query,
+      projectId: requested,
+      files: (listed.files || []).filter((file) =>
+        [file.name, file.type, file.projectId, file.projectName]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query))
+      ),
+    };
   }
   if (call.name === "files_media_get_project_file_preview") {
-    let args = {};
-    try {
-      args = JSON.parse(call.arguments || "{}");
-    } catch {
-      throw new Error("The Files & Media tool arguments were invalid JSON.");
-    }
-    return getVAProjectFilePreview(env, projectId, args.fileId);
+    const sourceProjectId = String(args.projectId || selectedProjectId || "").trim();
+    return getVAProjectFilePreview(env, sourceProjectId, args.fileId);
   }
+  if (call.name === "files_media_copy_project_file") {
+    const sourceProjectId = String(args.sourceProjectId || "").trim();
+    const destinationProjectId = String(args.destinationProjectId || selectedProjectId || "").trim();
+    if (!registeredProjectConfig(sourceProjectId) || !registeredProjectConfig(destinationProjectId)) {
+      throw new Error("Both source and destination must be registered owner projects.");
+    }
+    if (!crossProjectWriteAuthorized(selectedProjectId, destinationProjectId, rawMessages)) {
+      throw new Error(
+        `Cross-project file copy blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(destinationProjectId)}.`
+      );
+    }
+    return copyVAProjectFile(env, {
+      sourceProjectId,
+      destinationProjectId,
+      fileId: args.fileId,
+      name: args.name,
+    });
+  }
+  if (call.name === "files_media_copy_file_to_project_repository") {
+    const sourceProjectId = String(args.sourceProjectId || "").trim();
+    const destinationProjectId = String(args.destinationProjectId || selectedProjectId || "").trim();
+    const destinationConfig = registeredProjectConfig(destinationProjectId);
+    if (!registeredProjectConfig(sourceProjectId) || !destinationConfig?.repository) {
+      throw new Error("Both source and destination must be registered owner projects.");
+    }
+    if (!githubToken) throw new Error("GitHub is not connected for repository asset copy.");
+    if (!crossProjectWriteAuthorized(selectedProjectId, destinationProjectId, rawMessages)) {
+      throw new Error(
+        `Cross-project repository write blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(destinationProjectId)}.`
+      );
+    }
+    const asset = await readVAProjectFileBytes(env, sourceProjectId, args.fileId);
+    const result = await githubWriteBinaryFile(githubToken, destinationConfig.repository, {
+      path: args.destinationPath,
+      bytes: asset.bytes,
+      message: args.message,
+      branch: args.branch || destinationConfig.defaultBranch || "main",
+    });
+    return {
+      ...result,
+      sourceProjectId,
+      sourceFileId: String(args.fileId || ""),
+      sourceName: asset.name,
+      destinationProjectId,
+    };
+  }
+
   throw new Error(`Unsupported Files & Media tool: ${call.name}`);
 }
 
