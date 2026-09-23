@@ -153,7 +153,30 @@ const sharedIntegrationDefaults = [
 ];
 
 function projectIntegrationDefaults(project) {
-  if (MIGRATED_PROJECTS[project?.id]) return migrateProjectMappings(project.id);
+  if (MIGRATED_PROJECTS[project?.id]) {
+    const migrated = migrateProjectMappings(project.id);
+    return {
+      ...migrated,
+      github: {
+        ...migrated.github,
+        repository: project?.repository || migrated.github?.repository || "",
+        branch: project?.defaultBranch || migrated.github?.branch || "main",
+      },
+      cloudflare: {
+        ...migrated.cloudflare,
+        enabled: Boolean(project?.cloudflareWorker || project?.deploymentUrl || migrated.cloudflare?.enabled),
+        worker: project?.cloudflareWorker || migrated.cloudflare?.worker || "",
+        deploymentUrl: project?.deploymentUrl || migrated.cloudflare?.deploymentUrl || "",
+      },
+      convex: {
+        ...migrated.convex,
+        enabled: project?.backend === "Convex" || Boolean(project?.backendUrl || migrated.convex?.enabled),
+        deployment: project?.backendDeployment || migrated.convex?.deployment || "",
+        url: project?.backendUrl || migrated.convex?.url || "",
+        dashboardUrl: project?.convexDashboardUrl || migrated.convex?.dashboardUrl || "",
+      },
+    };
+  }
   return {
     github: {
       enabled: Boolean(project?.repository),
@@ -177,13 +200,12 @@ function projectIntegrationDefaults(project) {
     convex: {
       enabled: project?.backend === "Convex" || Boolean(project?.backendUrl),
       deployment:
-        project?.id === "dw-pos"
-          ? "sleek-bear-647"
-          : project?.id === "timekeeper"
-            ? "aware-caiman-251"
-            : project?.id === "viking-aries"
-              ? "flippant-mandrill-487"
-              : "",
+        project?.backendDeployment ||
+        (project?.id === "timekeeper"
+          ? "aware-caiman-251"
+          : project?.id === "viking-aries"
+            ? "flippant-mandrill-487"
+            : ""),
       url: project?.backendUrl || "",
       dashboardUrl: project?.convexDashboardUrl || "",
     },
@@ -439,10 +461,10 @@ function dwPosDefaults(project) {
       { id: "tests", name: "POS automated tests", type: "Vitest / convex-test", location: "convex/*.test.ts and src tests", status: "In repository" },
     ],
     integrations: [
-      { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New · migration-staging", purpose: "Source control for the merging POS", status: "Connected" },
-      { id: "convex", name: "Convex", provider: "sleek-bear-647", purpose: "Database, functions, HTTP actions, crons", status: "Connected" },
-      { id: "preview", name: "Migration Preview", provider: "Cloudflare staging target", purpose: "Preview only the migrated POS build inside VA; never embed the live Hercules production POS", status: "Pending staging deployment" },
-      { id: "cloudflare", name: "Cloudflare", provider: "Worker: dakota-wireless-pos---new", purpose: "Isolated migration/staging frontend and VA preview target", status: "Configured / deployment pending" },
+      { id: "github", name: "GitHub", provider: "dakotawireless/Dakota-Wireless-POS---New · main", purpose: "Production source control", status: "Connected" },
+      { id: "convex", name: "Convex", provider: "energized-crane-577", purpose: "Production database, functions, HTTP actions, crons", status: "Connected" },
+      { id: "preview", name: "Production Preview", provider: "Cloudflare Workers", purpose: "Live Dakota Wireless POS preview/open-app target", status: "Active" },
+      { id: "cloudflare", name: "Cloudflare", provider: "Worker: dakota-wireless-pos---new", purpose: "Production frontend and VA preview target", status: "Active" },
       { id: "authorize-net", name: "Authorize.Net", provider: "Existing provider-managed configuration", purpose: "Online/card payments and CIM", status: "Existing / unknown" },
       { id: "easypost", name: "EasyPost", provider: "Existing provider-managed configuration", purpose: "Shipping and webhook workflows", status: "Existing / unknown" },
       { id: "zoho", name: "Zoho", provider: "Existing provider-managed configuration", purpose: "Invoice/balance synchronization", status: "Existing / unknown" },
@@ -471,19 +493,19 @@ function dwPosDefaults(project) {
     diagnostics: [
       { id: "source-import", name: "Current source import", result: "Passed", detail: "September 20, 2026 Hercules export imported into dakotawireless/Dakota-Wireless-POS---New." },
       { id: "github-map", name: "VA GitHub runtime mapping", result: "Configured", detail: "VA project maps to dakotawireless/Dakota-Wireless-POS---New on main." },
-      { id: "convex-map", name: "VA Convex runtime mapping", result: "Configured", detail: "VA project maps to existing deployment sleek-bear-647." },
-      { id: "data-preservation", name: "Convex data preservation", result: "Required", detail: "Migration must keep the existing sleek-bear-647 deployment and data." },
+      { id: "convex-map", name: "VA Convex runtime mapping", result: "Configured", detail: "VA project maps to production deployment energized-crane-577." },
+      { id: "data-preservation", name: "Convex production data", result: "Configured", detail: "Production data remains on energized-crane-577." },
       { id: "hercules-removal", name: "Hercules runtime removal", result: "Pending", detail: "Replace OIDC, email SDK, Vite/ESLint plugins, CDN assets, and onhercules.app links before final cutover." },
-      { id: "migration-preview", name: "VA migration preview", result: "Pending", detail: "VA must preview only the migration/staging POS. The live Hercules production POS must remain separate and untouched until final cutover." },
-      { id: "cloudflare", name: "Cloudflare deployment", result: "Pending", detail: "No Cloudflare Worker is registered until the Hercules-free frontend is ready to deploy." },
+      { id: "production-preview", name: "VA production preview", result: "Configured", detail: "VA opens https://dakota-wireless-pos---new.erik-f2c.workers.dev as the active POS deployment." },
+      { id: "cloudflare", name: "Cloudflare deployment", result: "Configured", detail: "Production Worker dakota-wireless-pos---new is active at https://dakota-wireless-pos---new.erik-f2c.workers.dev." },
     ],
     versions: [
       { id: "hercules-export-2026-09-20", label: "Current Hercules export imported", ref: "main", note: "Baseline source imported before Hercules-specific migration edits." },
     ],
     deployments: [
-      { id: "legacy-production", environment: "Live production — do not use as VA preview", provider: "Hercules", status: "Active / protected during migration", url: "https://dakota-wireless-pos-301249.onhercules.app/" },
-      { id: "cloudflare-staging", environment: "Migration staging / future VA preview", provider: "Cloudflare Workers", status: "Pending", url: "" },
-      { id: "cloudflare-target", environment: "Target production", provider: "Cloudflare Workers", status: "Pending", url: "" },
+      { id: "production", environment: "Production", provider: "Cloudflare Workers", status: "Active", url: "https://dakota-wireless-pos---new.erik-f2c.workers.dev" },
+      { id: "transaction", environment: "Transactions", provider: "Cloudflare Workers", status: "Active", url: "https://dakota-wireless-pos---new.erik-f2c.workers.dev/transaction" },
+      { id: "backend", environment: "Production backend", provider: "Convex", status: "Active", url: "https://energized-crane-577.convex.cloud" },
     ],
     domains: [
       { id: "legacy", host: "dakota-wireless-pos-301249.onhercules.app", type: "Legacy Hercules host", status: "Active during migration", notes: "Do not cut over until the Cloudflare deployment passes end-to-end POS and website integration tests." },
@@ -500,12 +522,12 @@ function dwPosDefaults(project) {
     settings: {
       displayName: project.name,
       repository: "dakotawireless/Dakota-Wireless-POS---New",
-      defaultBranch: "migration-staging",
-      productionUrl: "https://dakota-wireless-pos-301249.onhercules.app/",
+      defaultBranch: "main",
+      productionUrl: project.deploymentUrl || "https://dakota-wireless-pos---new.erik-f2c.workers.dev",
       backendProvider: "Convex",
-      backendDeployment: "sleek-bear-647",
-      backendUrl: "https://sleek-bear-647.convex.cloud",
-      notes: "Current production Dakota Wireless POS migration. Preserve existing Convex data and business logic. The Dakota Wireless website depends on this POS backend. Do not rotate or guess provider-managed secret values. Cloudflare deployment will be registered after Hercules-specific runtime dependencies are replaced and staging passes end-to-end tests.",
+      backendDeployment: project.backendDeployment || "energized-crane-577",
+      backendUrl: project.backendUrl || "https://energized-crane-577.convex.cloud",
+      notes: "Dakota Wireless POS is live on Cloudflare Workers with energized-crane-577 as its production Convex backend. Preserve current repository, Worker, backend, credentials, routing, and business logic unless Erik explicitly requests a change.",
     },
   };
 }
