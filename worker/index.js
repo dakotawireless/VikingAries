@@ -4221,7 +4221,20 @@ const worker = {
     let payload;
     let budgetPaused = false;
     let executedTools = 0;
+    let toolRounds = 0;
     const actionReceipts = [];
+    const runState = currentRunRecoveryState() || {
+      startedAt: Date.now(), completedOperations: [], writes: [],
+    };
+    updateRunRecoveryState({
+      runId: jobId || crypto.randomUUID(),
+      model,
+      provider: "OpenAI",
+      projectId,
+      threadId,
+      request: latestUserText(body?.messages).slice(0, 4000),
+      writesOccurred: false,
+    });
     let chatUsage = {
       requests: 0,
       inputTokens: 0,
