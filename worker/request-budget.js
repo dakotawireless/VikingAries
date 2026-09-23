@@ -71,7 +71,18 @@ export async function budgetedFetch(input, init) {
   const signal = currentRunSignal();
   if (signal) {
     signal.throwIfAborted();
-    init = { ...init, signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal };
+    const signals = [signal];
+    if (init?.signal) signals.push(init.signal);
+    if (!currentRunIsRecovering()) {
+      const recoveryMs = currentRunRecoveryAt() - Date.now();
+      if (recoveryMs <= 0) {
+        const error = new Error("Recovery window reached");
+        error.name = "RecoveryWindowReached";
+        throw error;
+      }
+      signals.push(AbortSignal.timeout(Math.max(1, recoveryMs)));
+    }
+    init = { ...init, signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals) };
   }
   const state = requests.getStore();
   if (!state) return globalThis.fetch(input, init);
