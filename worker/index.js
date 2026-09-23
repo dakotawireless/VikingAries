@@ -2452,6 +2452,126 @@ async function verifyGithubActionsDeployOidc(request) {
 }
 
 
+function recoveryStateKey(projectId, threadId) {
+  const safeProject = String(projectId || "unknown").replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 100);
+  const safeThread = String(threadId || "unknown").replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 120);
+  return `viking-aries:recovery:${safeProject}:${safeThread}`;
+}
+
+function isContinuationRequest(rawMessages) {
+  return /^(continue|finish that|keep going|resume|continue that|finish it)[.!\s]*$/i.test(
+    latestUserText(rawMessages)
+  );
+}
+
+function safeOperationRecord(call, result, status = "done", detail = "") {
+  let args = {};
+  try { args = JSON.parse(call?.arguments || "{}"); } catch { args = {}; }
+  const record = {
+    tool: String(call?.name || "unknown").slice(0, 120),
+    label: describeRuntimeTool(call),
+    status,
+    at: Date.now(),
+  };
+  if (args.path) record.path = String(args.path).slice(0, 300);
+  if (args.projectId) record.projectId = String(args.projectId).slice(0, 120);
+  if (detail) record.detail = String(detail).slice(0, 500);
+  if (result && typeof result === "object") {
+    record.result = {
+      type: result.type || undefined,
+      path: result.path || undefined,
+      ref: result.ref || undefined,
+      size: Number.isFinite(result.size) ? result.size : undefined,
+      commitSha: result.commitSha || undefined,
+      branch: result.branch || undefined,
+      worker: result.worker || undefined,
+      buildUuid: result.buildUuid || undefined,
+      deployment: result.name || result.deployment?.name || undefined,
+      entryNames: Array.isArray(result.entries)
+        ? result.entries.slice(0, 80).map((entry) => entry?.path || entry?.name).filter(Boolean)
+        : undefined,
+      fileNames: Array.isArray(result.files)
+        ? result.files.slice(0, 80).map((file) => file?.name).filter(Boolean)
+        : undefined,
+    };
+  }
+  return record;
+}
+
+function classifyRunStop(error, budgetPaused = false) {
+  const message = String(error?.message || error || "").toLowerCase();
+  const explicit = String(error?.runStopStatus || "").toLowerCase();
+  if (explicit.includes("cancel")) return { code: "canceled", label: "User cancellation" };
+  if (explicit.includes("timeout") || explicit.includes("timed_out")) return { code: "timed_out", label: "Execution timeout" };
+  if (budgetPaused || error instanceof RequestBudgetExceeded || /request budget|batch limit|tool budget/.test(message)) {
+    return { code: "paused", label: "Execution/tool budget reached" };
+  }
+  if (/recovery window|deadline|timeout|timed out|aborterror|timeouterror/.test(`${error?.name || ""} ${message}`.toLowerCase())) {
+    return { code: "timed_out", label: "Execution timeout" };
+  }
+  if (/network|fetch failed|connection|econn|dns|socket/.test(message)) return { code: "failed", label: "Network error" };
+  if (Number(error?.status) >= 400 || /ai service|provider|openai/.test(message)) return { code: "failed", label: "Provider/API error" };
+  if (/tool|github|cloudflare|convex|files & media/.test(message)) return { code: "failed", label: "Tool failure" };
+  if (/control unavailable|runtime|backend|heartbeat/.test(message)) return { code: "failed", label: "Backend/runtime failure" };
+  return { code: "failed", label: "Other known failure" };
+}
+
+function recoveryFallbackText(state, stop) {
+  const completed = Array.isArray(state?.completedOperations) ? state.completedOperations : [];
+  const writes = Array.isArray(state?.writes) ? state.writes : [];
+  const completedText = completed.length
+    ? completed.slice(-12).map((item) => `- ${item.label}${item.path ? ` (${item.path})` : ""}`).join("\n")
+    : "- The request was accepted, but no tool operation completed before the interruption.";
+  const remains = state?.finalOperation
+    ? `Continue from ${state.finalOperation}; use the saved findings and do not repeat completed operations.`
+    : "Continue from the saved run checkpoint and perform only the remaining bounded investigation.";
+  const safety = writes.length
+    ? `${writes.length} write action${writes.length === 1 ? " was" : "s were"} completed before the stop:\n${writes.map((item) => `- ${item.path || item.tool}${item.commitSha ? ` — ${item.commitSha}` : ""}`).join("\n")}\nNo completed write should be replayed automatically.`
+    : "No files or settings were changed. No deployment was started by this run.";
+  return [
+    `## Stop reason\n${stop.label}.`,
+    `## What was completed\n${completedText}`,
+    `## Where it stopped\n${state?.finalOperation || "The active model/provider step ended before normal completion."}`,
+    `## What remains\n${remains}`,
+    `## Change safety\n${safety}`,
+    `## Next best action\nSend **continue** to resume from this checkpoint. Viking Aries will use the saved progress and will not automatically replay writes or destructive actions.`,
+  ].join("\n\n");
+}
+
+async function persistRecoveryCheckpoint(env, projectId, threadId, state) {
+  if (!projectId || !threadId || !state) return;
+  const compact = {
+    ...state,
+    completedOperations: (state.completedOperations || []).slice(-40),
+    writes: (state.writes || []).slice(-20),
+    updatedAt: Date.now(),
+  };
+  try {
+    await writeVAState(env, {
+      key: recoveryStateKey(projectId, threadId),
+      value: JSON.stringify(compact),
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // A checkpoint outage must not hide the actual run result.
+  }
+}
+
+async function readRecoveryCheckpoint(env, projectId, threadId) {
+  try {
+    const state = await readVAState(env);
+    const key = recoveryStateKey(projectId, threadId);
+    const entry = (Array.isArray(state?.entries) ? state.entries : []).find(
+      (item) => item?.key === key && !item?.deleted
+    );
+    if (!entry?.value) return null;
+    const parsed = JSON.parse(entry.value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
