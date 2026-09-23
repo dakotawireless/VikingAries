@@ -4823,13 +4823,13 @@ const worker = {
           ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
             ? buildGithubTools()
             : []),
-          ...(ownerAuthenticated && githubToken
+          ...(ownerAuthenticated && githubToken && registeredProjectConfig(projectId)
             ? buildOwnerProjectTools()
             : []),
           ...(platformToolsRequested && ownerAuthenticated && githubToken
             ? buildVikingAriesPlatformTools()
             : []),
-          ...(repeatedRepairDiagnosis && ownerAuthenticated && githubToken
+          ...(repeatedRepairDiagnosis && ownerAuthenticated && githubToken && registeredProjectConfig(projectId)
             ? buildCrossProjectDiagnosticTools()
             : []),
           ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
