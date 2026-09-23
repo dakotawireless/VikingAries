@@ -1,4 +1,11 @@
-import { withRunControl, currentRunSignal } from "./run-control.js";
+import {
+  withRunControl,
+  currentRunSignal,
+  currentRunDeadlineAt,
+  currentRunRecoveryAt,
+  currentRunRecoveryState,
+  updateRunRecoveryState,
+} from "./run-control.js";
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
 import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
