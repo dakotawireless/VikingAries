@@ -74,6 +74,13 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid #4aa7f3; outli
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
 }
 .brand-name { font-weight: 600; font-size: 18px; line-height: 1.05; }
+.brand-mark-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  border-radius: inherit;
+}
 .brand-tagline { margin-top: 4px; font-size: 9px; letter-spacing: .16em; color: #96a9b8; }
 
 .sidebar-kicker {
