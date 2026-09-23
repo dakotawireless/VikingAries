@@ -3982,6 +3982,9 @@ const worker = {
     const tools = modelKnowledgeQuestion
       ? [{ type: "web_search" }]
       : [
+          ...(projectFilesToolEnabled(ownerAuthenticated, env, projectId)
+            ? buildProjectFilesTools()
+            : []),
           ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
             ? buildGithubTools()
             : []),
