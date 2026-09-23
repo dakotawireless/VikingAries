@@ -284,7 +284,7 @@ function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
   };
 
   for (const prior of priorJobs) {
-    if (!["completed", "failed", "canceled", "timed_out"].includes(prior.status)) continue;
+    if (!["completed", "failed", "canceled", "timed_out", "paused"].includes(prior.status)) continue;
 
     let userIndex = findUserIndex(prior);
     if (userIndex < 0 && prior.userMessageContent) {
