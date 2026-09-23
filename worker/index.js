@@ -1880,7 +1880,7 @@ async function callOpenAI({
       throw abortSignal.reason || new DOMException("Aborted", "AbortError");
     }
 
-    const timeoutSignal = AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(Math.max(1000, Math.min(OPENAI_REQUEST_TIMEOUT_MS, timeoutMs)));
     const requestSignal = abortSignal
       ? AbortSignal.any([abortSignal, timeoutSignal])
       : timeoutSignal;
