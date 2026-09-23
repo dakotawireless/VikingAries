@@ -51,6 +51,8 @@ export default defineSchema({
     size: v.number(),
     storageId: v.id("_storage"),
     uploadedAt: v.number(),
+    sourceProjectId: v.optional(v.string()),
+    sourceFileId: v.optional(v.string()),
   })
     .index("by_project_uploadedAt", ["projectId", "uploadedAt"]),
 
