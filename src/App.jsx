@@ -1124,6 +1124,20 @@ function ChatWorkspace({ project, active = true }) {
   const directJobIdRef = useRef("");
   const stoppedJobIdsRef = useRef(new Set());
 
+  const answeredJobIds = new Set(
+    (activeThread?.messages || [])
+      .filter((message) => message.role === "assistant" && message.jobId)
+      .map((message) => message.jobId)
+  );
+  const hasUnansweredRunningJob = (activeThread?.messages || []).some(
+    (message) =>
+      message.role === "user" &&
+      message.queueStatus === "running" &&
+      message.jobId &&
+      !answeredJobIds.has(message.jobId) &&
+      !stoppedJobIdsRef.current.has(message.jobId)
+  );
+
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
   const projectDeploymentUrl =
     projectIntegrationMappings.cloudflare?.deploymentUrl ||
@@ -1399,8 +1413,17 @@ function ChatWorkspace({ project, active = true }) {
           job.threadId === activeThreadId &&
           !stoppedJobIdsRef.current.has(job.jobId)
       );
-      const running = activeJobs.filter((job) => job.status === "running");
-      const queued = activeJobs.filter((job) => job.status === "queued");
+      const localAnsweredJobIds = new Set(
+        (activeThread?.messages || [])
+          .filter((message) => message.role === "assistant" && message.jobId)
+          .map((message) => message.jobId)
+      );
+      const running = activeJobs.filter(
+        (job) => job.status === "running" && !localAnsweredJobIds.has(job.jobId)
+      );
+      const queued = activeJobs.filter(
+        (job) => job.status === "queued" && !localAnsweredJobIds.has(job.jobId)
+      );
       const hasPending = running.length > 0 || queued.length > 0;
       setSending(hasPending);
 
@@ -1510,16 +1533,7 @@ function ChatWorkspace({ project, active = true }) {
     const threadId = activeThread.id;
     const threadAlreadyWorking =
       Boolean(directRequestControllerRef.current) ||
-      activeThread.messages.some(
-        (message) =>
-          message.queueStatus === "running" &&
-          !activeThread.messages.some(
-            (reply) =>
-              reply.role === "assistant" &&
-              reply.jobId &&
-              reply.jobId === message.jobId
-          )
-      );
+      hasUnansweredRunningJob;
     const sendRecommendation =
       repairFailureEscalation(activeThread.messages, typedContent) ||
       modelRecommendation;
@@ -2265,12 +2279,7 @@ function ChatWorkspace({ project, active = true }) {
             </article>
           ))}
 
-          {activeThread?.messages.some(
-            (message) =>
-              message.queueStatus === "running" &&
-              message.jobId &&
-              !stoppedJobIdsRef.current.has(message.jobId)
-          ) && (
+          {hasUnansweredRunningJob && (
             <article className="message-row">
               <div className="assistant-avatar"><WandSparkles size={18} /></div>
               <div className="message-stack">
