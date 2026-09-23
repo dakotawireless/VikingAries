@@ -2683,7 +2683,7 @@ function ApiUsageView({ project }) {
 
           <section className="workspace-card">
             <div className="card-heading-row">
-              <div><h2>By model</h2><p>Usage and estimated spend across Luna, Terra, and Sol.</p></div>
+              <div><h2>By model</h2><p>Usage and estimated spend across Luna, Terra, Sol, Astra, and any other recorded model.</p></div>
             </div>
             {loading ? (
               <EmptyState text="Loading API usage…" />
