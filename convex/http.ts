@@ -40,7 +40,10 @@ http.route({
         return Response.json({ error: "Files must be between 1 byte and 10 MB." }, { status: 413 });
       }
 
-      const name = safeFileName(file instanceof File ? file.name : "file");
+      const submittedName = typeof (file as Blob & { name?: unknown }).name === "string"
+        ? (file as Blob & { name: string }).name
+        : "file";
+      const name = safeFileName(submittedName);
       const type = String(file.type || "application/octet-stream").slice(0, 180);
       const storageId = await ctx.storage.store(file);
       try {
