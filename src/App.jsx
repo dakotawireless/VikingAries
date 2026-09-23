@@ -1195,16 +1195,23 @@ function ChatWorkspace({ project, active = true }) {
     setShowJumpToBottom(!nearBottom);
   };
 
-  // Changing projects/chats starts at the latest activity.
+  // Every project shares this chat workspace. On mount/refresh, wait for the
+  // restored conversation to finish laying out before forcing the viewport to
+  // the newest activity. The second pass handles browser restore timing and
+  // fonts/images that change scrollHeight after the first paint.
   useEffect(() => {
     if (!active) return;
     autoFollowRef.current = true;
+    setShowJumpToBottom(false);
+
     const frame = window.requestAnimationFrame(() => scrollToChatBottom("auto"));
-    const timer = window.setTimeout(() => scrollToChatBottom("auto"), 80);
+    const timers = [80, 240, 500].map((delay) =>
+      window.setTimeout(() => scrollToChatBottom("auto"), delay)
+    );
 
     return () => {
       window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
+      timers.forEach((timer) => window.clearTimeout(timer));
     };
   }, [project.id, activeThreadId, active]);
 
