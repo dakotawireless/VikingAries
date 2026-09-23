@@ -3314,3 +3314,68 @@ body.resizing-preview * {
 [data-theme="metal"] .job-activity-row {
   color: #eee8df;
 }
+
+/* High-contrast shell text: the dark Metal theme must not rely on muted gray
+   text for primary navigation, status, toolbar, or composer controls. */
+[data-theme="metal"] .brand-name,
+[data-theme="metal"] .brand-tagline,
+[data-theme="metal"] .sidebar-kicker,
+[data-theme="metal"] .project-title-row h1,
+[data-theme="metal"] .active-project,
+[data-theme="metal"] .chat-connection-status,
+[data-theme="metal"] .message-meta,
+[data-theme="metal"] .message-meta > span,
+[data-theme="metal"] .copy-message-button,
+[data-theme="metal"] .composer-hint,
+[data-theme="metal"] .preview-toolbar h2,
+[data-theme="metal"] .preview-toolbar p,
+[data-theme="metal"] .preview-toolbar .tool-button,
+[data-theme="metal"] .preview-toolbar .device-icon-switcher button,
+[data-theme="metal"] .preview-toolbar .preview-toolbar-actions button {
+  color: #ffffff !important;
+}
+
+[data-theme="metal"] .project-deployment-link {
+  color: #ffffff;
+  background: #21180f;
+  border-color: #d6a354;
+}
+[data-theme="metal"] .project-deployment-link-empty {
+  color: #f4eadb;
+  border-color: #8c7353;
+}
+[data-theme="metal"] .chat-tab {
+  color: #f4efe6;
+}
+[data-theme="metal"] .chat-tab:hover,
+[data-theme="metal"] .chat-tab.active {
+  color: #ffffff;
+}
+[data-theme="metal"] .chat-tab-close {
+  color: #e8dfd2;
+}
+[data-theme="metal"] .copy-message-button:hover,
+[data-theme="metal"] .preview-toolbar .tool-button:hover,
+[data-theme="metal"] .preview-toolbar .device-icon-switcher button:hover,
+[data-theme="metal"] .preview-toolbar .preview-toolbar-actions button:hover {
+  color: #ffffff !important;
+  background: #3a2b1d;
+}
+[data-theme="metal"] .preview-toolbar {
+  background: #111214;
+  border-bottom-color: #5a4b3b;
+}
+[data-theme="metal"] .preview-control-strip {
+  border-left-color: #5a4b3b;
+}
+[data-theme="metal"] .toolbar-divider {
+  background: #5a4b3b;
+}
+[data-theme="metal"] .preview-toolbar .device-icon-switcher button.active {
+  color: #ffffff !important;
+  background: #694622;
+  border-color: #d6a354;
+}
+[data-theme="metal"] .composer-hint {
+  text-shadow: 0 1px 2px #000;
+}
