@@ -10,6 +10,147 @@ function authorized(request: Request) {
   return request.headers.get("Authorization") === `Bearer ${expected}`;
 }
 
+const MAX_PROJECT_FILE_BYTES = 10 * 1024 * 1024;
+
+function safeFileName(value: unknown) {
+  const name = String(value || "file")
+    .normalize("NFKC")
+    .replace(/[\\/]+/g, "-")
+    .replace(/[\u0000-\u001f\u007f]+/g, "")
+    .trim();
+  return (name || "file").slice(0, 180);
+}
+
+http.route({
+  path: "/files/upload",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    try {
+      const form = await request.formData();
+      const projectId = String(form.get("projectId") || "").trim().slice(0, 120);
+      const file = form.get("file");
+      if (!projectId || !(file instanceof Blob)) {
+        return Response.json({ error: "projectId and file are required." }, { status: 400 });
+      }
+      if (file.size <= 0 || file.size > MAX_PROJECT_FILE_BYTES) {
+        return Response.json({ error: "Files must be between 1 byte and 10 MB." }, { status: 413 });
+      }
+
+      const name = safeFileName(file instanceof File ? file.name : "file");
+      const type = String(file.type || "application/octet-stream").slice(0, 180);
+      const storageId = await ctx.storage.store(file);
+      try {
+        const id = await ctx.runMutation(internal.files.createProjectFile, {
+          projectId,
+          name,
+          type,
+          size: file.size,
+          storageId,
+          uploadedAt: Date.now(),
+        });
+        return Response.json({
+          ok: true,
+          file: { id, projectId, name, type, size: file.size, uploadedAt: Date.now() },
+        });
+      } catch (error) {
+        await ctx.storage.delete(storageId);
+        throw error;
+      }
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : "Could not upload file." },
+        { status: 400 }
+      );
+    }
+  }),
+});
+
+http.route({
+  path: "/files/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    const projectId = new URL(request.url).searchParams.get("projectId")?.trim().slice(0, 120) || "";
+    if (!projectId) return Response.json({ error: "projectId is required." }, { status: 400 });
+
+    const files = await ctx.runQuery(internal.files.listProjectFiles, { projectId });
+    return Response.json({
+      ok: true,
+      files: files.map((file) => ({
+        id: file._id,
+        projectId: file.projectId,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        uploadedAt: file.uploadedAt,
+        status: "Stored",
+        storage: "convex",
+      })),
+    });
+  }),
+});
+
+http.route({
+  path: "/files/download",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id") || "";
+    const projectId = url.searchParams.get("projectId")?.trim().slice(0, 120) || "";
+    try {
+      const file = await ctx.runQuery(internal.files.getProjectFile, { id: id as any });
+      if (!file || file.projectId !== projectId) {
+        return Response.json({ error: "File not found." }, { status: 404 });
+      }
+      const blob = await ctx.storage.get(file.storageId);
+      if (!blob) return Response.json({ error: "Stored file is unavailable." }, { status: 404 });
+      return new Response(blob, {
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "Content-Length": String(file.size),
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+          "Cache-Control": "private, no-store",
+        },
+      });
+    } catch {
+      return Response.json({ error: "File not found." }, { status: 404 });
+    }
+  }),
+});
+
+http.route({
+  path: "/files/delete",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id") || "";
+    const projectId = url.searchParams.get("projectId")?.trim().slice(0, 120) || "";
+    try {
+      const file = await ctx.runQuery(internal.files.getProjectFile, { id: id as any });
+      if (!file || file.projectId !== projectId) {
+        return Response.json({ error: "File not found." }, { status: 404 });
+      }
+      await ctx.storage.delete(file.storageId);
+      await ctx.runMutation(internal.files.deleteProjectFile, { id: file._id });
+      return Response.json({ ok: true });
+    } catch {
+      return Response.json({ error: "File not found." }, { status: 404 });
+    }
+  }),
+});
+
 http.route({
   path: "/usage/record",
   method: "POST",
