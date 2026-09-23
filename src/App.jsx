@@ -59,11 +59,6 @@ import {
   Zap,
 } from "lucide-react";
 
-// One private project image is the canonical Viking Aries mark. It is also used
-// by index.html as the browser favicon so the workspace stays visually consistent.
-const VIKING_ARIES_MARK_URL =
-  "/api/files/preview?id=jh76h8wa6w3skmddhs5c9tnypx8ey1kc&projectId=viking-aries";
-
 const personalProjects = [
   {
     id: "timekeeper",
