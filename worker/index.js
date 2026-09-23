@@ -4063,6 +4063,10 @@ const worker = {
       requestActionHistory
     ).slice(-40);
     const verifiedActionText = formatVerifiedActionHistory(verifiedActionHistory);
+    const continuationRequested = isContinuationRequest(body?.messages);
+    const priorRecoveryCheckpoint = continuationRequested
+      ? await readRecoveryCheckpoint(env, projectId, threadId)
+      : null;
 
     const projectFacts = [
       projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
