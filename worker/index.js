@@ -2062,7 +2062,7 @@ async function recordVAUsage(env, record) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) return { recorded: false, reason: "VA_USAGE_INGEST_SECRET is not configured." };
 
-  const response = await fetch(`${VA_CONVEX_SITE_URL}/usage/record`, {
+  const response = await globalThis.fetch(`${VA_CONVEX_SITE_URL}/usage/record`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${secret}`,
@@ -2133,7 +2133,7 @@ async function readVAState(env) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
 
-  const response = await fetch(`${VA_CONVEX_SITE_URL}/state`, {
+  const response = await globalThis.fetch(`${VA_CONVEX_SITE_URL}/state`, {
     headers: { Authorization: `Bearer ${secret}` },
   });
   const payload = await response.json().catch(() => null);
@@ -2284,7 +2284,7 @@ async function deleteVAState(env, key, updatedAt) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
 
-  const response = await fetch(
+  const response = await globalThis.fetch(
     `${VA_CONVEX_SITE_URL}/state?key=${encodeURIComponent(key)}&updatedAt=${encodeURIComponent(updatedAt)}`,
     {
       method: "DELETE",
