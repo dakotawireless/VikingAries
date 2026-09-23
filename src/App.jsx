@@ -902,6 +902,45 @@ function recommendModelForTask(value) {
   };
 }
 
+function repairFailureEscalation(messages, currentText) {
+  const latest = String(currentText || "").toLowerCase();
+  if (!latest) return null;
+
+  const failurePattern =
+    /\b(still|again|same issue|same problem|not fixed|didn't fix|did not fix|doesn't work|does not work|not working|keeps happening|keeps failing|keeps breaking|tried .* times|asked .* times|multiple times|several times)\b/;
+  const repairPattern =
+    /\b(fix|repair|debug|troubleshoot|preview|blank|crash|broken|error|issue|problem|hang|stuck|queue|deploy|build)\b/;
+
+  if (!failurePattern.test(latest) || !repairPattern.test(latest)) return null;
+
+  const recentUserTexts = (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.role === "user" && typeof message?.content === "string")
+    .slice(-10)
+    .map((message) => message.content.toLowerCase());
+
+  const priorFailureMentions = recentUserTexts.filter(
+    (text) => failurePattern.test(text) && repairPattern.test(text)
+  ).length;
+
+  const explicitManyAttempts =
+    /\b([3-9]|\d{2,})\s*(times|tries|attempts)\b/.test(latest) ||
+    /\b(three|four|five|six|seven|eight|nine|ten)\s+(times|tries|attempts)\b/.test(latest);
+
+  if (explicitManyAttempts || priorFailureMentions >= 1) {
+    return {
+      id: "gpt-6-astra",
+      label: "Astra",
+      reason: "Repeated repair failure — re-diagnose across layers before editing",
+    };
+  }
+
+  return {
+    id: "gpt-5.6-sol",
+    label: "Sol",
+    reason: "Previous repair did not work — deeper root-cause diagnosis required",
+  };
+}
+
 function loadSelectedModel() {
   const saved = window.localStorage.getItem("viking-aries:selected-model");
   const routingVersion = window.localStorage.getItem("viking-aries:model-routing-version");
@@ -1063,9 +1102,12 @@ function ChatWorkspace({ project, active = true }) {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const [selectedModel, setSelectedModel] = useState(loadSelectedModel);
+  const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
   const modelRecommendation = useMemo(
-    () => recommendModelForTask(draft),
-    [draft]
+    () =>
+      repairFailureEscalation(activeThread?.messages || [], draft) ||
+      recommendModelForTask(draft),
+    [activeThread?.messages, draft]
   );
   const scrollRef = useRef(null);
   const conversationRef = useRef(null);
@@ -1082,7 +1124,6 @@ function ChatWorkspace({ project, active = true }) {
   const directJobIdRef = useRef("");
   const stoppedJobIdsRef = useRef(new Set());
 
-  const activeThread = threads.find((thread) => thread.id === activeThreadId) || threads[0];
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
   const projectDeploymentUrl =
     projectIntegrationMappings.cloudflare?.deploymentUrl ||
@@ -1479,9 +1520,12 @@ function ChatWorkspace({ project, active = true }) {
               reply.jobId === message.jobId
           )
       );
+    const sendRecommendation =
+      repairFailureEscalation(activeThread.messages, typedContent) ||
+      modelRecommendation;
     const requestModel =
       selectedModel === VA_AUTO_MODEL
-        ? modelRecommendation?.id || "gpt-5.6-luna"
+        ? sendRecommendation?.id || "gpt-5.6-luna"
         : selectedModel;
     const userMessage = {
       id: `user-${jobId}`,
