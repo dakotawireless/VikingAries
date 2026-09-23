@@ -4744,7 +4744,7 @@ const worker = {
       "Clearly distinguish information that is safe to paste into chat, such as a non-secret provider ID, from secrets or bank credentials that must go through the Secrets tab or provider UI. Never ask Erik to paste secret keys, routing numbers, account numbers, passwords, or private tokens into chat.",
       "Do not make Erik perform work Viking Aries can already do with its connected tools. Only hand off the parts that genuinely require his account access, physical action, approval, or information that is not available to the runtime.",
       "When multiple owner actions are on the same screen and are simple, reversible, and naturally completed together, you may group them into one step; otherwise keep the flow one step at a time.",
-      "Maintain awareness that Viking Aries manages multiple related projects while keeping ordinary project write actions scoped to the selected project.",
+      "Owner Personal-workspace projects are transparent to one another for read/search operations. The selected project remains the default write target. Read other registered owner projects whenever useful for reuse, comparison, or integration. Do not write to another project unless the owner's latest instruction explicitly names/authorizes that destination.",
       "Viking Aries platform surfaces such as the Secrets tab, Theme, project selector, AI Builder chat UI, preview pane, model recommendation UI, and platform settings belong to dakotawireless/VikingAries, not to the selected app repository. When the owner explicitly asks to change one of those platform surfaces and va_platform_* tools are available, use those tools even if another project is selected. Do not use va_platform_* tools for changes to the selected app itself.",
       "When a project needs a credential or API secret, never ask the owner to paste the value into AI chat. Direct them to the project Secrets tab, where the value can be sent directly to the secure runtime without entering model context.",
       "Project records should either be stored in Viking Aries or point to a durable retrievable source such as a repository file, commit, deployment, provider record, or Drive item.",
@@ -4790,6 +4790,9 @@ const worker = {
           ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
             ? buildGithubTools()
             : []),
+          ...(ownerAuthenticated && githubToken
+            ? buildOwnerProjectTools()
+            : []),
           ...(platformToolsRequested && ownerAuthenticated && githubToken
             ? buildVikingAriesPlatformTools()
             : []),
@@ -4811,10 +4814,10 @@ const worker = {
       );
     }
     if (!modelKnowledgeQuestion && projectFilesToolEnabled(ownerAuthenticated, env, projectId)) {
-      runtimeCapabilityNotes.push("The read-only Files & Media tool is available for the currently selected project. Use it first for filenames, file types, sizes, upload times, and file record identifiers shown in Files & Media. It reads only that project's live Convex records and does not expose private storage URLs or secrets. For an image the owner wants to see, use the secure preview tool after listing the records; it returns only an owner-authenticated Viking Aries preview path, never a Convex storage URL or secret.");
+      runtimeCapabilityNotes.push("Files & Media is owner-wide across registered Personal projects. You may list/search/read metadata and preview images from any registered owner project. You may securely copy an asset between owner projects or into a project repository when the destination is the selected project or the latest user instruction explicitly authorizes that destination. Never expose private storage URLs, storage IDs, secrets, or raw binary bytes to the model.");
     }
     if (!modelKnowledgeQuestion && githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
-      runtimeCapabilityNotes.push("GitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.");
+      runtimeCapabilityNotes.push("GitHub tools for the selected project remain the default write path. Owner-wide owner_project_* tools can list/read any registered Personal project repository. Cross-project owner_project_* writes are runtime-blocked unless the latest user instruction explicitly names/authorizes that destination project. Use owner_projects_list when project mappings are unclear.");
     }
     if (platformToolsRequested && ownerAuthenticated && githubToken) {
       runtimeCapabilityNotes.push("The owner explicitly requested a Viking Aries platform UI change. va_platform_* tools are available and are hard-scoped to dakotawireless/VikingAries on main. Use them for the platform change while keeping ordinary github_* tools scoped to the selected project.");
@@ -5036,6 +5039,10 @@ const worker = {
             "github_replace_text",
             "va_platform_write_file",
             "va_platform_replace_text",
+            "owner_project_write_file",
+            "owner_project_replace_text",
+            "files_media_copy_project_file",
+            "files_media_copy_file_to_project_repository",
           ]).has(call.name);
           if (writeTool) {
             let writeArgs = {};
@@ -5044,8 +5051,9 @@ const worker = {
             } catch {
               writeArgs = {};
             }
-            const writePath = String(writeArgs.path || "").trim() || "(unknown path)";
-            const writeKey = `${call.name.replace(/^va_platform_/, "github_")}:${writePath}`;
+            const writePath = String(writeArgs.path || writeArgs.destinationPath || "").trim() || "(unknown path)";
+            const writeProject = String(writeArgs.projectId || writeArgs.destinationProjectId || projectId || "").trim();
+            const writeKey = `${call.name.replace(/^va_platform_/, "github_")}:${writeProject}:${writePath}`;
             const attempts = (writeAttempts.get(writeKey) || 0) + 1;
             writeAttempts.set(writeKey, attempts);
             if (attempts > MAX_WRITE_ATTEMPTS_PER_PATH) {
@@ -5078,6 +5086,8 @@ const worker = {
             let result;
             if (call.name.startsWith("github_")) {
               result = await executeGithubTool(call, githubToken, projectMetadata);
+            } else if (call.name.startsWith("owner_project")) {
+              result = await executeOwnerProjectTool(call, githubToken, projectId, body?.messages);
             } else if (call.name.startsWith("va_platform_")) {
               result = await executeVikingAriesPlatformTool(call, githubToken);
             } else if (call.name.startsWith("diagnostic_")) {
@@ -5087,7 +5097,7 @@ const worker = {
             } else if (call.name.startsWith("convex_")) {
               result = await executeConvexTool(call, convexToken, projectMetadata);
             } else if (call.name.startsWith("files_media_")) {
-              result = await executeProjectFilesTool(call, env, projectId);
+              result = await executeProjectFilesTool(call, env, projectId, githubToken, body?.messages);
             } else {
               throw new Error(`Unsupported runtime tool: ${call.name}`);
             }
