@@ -4449,11 +4449,18 @@ const worker = {
             });
           } catch (error) {
             if (error instanceof RequestBudgetExceeded) budgetPaused = true;
-            await finishProgress(
-              toolProgressId,
-              "failed",
-              error instanceof Error ? error.message : "Tool action failed"
-            );
+            const detail = error instanceof Error ? error.message : "Tool action failed";
+            await finishProgress(toolProgressId, "failed", detail);
+            const state = currentRunRecoveryState() || runState;
+            state.failedOperations = [
+              ...(state.failedOperations || []),
+              safeOperationRecord(call, null, "failed", detail),
+            ].slice(-20);
+            updateRunRecoveryState({
+              failedOperations: state.failedOperations,
+              finalOperation: `${operationLabel}: ${detail}`,
+            });
+            await persistRecoveryCheckpoint(env, projectId, threadId, currentRunRecoveryState() || state);
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,
