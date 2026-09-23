@@ -2009,6 +2009,41 @@ async function readVAUsage(env, days) {
   return payload;
 }
 
+async function listVAProjectFiles(env, projectId) {
+  const scopedProjectId = String(projectId || "").trim().slice(0, 120);
+  if (!scopedProjectId || !registeredProjectConfig(scopedProjectId)) {
+    throw new Error("The selected project is not registered for Files & Media access.");
+  }
+
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("Private Files & Media storage is not configured.");
+
+  const response = await fetch(
+    `${VA_CONVEX_SITE_URL}/files/list?projectId=${encodeURIComponent(scopedProjectId)}`,
+    { headers: { Authorization: `Bearer ${secret}` } }
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Files & Media query failed with status ${response.status}`);
+  }
+
+  // Return record metadata only. In particular, never pass a private storage
+  // URL, a download URL, or the storage ID to the model.
+  const files = Array.isArray(payload?.files) ? payload.files : [];
+  return {
+    projectId: scopedProjectId,
+    files: files.map((file) => ({
+      id: typeof file?.id === "string" ? file.id : null,
+      name: typeof file?.name === "string" ? file.name : "Unnamed file",
+      type: typeof file?.type === "string" ? file.type : "application/octet-stream",
+      size: Number.isFinite(Number(file?.size)) ? Number(file.size) : 0,
+      uploadedAt: Number.isFinite(Number(file?.uploadedAt)) ? Number(file.uploadedAt) : null,
+      storage: "convex",
+      status: "Stored",
+    })),
+  };
+}
+
 async function readVAState(env) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
