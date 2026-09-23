@@ -4,6 +4,7 @@ import {
   currentRunDeadlineAt,
   currentRunRecoveryAt,
   currentRunRecoveryState,
+  beginRunRecoveryMode,
   updateRunRecoveryState,
 } from "./run-control.js";
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
