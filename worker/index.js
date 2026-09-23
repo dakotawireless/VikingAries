@@ -4422,6 +4422,26 @@ const worker = {
               }
             }
 
+            const operation = safeOperationRecord(call, result);
+            const state = currentRunRecoveryState() || runState;
+            state.completedOperations = [...(state.completedOperations || []), operation].slice(-40);
+            if (receipt) {
+              state.writes = [...(state.writes || []), {
+                tool: call.name,
+                path: receipt.path || null,
+                commitSha: receipt.commitSha || null,
+                buildId: receipt.buildId || null,
+              }].slice(-20);
+            }
+            updateRunRecoveryState({
+              completedOperations: state.completedOperations,
+              writes: state.writes || [],
+              writesOccurred: (state.writes || []).length > 0,
+              lastSuccessfulOperation: operationLabel,
+              finalOperation: operationLabel,
+            });
+            await persistRecoveryCheckpoint(env, projectId, threadId, currentRunRecoveryState() || state);
+
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,
