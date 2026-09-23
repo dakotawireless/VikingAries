@@ -24,24 +24,26 @@ test('hard limit isolates simultaneous requests', async (t) => {
   })));
 });
 
-test('secret lookup is cached only within its request and charged once', async () => {
+test('secret lookup is cached within a request without consuming agent work budget', async () => {
   let reads = 0;
   const secret = { get: async () => { reads++; return 'test'; } };
   for (let i = 0; i < 2; i++) await withRequestBudget(async () => {
     assert.deepEqual(await Promise.all([resolveBoundSecret(secret), resolveBoundSecret(secret)]), ['test','test']);
-    assert.equal(remainingRequests(), requestLimit - 1);
+    assert.equal(remainingRequests(), requestLimit);
   });
   assert.equal(reads, 2);
 });
 
 for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failure']) {
   test(`${mode}: bounded execution preserves receipts, usage and normal response shape`, async (t) => {
-    let requests = 0, models = 0, successfulModels = 0, writes = 0, stored = 0;
+    let agentRequests = 0, models = 0, successfulModels = 0, writes = 0, stored = 0;
     const finalInputs = [];
     t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
       if (String(url).includes('/jobs/control')) return Response.json({status:'running',deadlineAt:Date.now()+480000});
-      requests++;
-      assert.ok(requests <= requestLimit, 'exceeded request-wide cap');
+      if (String(url).includes('api.openai.com') || String(url).includes('api.github.com')) {
+        agentRequests++;
+        assert.ok(agentRequests <= requestLimit, 'exceeded external agent-work cap');
+      }
       if (String(url).includes('api.openai.com')) {
         models++;
         const body = JSON.parse(init.body);
@@ -98,6 +100,111 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     }
   });
 }
+
+test('normal multi-file app task finishes despite progress and checkpoint bookkeeping', async (t) => {
+  let modelCalls = 0;
+  let writes = 0;
+  let bookkeepingRequests = 0;
+
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes('/jobs/control')) {
+      return Response.json({ status: 'running', deadlineAt: Date.now() + 240000 });
+    }
+    if (target.includes('/usage/record')) {
+      bookkeepingRequests++;
+      return Response.json({ ok: true, id: `usage-${bookkeepingRequests}` });
+    }
+    if (target.includes('/state')) {
+      bookkeepingRequests++;
+      return init.method === 'PUT'
+        ? Response.json({ ok: true })
+        : Response.json({ entries: [] });
+    }
+    if (target.includes('api.github.com')) {
+      if (init.method === 'PUT') {
+        writes++;
+        return Response.json({
+          content: { path: writes === 1 ? 'src/App.jsx' : 'src/chat-layout-overrides.css' },
+          commit: { sha: `commit-${writes}` },
+        });
+      }
+      return Response.json({
+        type: 'file',
+        path: 'src/App.jsx',
+        sha: 'old-sha',
+        encoding: 'base64',
+        content: 'b2xk',
+      });
+    }
+    if (target.includes('api.openai.com')) {
+      modelCalls++;
+      if (modelCalls === 1) {
+        return Response.json({
+          id: 'round-1',
+          usage: { input_tokens: 10, output_tokens: 10 },
+          output: ['src/App.jsx','src/chat-layout-overrides.css','src/styles.css','src/main.jsx'].map((path, index) => ({
+            type: 'function_call',
+            call_id: `read-${index}`,
+            name: 'github_read_file',
+            arguments: JSON.stringify({ path }),
+          })),
+        });
+      }
+      if (modelCalls === 2) {
+        return Response.json({
+          id: 'round-2',
+          usage: { input_tokens: 10, output_tokens: 10 },
+          output: [
+            {
+              type: 'function_call',
+              call_id: 'write-app',
+              name: 'github_write_file',
+              arguments: JSON.stringify({ path: 'src/App.jsx', content: 'updated app', message: 'Update chat scroll' }),
+            },
+            {
+              type: 'function_call',
+              call_id: 'write-css',
+              name: 'github_write_file',
+              arguments: JSON.stringify({ path: 'src/chat-layout-overrides.css', content: 'updated css', message: 'Restore latest button' }),
+            },
+          ],
+        });
+      }
+      return Response.json({
+        id: 'round-3',
+        output_text: 'Completed the shared chat UX update.',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  const result = await worker.fetch(new Request('https://test/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-VA-Internal-Job-Secret': 'secret' },
+    body: JSON.stringify({
+      jobId: 'normal-multifile-task',
+      project: { id: 'viking-aries' },
+      thread: { id: 'thread' },
+      messages: [{ role: 'user', content: 'Make the shared chat auto-scroll and restore the Scroll to Bottom button globally.' }],
+    }),
+  }), {
+    OPENAI_API_KEY: 'test',
+    GITHUB_TOKEN: 'test',
+    VA_USAGE_INGEST_SECRET: 'secret',
+  });
+
+  const body = await result.json();
+  assert.equal(result.status, 200);
+  assert.equal(body.executionStatus, undefined);
+  assert.equal(body.continuationRequired, undefined);
+  assert.equal(modelCalls, 3);
+  assert.equal(writes, 2);
+  assert.equal(body.actionReceipts.length, 2);
+  assert.ok(bookkeepingRequests >= 6, 'test should exercise substantial internal bookkeeping');
+  assert.match(body.text, /Completed the shared chat UX update/);
+});
 
 test('cost ceiling stops the run without an extra recovery model call', async (t) => {
   let modelCalls = 0;

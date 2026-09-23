@@ -57,3 +57,24 @@
   background: #7f302c !important;
   border-color: #db8880 !important;
 }
+
+
+/* Shared chat control hardening: keep the jump-to-latest control above the
+   sticky composer in every project and theme. */
+.jump-to-bottom-button {
+  right: 18px !important;
+  bottom: 112px !important;
+  z-index: 65 !important;
+}
+
+@media (max-width: 900px) {
+  .jump-to-bottom-button {
+    right: 14px !important;
+    bottom: 170px !important;
+  }
+
+  .app-shell.mobile-ui .jump-to-bottom-button {
+    right: 14px !important;
+    bottom: 190px !important;
+  }
+}

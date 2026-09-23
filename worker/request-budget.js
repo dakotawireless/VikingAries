@@ -9,8 +9,9 @@ const requests = new AsyncLocalStorage();
 export const MAX_AGENT_ROUNDS = 8;
 export const MAX_AGENT_TOOLS = 20;
 export const MAX_AGENT_COST_USD = 0.50;
-// Keep each invocation deliberately small even on Workers Paid. Continuations are
-// cheaper and safer than letting one runaway request consume minutes and dollars.
+// This budget applies only to model/provider/tool network work. Internal Viking Aries
+// bookkeeping (usage logging, checkpoints, progress, secret reads) is deliberately
+// excluded so a healthy run cannot exhaust itself merely by recording its progress.
 const MAX_SUBREQUESTS = 44;
 
 export class RequestBudgetExceeded extends Error {
@@ -122,7 +123,6 @@ export async function resolveBoundSecret(binding) {
   const state = requests.getStore();
   if (!state) return binding.get();
   if (!state.secrets.has(binding)) {
-    consume();
     state.secrets.set(binding, Promise.resolve().then(() => binding.get()));
   }
   return state.secrets.get(binding);
