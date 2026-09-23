@@ -822,6 +822,103 @@ function openAIModelKnowledgeQuestion(rawMessages) {
   return knowledgeIntent;
 }
 
+function repeatedRepairDiagnosisRequested(rawMessages) {
+  const latest = latestUserText(rawMessages).toLowerCase();
+  if (!latest) return false;
+
+  const repair =
+    /\b(fix|repair|debug|troubleshoot|preview|blank|crash|broken|error|issue|problem|hang|stuck|queue|deploy|build|integration)\b/.test(latest);
+  const failure =
+    /\b(still|again|same issue|same problem|not fixed|didn't fix|did not fix|doesn't work|does not work|not working|keeps happening|keeps failing|keeps breaking|tried .* times|asked .* times|multiple times|several times)\b/.test(latest);
+
+  if (repair && failure) return true;
+
+  const recentUsers = (Array.isArray(rawMessages) ? rawMessages : [])
+    .filter((message) => message?.role === "user" && typeof message?.content === "string")
+    .slice(-8)
+    .map((message) => message.content.toLowerCase());
+
+  return recentUsers.filter(
+    (text) =>
+      /\b(fix|repair|debug|troubleshoot|preview|blank|crash|broken|error|issue|problem)\b/.test(text) &&
+      /\b(still|again|not fixed|doesn't work|does not work|not working|keeps)\b/.test(text)
+  ).length >= 2;
+}
+
+function buildCrossProjectDiagnosticTools() {
+  const projectIds = Object.keys(PROJECT_RUNTIME_CONFIG).sort().join(", ");
+  return [
+    {
+      type: "function",
+      name: "diagnostic_list_project_directory",
+      description:
+        "Read-only cross-project diagnosis. List a directory in another registered Viking Aries project when the visible symptom may originate outside the selected project. Registered project IDs: " +
+        projectIds +
+        ". Never use this tool to write.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          ref: { type: "string" },
+        },
+        required: ["projectId", "path"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "diagnostic_read_project_file",
+      description:
+        "Read-only cross-project diagnosis. Read one source file from another registered Viking Aries project to prove or rule out a cross-project failure. Registered project IDs: " +
+        projectIds +
+        ". Never use this tool to write.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          ref: { type: "string" },
+        },
+        required: ["projectId", "path"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+  ];
+}
+
+async function executeCrossProjectDiagnosticTool(call, token) {
+  const args = call?.arguments || {};
+  const projectId = String(args.projectId || "").trim();
+  const config = registeredProjectConfig(projectId);
+  if (!config?.repository) {
+    throw new Error("That project is not registered for cross-project diagnosis.");
+  }
+
+  const path = String(args.path || "").trim();
+  const ref = String(args.ref || config.defaultBranch || "main").trim();
+
+  if (call.name === "diagnostic_list_project_directory") {
+    return executeGithubTool(
+      { name: "github_list_directory", arguments: { path, ref } },
+      token,
+      { repository: config.repository, defaultBranch: config.defaultBranch || "main" }
+    );
+  }
+
+  if (call.name === "diagnostic_read_project_file") {
+    return executeGithubTool(
+      { name: "github_read_file", arguments: { path, ref } },
+      token,
+      { repository: config.repository, defaultBranch: config.defaultBranch || "main" }
+    );
+  }
+
+  throw new Error(`Unsupported diagnostic tool: ${call.name}`);
+}
+
 function vikingAriesPlatformChangeRequested(projectId, rawMessages) {
   if (projectId === "viking-aries") return false;
   if (!Array.isArray(rawMessages)) return false;
@@ -1962,6 +2059,12 @@ function describeRuntimeTool(call) {
     va_platform_read_file: path ? `Reading Viking Aries file: ${path}` : "Reading Viking Aries platform file",
     va_platform_write_file: path ? `Writing Viking Aries file: ${path}` : "Writing Viking Aries platform file",
     va_platform_replace_text: path ? `Editing Viking Aries file: ${path}` : "Editing Viking Aries platform file",
+    diagnostic_list_project_directory: path
+      ? `Inspecting related project folder: ${path}`
+      : "Inspecting related project",
+    diagnostic_read_project_file: path
+      ? `Reading related project file: ${path}`
+      : "Reading related project file",
     cloudflare_get_project_status: "Checking Cloudflare deployment status",
     cloudflare_get_build_logs: "Reading Cloudflare build logs",
     cloudflare_trigger_build: "Starting Cloudflare build",
@@ -3606,6 +3709,12 @@ const worker = {
       "If the owner asks whether an earlier action occurred and no verified receipt is available, do not infer that it did not happen. Use the available provider inspection tools (for example GitHub history) to verify the current external record before answering when practical.",
       "Use any tool-backed actions supplied by the Viking Aries runtime when they are available. If a required provider action is not actually available, say exactly which connection or capability is missing instead of claiming the action occurred.",
       "When the owner explicitly asks you to make, fix, implement, update, commit, deploy, or otherwise carry out a project change, do the work with the available tools rather than stopping at diagnosis or giving instructions. Inspect the necessary files, make the requested change, commit it, and report the actual tool result. Only stop without executing when a required capability is genuinely unavailable, the request is ambiguous in a way that blocks safe execution, or the requested action would violate a safety constraint.",
+      "Root-cause rule for repairs: do not edit the first plausible file merely because it is near the visible symptom. Identify the system layers involved, inspect evidence at the likely failure boundaries, and determine which layer actually fails before changing code.",
+      "If Erik says a prior repair did not work, is still broken, happens again, or has already been attempted multiple times, STOP repeating variations of the previous fix. Re-diagnose from first principles before making another write and change diagnostic approach.",
+      "For previews, embedded apps, integrations, API handoffs, authentication redirects, shared backends, and other cross-system symptoms, inspect both the host/orchestrator and the target/dependency when read-only diagnostic tools are available. A symptom visible inside Viking Aries does not prove Viking Aries owns the fault.",
+      "After a failed repair attempt, use read/status/log/build evidence before the next edit whenever those tools are available. Prefer proving one cause over making several speculative edits.",
+      "Verification rule: after a repair, verify the strongest available evidence before declaring it fixed: source consistency, build/typecheck, deployment status/logs, runtime status, or the specific failing path. A successful commit alone proves only that code changed, not that the original bug is resolved.",
+      "If runtime verification requires Erik to perform the final browser or hardware action, say exactly what has already been verified and give him one precise test to run. Do not claim the bug is fixed until either runtime evidence confirms it or clearly label the result as a code-level fix awaiting that final test.",
       "When a requested change is successfully committed to the selected GitHub repository, report it simply as 'Changes committed to GitHub' with the commit SHA. Treat Cloudflare as the repository's automatic deployment destination; do not add a warning that deployment is unverified or say the change is not deployed unless the owner specifically asks for deployment status or a tool result shows an actual deployment failure.",
       "Preserve existing product behavior unless the owner explicitly requests a change. In particular, keep the dollar API counter in the sidebar footer beside Log Out, keep API Usage as the detail-page navigation item, and keep both surfaces backed by the recorded usage totals. Do not remove, relocate, rename, or replace them during unrelated edits.",
       "GitHub editing supports both full-file replacement and targeted exact-text replacement. Prefer github_replace_text for focused edits to existing large files: first read the latest file, choose a unique oldText block, replace only that block, and commit. Use github_write_file when creating a file or when a full-file rewrite is genuinely appropriate. File size alone is never a reason to refuse a requested change. If a targeted replacement does not match exactly as expected, re-read the file and retry with a more specific block.",
@@ -3619,6 +3728,7 @@ const worker = {
       resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
     ]);
     const modelKnowledgeQuestion = openAIModelKnowledgeQuestion(body?.messages);
+    const repeatedRepairDiagnosis = repeatedRepairDiagnosisRequested(body?.messages);
     const platformToolsRequested =
       !modelKnowledgeQuestion &&
       vikingAriesPlatformChangeRequested(projectId, body?.messages);
@@ -3631,6 +3741,9 @@ const worker = {
             : []),
           ...(platformToolsRequested && ownerAuthenticated && githubToken
             ? buildVikingAriesPlatformTools()
+            : []),
+          ...(repeatedRepairDiagnosis && ownerAuthenticated && githubToken
+            ? buildCrossProjectDiagnosticTools()
             : []),
           ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
             ? buildCloudflareTools()
@@ -3651,6 +3764,9 @@ const worker = {
     }
     if (platformToolsRequested && ownerAuthenticated && githubToken) {
       runtimeCapabilityNotes.push("The owner explicitly requested a Viking Aries platform UI change. va_platform_* tools are available and are hard-scoped to dakotawireless/VikingAries on main. Use them for the platform change while keeping ordinary github_* tools scoped to the selected project.");
+    }
+    if (repeatedRepairDiagnosis && ownerAuthenticated && githubToken) {
+      runtimeCapabilityNotes.push("A prior repair appears to have failed. Read-only diagnostic_* tools are available across registered Viking Aries projects. Re-diagnose across relevant layers before another edit; do not repeat the previous repair strategy without new evidence.");
     }
     if (!modelKnowledgeQuestion && cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)) {
       runtimeCapabilityNotes.push("Cloudflare status, build-log, and build-trigger tools are available for the selected project's server-registered Worker. Trigger builds only when the user explicitly asks to deploy or rebuild.");
@@ -3738,6 +3854,8 @@ const worker = {
               result = await executeGithubTool(call, githubToken, projectMetadata);
             } else if (call.name.startsWith("va_platform_")) {
               result = await executeVikingAriesPlatformTool(call, githubToken);
+            } else if (call.name.startsWith("diagnostic_")) {
+              result = await executeCrossProjectDiagnosticTool(call, githubToken);
             } else if (call.name.startsWith("cloudflare_")) {
               result = await executeCloudflareTool(call, cloudflareToken, projectMetadata);
             } else if (call.name.startsWith("convex_")) {
