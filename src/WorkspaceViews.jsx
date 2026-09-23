@@ -939,9 +939,21 @@ function FilesMediaView({ project }) {
                 </div>
                 <p>{privateCopy || browserCopy ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
                 {privateCopy ? (
-                  <a className="media-download" href={downloadUrl} download={item.name}>
-                    <Download size={14} /> Download
-                  </a>
+                  <div className="media-card-actions">
+                    {isImage && (
+                      <a
+                        className="media-download"
+                        href={`/api/files/preview?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Eye size={14} /> Preview
+                      </a>
+                    )}
+                    <a className="media-download" href={downloadUrl} download={item.name}>
+                      <Download size={14} /> Download
+                    </a>
+                  </div>
                 ) : browserCopy ? (
                   <a className="media-download" href={item.dataUrl} download={item.name}>
                     <Download size={14} /> Download browser copy
