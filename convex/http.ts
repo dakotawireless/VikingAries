@@ -131,6 +131,41 @@ http.route({
 });
 
 http.route({
+  path: "/files/preview",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!authorized(request)) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id") || "";
+    const projectId = url.searchParams.get("projectId")?.trim().slice(0, 120) || "";
+    try {
+      const file = await ctx.runQuery(internal.files.getProjectFile, { id: id as any });
+      if (!file || file.projectId !== projectId) {
+        return Response.json({ error: "File not found." }, { status: 404 });
+      }
+      if (!String(file.type || "").startsWith("image/")) {
+        return Response.json({ error: "Only image files can be previewed." }, { status: 415 });
+      }
+      const blob = await ctx.storage.get(file.storageId);
+      if (!blob) return Response.json({ error: "Stored file is unavailable." }, { status: 404 });
+      return new Response(blob, {
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "Content-Length": String(file.size),
+          "Content-Disposition": "inline",
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } catch {
+      return Response.json({ error: "File not found." }, { status: 404 });
+    }
+  }),
+});
+
+http.route({
   path: "/files/delete",
   method: "DELETE",
   handler: httpAction(async (ctx, request) => {
