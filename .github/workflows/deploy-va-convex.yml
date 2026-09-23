@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: deploy-va-convex-production
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -41,15 +42,84 @@ jobs:
           KEY_PROD: ${{ secrets.CONVEX_PROD_DEPLOY_KEY }}
         shell: bash
         run: |
+          set -euo pipefail
+
           KEY="$KEY_PRIMARY"
           if [ -z "$KEY" ]; then KEY="$KEY_VA"; fi
           if [ -z "$KEY" ]; then KEY="$KEY_SHORT"; fi
           if [ -z "$KEY" ]; then KEY="$KEY_PROD"; fi
+
+          if [ -n "$KEY" ]; then
+            echo "::add-mask::$KEY"
+            echo "CONVEX_DEPLOY_KEY=$KEY" >> "$GITHUB_ENV"
+            echo "VA_TEMP_DEPLOY_KEY=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          get_oidc_token() {
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=viking-aries-convex-deploy" \
+              | jq -r '.value'
+          }
+
+          KEY=""
+          for attempt in $(seq 1 60); do
+            OIDC_TOKEN="$(get_oidc_token)"
+            if curl --fail --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              -H "Content-Type: application/json" \
+              -o /tmp/va-convex-key.json \
+              "https://vikingaries.dakotawireless.net/api/ci/convex-deploy-key"; then
+              KEY="$(jq -r '.deployKey // empty' /tmp/va-convex-key.json)"
+              if [ -n "$KEY" ]; then
+                break
+              fi
+            fi
+            rm -f /tmp/va-convex-key.json
+            echo "Waiting for the updated Viking Aries Worker to become available (attempt $attempt/60)..."
+            sleep 5
+          done
+          rm -f /tmp/va-convex-key.json
+
           if [ -z "$KEY" ]; then
-            echo "::error::No production Convex deploy key is configured for Viking Aries."
+            echo "::error::Could not obtain a temporary production Convex deploy key from Viking Aries."
             exit 1
           fi
+
+          echo "::add-mask::$KEY"
           echo "CONVEX_DEPLOY_KEY=$KEY" >> "$GITHUB_ENV"
+          echo "VA_TEMP_DEPLOY_KEY=true" >> "$GITHUB_ENV"
 
       - name: Deploy Convex production backend
-        run: npx convex deploy
+        run: >
+          npx convex deploy
+          --yes
+          --check-build-environment disable
+          --message "GitHub Actions: deploy Viking Aries durable runner backend"
+
+      - name: Revoke temporary Convex deploy key
+        if: always() && env.VA_TEMP_DEPLOY_KEY == 'true'
+        shell: bash
+        run: |
+          set +e
+          OIDC_TOKEN="$(
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=viking-aries-convex-deploy" \
+              | jq -r '.value'
+          )"
+          jq -n --arg key "$CONVEX_DEPLOY_KEY" '{deployKey:$key}' \
+            | curl --fail --silent --show-error \
+                -X POST \
+                -H "Authorization: Bearer $OIDC_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data-binary @- \
+                "https://vikingaries.dakotawireless.net/api/ci/convex-deploy-key/revoke" \
+                >/dev/null
+          STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::warning::Convex deployed, but the temporary deploy key could not be revoked automatically."
+          fi
+          exit 0

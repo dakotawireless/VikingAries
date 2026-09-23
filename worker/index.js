@@ -1334,17 +1334,24 @@ async function convexCreateTemporaryDeployKey(token, deploymentName) {
 
 async function convexDeleteTemporaryDeployKey(token, deploymentName, deployKey) {
   try {
+    const fullKey = String(deployKey || "");
+    const separator = fullKey.indexOf("|");
+    const id = (separator >= 0 ? fullKey.slice(separator + 1) : fullKey).trim();
+    if (!id) return false;
+
     await convexManagementRequest(
       token,
       `/deployments/${encodeURIComponent(deploymentName)}/delete_deploy_key`,
       {
         method: "POST",
-        body: JSON.stringify({ id: deployKey }),
+        body: JSON.stringify({ id }),
       }
     );
+    return true;
   } catch {
     // Cleanup must never expose the key or turn a successful environment write
     // into a response that reveals anything about the secret.
+    return false;
   }
 }
 
@@ -2228,6 +2235,102 @@ async function internalJobAuthorized(request, env) {
   return safeEqual(request.headers.get("X-VA-Internal-Job-Secret") || "", expected);
 }
 
+const GITHUB_ACTIONS_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+const GITHUB_ACTIONS_OIDC_AUDIENCE = "viking-aries-convex-deploy";
+const GITHUB_ACTIONS_DEPLOY_REPOSITORY = "dakotawireless/VikingAries";
+const GITHUB_ACTIONS_DEPLOY_REF = "refs/heads/main";
+const GITHUB_ACTIONS_DEPLOY_WORKFLOW_REF =
+  "dakotawireless/VikingAries/.github/workflows/deploy-va-convex.yml@refs/heads/main";
+
+async function verifyGithubActionsDeployOidc(request) {
+  const authorization = request.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) {
+    throw new Error("GitHub Actions OIDC token is required.");
+  }
+
+  const token = authorization.slice("Bearer ".length).trim();
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid GitHub Actions OIDC token.");
+
+  let header;
+  let claims;
+  try {
+    header = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[0])));
+    claims = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[1])));
+  } catch {
+    throw new Error("Invalid GitHub Actions OIDC token.");
+  }
+
+  if (header?.alg !== "RS256" || typeof header?.kid !== "string" || !header.kid) {
+    throw new Error("Unsupported GitHub Actions OIDC signing key.");
+  }
+
+  const jwksResponse = await globalThis.fetch(
+    `${GITHUB_ACTIONS_OIDC_ISSUER}/.well-known/jwks`,
+    {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    }
+  );
+  if (!jwksResponse.ok) {
+    throw new Error("GitHub Actions OIDC signing keys are unavailable.");
+  }
+
+  const jwks = await jwksResponse.json();
+  const jwk = Array.isArray(jwks?.keys)
+    ? jwks.keys.find((candidate) => candidate?.kid === header.kid)
+    : null;
+  if (!jwk) throw new Error("GitHub Actions OIDC signing key was not found.");
+
+  const verificationKey = await crypto.subtle.importKey(
+    "jwk",
+    jwk,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+  const signedBytes = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+  const signatureBytes = base64UrlDecode(parts[2]);
+  const signatureValid = await crypto.subtle.verify(
+    { name: "RSASSA-PKCS1-v1_5" },
+    verificationKey,
+    signatureBytes,
+    signedBytes
+  );
+  if (!signatureValid) throw new Error("GitHub Actions OIDC signature is invalid.");
+
+  const now = Math.floor(Date.now() / 1000);
+  const audience = Array.isArray(claims?.aud) ? claims.aud : [claims?.aud];
+  const workflowRefs = [claims?.workflow_ref, claims?.job_workflow_ref].filter(Boolean);
+
+  if (claims?.iss !== GITHUB_ACTIONS_OIDC_ISSUER) {
+    throw new Error("Unexpected GitHub Actions OIDC issuer.");
+  }
+  if (!audience.includes(GITHUB_ACTIONS_OIDC_AUDIENCE)) {
+    throw new Error("Unexpected GitHub Actions OIDC audience.");
+  }
+  if (!Number.isFinite(Number(claims?.exp)) || Number(claims.exp) <= now) {
+    throw new Error("GitHub Actions OIDC token has expired.");
+  }
+  if (claims?.nbf != null && Number(claims.nbf) > now + 30) {
+    throw new Error("GitHub Actions OIDC token is not active yet.");
+  }
+  if (claims?.repository !== GITHUB_ACTIONS_DEPLOY_REPOSITORY) {
+    throw new Error("GitHub Actions OIDC repository is not authorized.");
+  }
+  if (claims?.ref !== GITHUB_ACTIONS_DEPLOY_REF) {
+    throw new Error("GitHub Actions OIDC ref is not authorized.");
+  }
+  if (!workflowRefs.includes(GITHUB_ACTIONS_DEPLOY_WORKFLOW_REF)) {
+    throw new Error("GitHub Actions OIDC workflow is not authorized.");
+  }
+  if (claims?.event_name !== "push" && claims?.event_name !== "workflow_dispatch") {
+    throw new Error("GitHub Actions OIDC event is not authorized.");
+  }
+
+  return claims;
+}
+
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
@@ -2239,6 +2342,74 @@ function json(data, init = {}) {
 const worker = {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (
+      url.pathname === "/api/ci/convex-deploy-key" ||
+      url.pathname === "/api/ci/convex-deploy-key/revoke"
+    ) {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      try {
+        await verifyGithubActionsDeployOidc(request);
+
+        const convexToken = await resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN);
+        if (!convexToken) {
+          return json(
+            { error: "The shared Convex personal connection is not configured." },
+            { status: 503 }
+          );
+        }
+
+        const project = PROJECT_RUNTIME_CONFIG["viking-aries"];
+        const deploymentName = project?.backendDeployment;
+        if (!deploymentName || deploymentName !== "flippant-mandrill-487") {
+          return json(
+            { error: "Viking Aries production Convex mapping failed its safety check." },
+            { status: 409 }
+          );
+        }
+
+        if (url.pathname.endsWith("/revoke")) {
+          const body = await request.json().catch(() => ({}));
+          const deployKey =
+            typeof body?.deployKey === "string" ? body.deployKey.trim() : "";
+          if (!deployKey) {
+            return json({ error: "deployKey is required." }, { status: 400 });
+          }
+
+          const revoked = await convexDeleteTemporaryDeployKey(
+            convexToken,
+            deploymentName,
+            deployKey
+          );
+          if (!revoked) {
+            return json(
+              { error: "The temporary Convex deploy key could not be revoked." },
+              { status: 502 }
+            );
+          }
+          return json({ ok: true, deployment: deploymentName });
+        }
+
+        const temporary = await convexCreateTemporaryDeployKey(
+          convexToken,
+          deploymentName
+        );
+        return json({
+          ok: true,
+          deployment: deploymentName,
+          keyName: temporary.name,
+          deployKey: temporary.deployKey,
+        });
+      } catch (error) {
+        return json(
+          { error: error instanceof Error ? error.message : "CI authorization failed." },
+          { status: 401 }
+        );
+      }
+    }
 
     if (url.pathname === "/api/auth/status") {
       const auth = await ownerAuthConfig(env);
