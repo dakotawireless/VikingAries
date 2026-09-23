@@ -1,0 +1,55 @@
+name: Deploy Viking Aries Convex
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "convex/**"
+      - "shared/run-lifecycle.js"
+      - ".github/workflows/deploy-va-convex.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-va-convex-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Resolve production deploy key
+        env:
+          KEY_PRIMARY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          KEY_VA: ${{ secrets.VIKING_ARIES_CONVEX_DEPLOY_KEY }}
+          KEY_SHORT: ${{ secrets.VA_CONVEX_DEPLOY_KEY }}
+          KEY_PROD: ${{ secrets.CONVEX_PROD_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          KEY="$KEY_PRIMARY"
+          if [ -z "$KEY" ]; then KEY="$KEY_VA"; fi
+          if [ -z "$KEY" ]; then KEY="$KEY_SHORT"; fi
+          if [ -z "$KEY" ]; then KEY="$KEY_PROD"; fi
+          if [ -z "$KEY" ]; then
+            echo "::error::No production Convex deploy key is configured for Viking Aries."
+            exit 1
+          fi
+          echo "CONVEX_DEPLOY_KEY=$KEY" >> "$GITHUB_ENV"
+
+      - name: Deploy Convex production backend
+        run: npx convex deploy
