@@ -1,5 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { currentRunSignal } from './run-control.js';
+import {
+  currentRunSignal,
+  currentRunRecoveryAt,
+  currentRunIsRecovering,
+} from "./run-control.js";
 
 const requests = new AsyncLocalStorage();
 export const MAX_AGENT_ROUNDS = 32;
