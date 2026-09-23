@@ -217,6 +217,43 @@ export const failJob = internalMutation({
   },
 });
 
+export const finalizeInterruptedJob = internalMutation({
+  args: {
+    jobId: v.string(),
+    status: v.string(),
+    resultText: v.string(),
+    stopReason: v.string(),
+    diagnosticsJson: v.optional(v.string()),
+    completedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("aiJobs")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .unique();
+    if (!row) return false;
+
+    const allowed = new Set(["paused", "timed_out", "canceled", "failed"]);
+    const status = allowed.has(args.status) ? args.status : "failed";
+    if (!["running", "canceled", "timed_out", "failed", "paused"].includes(row.status)) return false;
+
+    await ctx.db.patch(row._id, {
+      status: row.status === "canceled" ? "canceled" : row.status === "timed_out" ? "timed_out" : status,
+      resultText: args.resultText,
+      error: args.stopReason,
+      stopReason: args.stopReason,
+      diagnosticsJson: args.diagnosticsJson,
+      completedAt: args.completedAt,
+      updatedAt: args.completedAt,
+    });
+    await ctx.scheduler.runAfter(0, internal.jobs.processThread, {
+      projectId: row.projectId,
+      threadId: row.threadId,
+    });
+    return true;
+  },
+});
+
 function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
   const messages = Array.isArray(requestBody?.messages)
     ? requestBody.messages.map((message) => ({ ...message }))
