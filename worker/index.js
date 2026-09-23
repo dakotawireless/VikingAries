@@ -10,6 +10,7 @@ import {
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
 import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS, MAX_AGENT_COST_USD } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
+import { runtimeClockSnapshot, runtimeClockInstruction } from "./runtime-clock.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_REQUEST_TIMEOUT_MS = 180000;
 const MAX_WRITE_ATTEMPTS_PER_PATH = 3;
@@ -4069,6 +4070,12 @@ const worker = {
       ? await readRecoveryCheckpoint(env, projectId, threadId)
       : null;
 
+    // Generate one authoritative clock snapshot at the start of every run.
+    // It is server-derived and project-independent, so stale project/chat
+    // context cannot become the model's notion of "today".
+    const runtimeClock = runtimeClockSnapshot();
+    const runtimeClockText = runtimeClockInstruction(runtimeClock);
+
     const projectFacts = [
       projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
       projectMetadata.defaultBranch ? `Default branch: ${projectMetadata.defaultBranch}` : "",
@@ -4098,6 +4105,7 @@ const worker = {
       `The currently selected project is: ${projectName}.`,
       `The current chat thread is: ${threadTitle}.`,
       projectFacts,
+      runtimeClockText,
       "Use supplied project facts as durable project context. Do not invent missing repository, deployment, backend, credential, or file details.",
       "Be practical, concise, implementation-oriented, and conversational.",
       "Talk to Erik like a knowledgeable technical partner working alongside him, not like a support bot, ticketing system, or automated build log.",
@@ -4359,6 +4367,7 @@ const worker = {
         usage: chatUsage,
         usageRecorded,
         actionReceipts,
+        runtimeClock,
         executionStatus: stop.code,
         continuationRequired: true,
         diagnostics: {
@@ -4604,6 +4613,7 @@ const worker = {
       usage: chatUsage,
       usageRecorded,
       actionReceipts,
+      runtimeClock,
       ...(budgetPaused ? { executionStatus: "paused", continuationRequired: true } : {}),
     });
   },
