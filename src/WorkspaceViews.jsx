@@ -928,8 +928,17 @@ function FilesMediaView({ project }) {
           return (
             <section className="workspace-card media-card" key={item.id}>
               <div className="media-icon">
-                {isImage && browserCopy
-                  ? <img className="media-thumb" src={item.dataUrl} alt="" />
+                {isImage && (browserCopy || privateCopy)
+                  ? (
+                    <img
+                      className="media-thumb"
+                      src={browserCopy
+                        ? item.dataUrl
+                        : `/api/files/preview?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`}
+                      alt={`${item.name} preview`}
+                      loading="lazy"
+                    />
+                  )
                   : <Icon size={20} />}
               </div>
               <div>
