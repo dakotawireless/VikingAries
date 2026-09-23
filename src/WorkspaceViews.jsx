@@ -785,7 +785,7 @@ function formatFileSize(bytes) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function FilesMediaView({ project }) {
+function FilesMediaView({ project, projects = [], workspace = "Personal" }) {
   const defaults = projectDefaults(project).files;
   const [items, setItems] = useProjectStorage(project.id, "files-media-v2", defaults);
   const [storedFiles, setStoredFiles] = useState([]);
@@ -793,12 +793,23 @@ function FilesMediaView({ project }) {
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(true);
+  const [scope, setScope] = useState("project");
+  const [copyTargets, setCopyTargets] = useState({});
   const uploadInputRef = useRef(null);
+  const projectOptions = useMemo(() => {
+    const seen = new Set();
+    return [project, ...(projects || [])].filter((item) => {
+      if (!item?.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [project, projects]);
 
   const loadStoredFiles = async () => {
     setLoadingFiles(true);
     try {
-      const response = await fetch(`/api/files/list?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" });
+      const requestedProjectId = workspace === "Personal" && scope === "all" ? "all" : project.id;
+      const response = await fetch(`/api/files/list?projectId=${encodeURIComponent(requestedProjectId)}`, { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Could not load project files.");
       setStoredFiles(Array.isArray(payload.files) ? payload.files : []);
@@ -814,7 +825,7 @@ function FilesMediaView({ project }) {
     setStoredFiles([]);
     setUploadMessage("");
     loadStoredFiles();
-  }, [project.id]);
+  }, [project.id, scope, workspace]);
 
   const add = () => {
     if (!draft.name.trim()) return;
@@ -855,6 +866,29 @@ function FilesMediaView({ project }) {
     }
   };
 
+  const copyFile = async (item, destinationProjectId) => {
+    const sourceProjectId = item.projectId || project.id;
+    if (!destinationProjectId || destinationProjectId === sourceProjectId) return;
+    setUploadMessage(`Copying ${item.name}…`);
+    try {
+      const response = await fetch("/api/files/copy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceProjectId,
+          destinationProjectId,
+          fileId: item.id,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not copy that file.");
+      setUploadMessage(`${item.name} copied to ${projectOptions.find((entry) => entry.id === destinationProjectId)?.name || destinationProjectId}.`);
+      if (scope === "all" || destinationProjectId === project.id) await loadStoredFiles();
+    } catch (error) {
+      setUploadMessage(error.message || "Could not copy that file.");
+    }
+  };
+
   const deleteFile = async (item) => {
     if (item.storage === "convex") {
       try {
@@ -878,7 +912,9 @@ function FilesMediaView({ project }) {
     }
   };
 
-  const visibleItems = [...storedFiles, ...items];
+  const visibleItems = scope === "all" && workspace === "Personal"
+    ? storedFiles
+    : [...storedFiles, ...items];
 
   return (
     <WorkspacePage>
@@ -887,8 +923,28 @@ function FilesMediaView({ project }) {
         title="Files & Media"
         description="Project screenshots, mockups, logos, documents, exports, and durable file references."
       />
-      <InfoBanner text="Hardcopies are stored privately in Viking Aries project storage. Files are isolated by project and require an authenticated owner session to list, download, or delete." />
+      <InfoBanner text={workspace === "Personal"
+        ? "Owner Files & Media is readable across registered Personal projects. The selected project stays the default write target; copying to another project is always an explicit action."
+        : "Files & Media remains scoped to this contractor workspace and requires an authenticated session."} />
       {uploadMessage && <div className="integration-feedback" role="status">{uploadMessage}</div>}
+
+      {workspace === "Personal" && (
+        <section className="workspace-card va-entry-panel">
+          <div className="section-heading-row">
+            <div>
+              <strong>File visibility</strong>
+              <p>Browse this project or search visually across all registered owner projects.</p>
+            </div>
+            <label>
+              <span>View</span>
+              <select value={scope} onChange={(event) => setScope(event.target.value)}>
+                <option value="project">Current Project</option>
+                <option value="all">All Projects</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      )}
 
       <section className="workspace-card upload-dropzone">
         <Upload size={24} />
@@ -916,20 +972,30 @@ function FilesMediaView({ project }) {
       {loadingFiles && <EmptyState text="Loading stored files…" />}
       <div className="media-grid">
         {visibleItems.map((item) => {
+          const itemProjectId = item.projectId || project.id;
+          const itemProjectName = item.projectName || projectOptions.find((entry) => entry.id === itemProjectId)?.name || itemProjectId;
           const retiredGithubUpload = item.storage === "github" && Boolean(item.storagePath);
           const browserCopy = Boolean(item.dataUrl);
           const privateCopy = item.storage === "convex";
+          const copyOptions = workspace === "Personal"
+            ? projectOptions.filter((entry) => entry.id !== itemProjectId)
+            : [];
+          const selectedCopyTarget = copyTargets[item.id] || (
+            project.id !== itemProjectId
+              ? project.id
+              : copyOptions[0]?.id || ""
+          );
           const isImage = String(item.type || "").startsWith("image/");
           const Icon = isImage ? FileImage : FileText;
           const downloadUrl = privateCopy
-            ? `/api/files/download?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`
+            ? `/api/files/download?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(itemProjectId)}`
             : retiredGithubUpload
-              ? `/api/files/legacy-download?projectId=${encodeURIComponent(project.id)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name)}`
+              ? `/api/files/legacy-download?projectId=${encodeURIComponent(itemProjectId)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name)}`
               : "";
           const previewUrl = privateCopy
-            ? `/api/files/preview?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(project.id)}`
+            ? `/api/files/preview?id=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(itemProjectId)}`
             : retiredGithubUpload
-              ? `/api/files/legacy-preview?projectId=${encodeURIComponent(project.id)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name)}`
+              ? `/api/files/legacy-preview?projectId=${encodeURIComponent(itemProjectId)}&path=${encodeURIComponent(item.storagePath)}&name=${encodeURIComponent(item.name)}`
               : "";
 
           return (
@@ -952,6 +1018,7 @@ function FilesMediaView({ project }) {
                   <StatusPill status={item.status} />
                 </div>
                 <p>{privateCopy || browserCopy ? `${item.type} · ${formatFileSize(item.size)}` : item.type}</p>
+                {workspace === "Personal" && privateCopy && <small>Project: {itemProjectName}</small>}
                 {privateCopy || retiredGithubUpload ? (
                   <div className="media-card-actions">
                     {isImage && (
@@ -967,6 +1034,27 @@ function FilesMediaView({ project }) {
                     <a className="media-download" href={downloadUrl} download={item.name}>
                       <Download size={14} /> Download
                     </a>
+                    {copyOptions.length > 0 && (
+                      <>
+                        <select
+                          aria-label={`Copy ${item.name} to project`}
+                          value={selectedCopyTarget}
+                          onChange={(event) => setCopyTargets((current) => ({ ...current, [item.id]: event.target.value }))}
+                        >
+                          {copyOptions.map((target) => (
+                            <option key={target.id} value={target.id}>{target.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="media-download"
+                          disabled={!selectedCopyTarget}
+                          onClick={() => copyFile(item, selectedCopyTarget)}
+                        >
+                          Copy to Project
+                        </button>
+                      </>
+                    )}
                   </div>
                 ) : browserCopy ? (
                   <a className="media-download" href={item.dataUrl} download={item.name}>
@@ -988,14 +1076,16 @@ function FilesMediaView({ project }) {
                   />
                 )}
               </div>
-              <button
-                className="icon-action danger"
-                type="button"
-                onClick={() => deleteFile(item)}
-                title={privateCopy ? "Delete stored file" : "Remove reference"}
-              >
-                <Trash2 size={15} />
-              </button>
+              {(itemProjectId === project.id || !privateCopy) && (
+                <button
+                  className="icon-action danger"
+                  type="button"
+                  onClick={() => deleteFile(item)}
+                  title={privateCopy ? "Delete stored file" : "Remove reference"}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
             </section>
           );
         })}
@@ -2906,7 +2996,7 @@ export default function WorkspaceView({ view, project, projects = [], workspace 
     case "Users & Access":
       return <UsersAccessView project={project} />;
     case "Files & Media":
-      return <FilesMediaView project={project} />;
+      return <FilesMediaView project={project} projects={projects} workspace={workspace} />;
     case "Integrations":
       return <IntegrationsView project={project} projects={projects} workspace={workspace} />;
     case "Database":
