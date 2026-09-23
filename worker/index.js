@@ -1859,15 +1859,16 @@ async function callOpenAI({
   previousResponseId,
   finalOnly = false,
   abortSignal = null,
+  timeoutMs = OPENAI_REQUEST_TIMEOUT_MS,
+  maxOutputTokens = 30000,
 }) {
   const body = {
     model,
     instructions,
     input,
-    // Repository writes may require the model to emit the complete contents of a
-    // large source file as function-call arguments. A 3k cap can truncate the
-    // tool call before it is valid, leaving the response with no user-facing text.
-    max_output_tokens: 30000,
+    // Repository writes may require complete file contents. Recovery passes use
+    // a smaller explicit limit because they never call tools.
+    max_output_tokens: maxOutputTokens,
   };
   if (tools?.length) body.tools = tools;
   if (finalOnly) body.tool_choice = "none";
