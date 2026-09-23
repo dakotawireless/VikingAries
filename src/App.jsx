@@ -1541,6 +1541,12 @@ function ChatWorkspace({ project, active = true }) {
       selectedModel === VA_AUTO_MODEL
         ? sendRecommendation?.id || "gpt-5.6-luna"
         : selectedModel;
+
+    // Model choices apply to one submission only. Always return the picker to
+    // Auto immediately after accepting the request, including when the owner
+    // selected a recommendation or manually chose a higher-cost model.
+    setSelectedModel(VA_AUTO_MODEL);
+
     const userMessage = {
       id: `user-${jobId}`,
       jobId,
