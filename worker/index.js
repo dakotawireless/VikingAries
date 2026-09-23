@@ -1537,6 +1537,20 @@ async function executeCloudflareTool(call, token, projectMetadata) {
     return cloudflareGetBuildLogs(token, args.buildUuid);
   }
 
+  if (call.name === "files_media_copy_project_file" && result?.file?.id) {
+    return {
+      provider: "Files & Media",
+      action: "project_file_copy",
+      tool: call.name,
+      sourceProjectId: result.sourceProjectId || String(args.sourceProjectId || "").trim() || null,
+      destinationProjectId: result.destinationProjectId || String(args.destinationProjectId || "").trim() || null,
+      sourceFileId: String(args.fileId || "").trim() || null,
+      destinationFileId: result.file.id,
+      name: result.file.name || null,
+      recordedAt,
+    };
+  }
+
   if (call.name === "cloudflare_trigger_build") {
     return cloudflareTriggerBuild(
       token,
@@ -2166,7 +2180,10 @@ function buildVerifiedActionReceipt(call, result, projectMetadata) {
       call.name === "github_write_file" ||
       call.name === "github_replace_text" ||
       call.name === "va_platform_write_file" ||
-      call.name === "va_platform_replace_text"
+      call.name === "va_platform_replace_text" ||
+      call.name === "owner_project_write_file" ||
+      call.name === "owner_project_replace_text" ||
+      call.name === "files_media_copy_file_to_project_repository"
     ) &&
     result?.commitSha
   ) {
@@ -2690,12 +2707,28 @@ function describeRuntimeTool(call) {
     diagnostic_read_project_file: path
       ? `Reading related project file: ${path}`
       : "Reading related project file",
+    owner_projects_list: "Reading owner project registry",
+    owner_project_list_directory: path
+      ? `Inspecting ${registeredProjectName(args.projectId)} folder: ${path}`
+      : `Inspecting ${registeredProjectName(args.projectId)} repository`,
+    owner_project_read_file: path
+      ? `Reading ${registeredProjectName(args.projectId)} file: ${path}`
+      : `Reading ${registeredProjectName(args.projectId)} file`,
+    owner_project_write_file: path
+      ? `Writing ${registeredProjectName(args.projectId)} file: ${path}`
+      : `Writing ${registeredProjectName(args.projectId)} repository file`,
+    owner_project_replace_text: path
+      ? `Editing ${registeredProjectName(args.projectId)} file: ${path}`
+      : `Editing ${registeredProjectName(args.projectId)} repository file`,
     cloudflare_get_project_status: "Checking Cloudflare deployment status",
     cloudflare_get_build_logs: "Reading Cloudflare build logs",
     cloudflare_trigger_build: "Starting Cloudflare build",
     convex_get_deployment_status: "Checking Convex deployment status",
     files_media_list_project_files: "Reading live Files & Media records",
+    files_media_search_files: "Searching Files & Media across owner projects",
     files_media_get_project_file_preview: "Preparing a secure image preview",
+    files_media_copy_project_file: "Copying Files & Media asset between projects",
+    files_media_copy_file_to_project_repository: "Copying Files & Media asset into project repository",
   };
 
   return labels[call?.name] || "Running project tool";
