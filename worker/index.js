@@ -62,6 +62,69 @@ function registeredProjectConfig(projectId) {
   return PROJECT_RUNTIME_CONFIG[String(projectId || "").trim()] || null;
 }
 
+const PROJECT_DISPLAY_NAMES = {
+  "dw-pos": "Dakota Wireless POS",
+  "dw-site": "Dakota Wireless Website",
+  "smoke-pos": "Smoke Signals POS",
+  "timekeeper": "Timekeeper",
+  "viking-aries": "Viking Aries",
+  "rez-lock": "Rez Lock & Key",
+};
+
+function registeredProjectName(projectId) {
+  const id = String(projectId || "").trim();
+  const config = registeredProjectConfig(id);
+  if (!config) return id || "Unknown project";
+  return PROJECT_DISPLAY_NAMES[id] || config.repository?.split("/").pop()?.replace(/[-_]+/g, " ") || id;
+}
+
+function safeOwnerProjectMetadata(projectId) {
+  const id = String(projectId || "").trim();
+  const config = registeredProjectConfig(id);
+  if (!config) return null;
+  return {
+    id,
+    name: registeredProjectName(id),
+    repository: config.repository || null,
+    defaultBranch: config.defaultBranch || "main",
+    backend: config.backend || null,
+    backendDeployment: config.backendDeployment || null,
+    backendUrl: config.backendUrl || null,
+    cloudflareWorker: config.cloudflareWorker || null,
+    deploymentUrl: config.deploymentUrl || null,
+    status: config.status || null,
+  };
+}
+
+function ownerProjectAliases(projectId) {
+  const id = String(projectId || "").trim();
+  const config = registeredProjectConfig(id);
+  const aliases = new Set([
+    id.toLowerCase(),
+    registeredProjectName(id).toLowerCase(),
+    String(config?.repository || "").split("/").pop()?.replace(/[-_]+/g, " ").toLowerCase(),
+  ].filter(Boolean));
+  if (id === "dw-pos") ["dakota wireless pos","dw pos"].forEach((v) => aliases.add(v));
+  if (id === "dw-site") ["dakota wireless website","dw website"].forEach((v) => aliases.add(v));
+  if (id === "smoke-pos") ["smoke signals pos"].forEach((v) => aliases.add(v));
+  if (id === "timekeeper") ["timekeeper app"].forEach((v) => aliases.add(v));
+  if (id === "rez-lock") ["rez lock","rez lock and key","rez lock & key"].forEach((v) => aliases.add(v));
+  if (id === "viking-aries") ["viking aries","vikingaries"].forEach((v) => aliases.add(v));
+  return [...aliases].filter((value) => value && value.length >= 3);
+}
+
+function crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMessages) {
+  const selected = String(selectedProjectId || "").trim();
+  const target = String(targetProjectId || "").trim();
+  if (!registeredProjectConfig(target)) return false;
+  if (target === selected) return true;
+  const text = latestUserText(rawMessages).toLowerCase();
+  if (!text) return false;
+  const targetNamed = ownerProjectAliases(target).some((alias) => text.includes(alias));
+  const writeIntent = /\b(copy|move|use|write|edit|modify|change|update|add|remove|create|implement|integrate|sync|commit|apply|deploy|replace|share)\b/.test(text);
+  return targetNamed && writeIntent;
+}
+
 function projectSecretEnvironments(projectConfig) {
   if (!projectConfig) return [];
 
@@ -626,6 +689,58 @@ async function githubWriteFile(token, repository, { path, content, message, bran
   };
 }
 
+async function githubWriteBinaryFile(token, repository, { path, bytes, message, branch = "main" }) {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+  const safePath = String(path || "").replace(/^\/+/, "").trim();
+  const commitMessage = String(message || "").trim().slice(0, 240);
+  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  if (!safePath) throw new Error("A repository file path is required.");
+  if (!commitMessage) throw new Error("A commit message is required.");
+  if (!byteArray.length) throw new Error("The binary asset is empty.");
+  if (byteArray.length > 10 * 1024 * 1024) throw new Error("Binary asset exceeds the 10 MB Files & Media limit.");
+
+  let sha;
+  try {
+    const existing = await githubRequest(
+      token,
+      `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch || "main")}`
+    );
+    if (existing?.type === "file") sha = existing.sha;
+  } catch (error) {
+    if (!/Not Found/i.test(error.message)) throw error;
+  }
+
+  const body = {
+    message: commitMessage,
+    content: bytesToBase64(byteArray),
+    branch: branch || "main",
+  };
+  if (sha) body.sha = sha;
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/contents/${safePath.split("/").map(encodeURIComponent).join("/")}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+
+  return {
+    ok: true,
+    repository: safeRepo,
+    path: payload?.content?.path || safePath,
+    branch: branch || "main",
+    contentSha: payload?.content?.sha || null,
+    commitSha: payload?.commit?.sha || null,
+    commitUrl: payload?.commit?.html_url || null,
+    binary: true,
+    size: byteArray.length,
+  };
+}
+
 async function githubReplaceText(token, repository, {
   path,
   oldText,
@@ -928,6 +1043,180 @@ async function executeCrossProjectDiagnosticTool(call, token) {
   }
 
   throw new Error(`Unsupported diagnostic tool: ${call.name}`);
+}
+
+function buildOwnerProjectTools() {
+  const projectIds = Object.keys(PROJECT_RUNTIME_CONFIG).sort().join(", ");
+  return [
+    {
+      type: "function",
+      name: "owner_projects_list",
+      description:
+        "List the owner's registered Personal projects and safe integration metadata. This is owner-wide read-only context and never returns secret values.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_list_directory",
+      description:
+        "Read-only: list a directory in any registered owner project repository. Registered project IDs: " + projectIds + ".",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          ref: { type: "string" },
+        },
+        required: ["projectId", "path"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_read_file",
+      description:
+        "Read-only: read a source file from any registered owner project repository, even when another project is selected. Registered project IDs: " + projectIds + ".",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          ref: { type: "string" },
+        },
+        required: ["projectId", "path"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_write_file",
+      description:
+        "Write to a registered owner project repository only when the user's latest instruction explicitly names/authorizes that target project. The selected project is always an allowed write target. For unrelated projects, the runtime rejects ambiguous writes.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          content: { type: "string" },
+          message: { type: "string" },
+          branch: { type: "string" },
+        },
+        required: ["projectId", "path", "content", "message"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_replace_text",
+      description:
+        "Targeted edit in a registered owner project repository only when the user's latest instruction explicitly names/authorizes that target project. The selected project is always an allowed write target.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          oldText: { type: "string" },
+          newText: { type: "string" },
+          message: { type: "string" },
+          branch: { type: "string" },
+          expectedOccurrences: { type: "integer", minimum: 1, maximum: 50 },
+        },
+        required: ["projectId", "path", "oldText", "newText", "message"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+  ];
+}
+
+async function executeOwnerProjectTool(call, token, selectedProjectId, rawMessages) {
+  let args = {};
+  try {
+    args = JSON.parse(call?.arguments || "{}");
+  } catch {
+    throw new Error("The owner project tool arguments were invalid JSON.");
+  }
+
+  if (call.name === "owner_projects_list") {
+    return {
+      projects: Object.keys(PROJECT_RUNTIME_CONFIG)
+        .sort()
+        .map((id) => safeOwnerProjectMetadata(id))
+        .filter(Boolean),
+      access: "Owner Personal projects are globally readable. Writes remain selected-project by default and require explicit authorization for another project.",
+    };
+  }
+
+  const targetProjectId = String(args.projectId || "").trim();
+  const config = registeredProjectConfig(targetProjectId);
+  if (!config?.repository) {
+    throw new Error("That project is not a registered owner project.");
+  }
+
+  const metadata = {
+    repository: config.repository,
+    defaultBranch: config.defaultBranch || "main",
+  };
+
+  if (call.name === "owner_project_list_directory") {
+    return executeGithubTool(
+      { name: "github_list_directory", arguments: JSON.stringify({ path: args.path || "", ref: args.ref }) },
+      token,
+      metadata
+    );
+  }
+  if (call.name === "owner_project_read_file") {
+    return executeGithubTool(
+      { name: "github_read_file", arguments: JSON.stringify({ path: args.path, ref: args.ref }) },
+      token,
+      metadata
+    );
+  }
+
+  if (!crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMessages)) {
+    throw new Error(
+      `Cross-project write blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(targetProjectId)}.`
+    );
+  }
+
+  if (call.name === "owner_project_write_file") {
+    return executeGithubTool(
+      {
+        name: "github_write_file",
+        arguments: JSON.stringify({
+          path: args.path,
+          content: args.content,
+          message: args.message,
+          branch: args.branch,
+        }),
+      },
+      token,
+      metadata
+    );
+  }
+  if (call.name === "owner_project_replace_text") {
+    return executeGithubTool(
+      {
+        name: "github_replace_text",
+        arguments: JSON.stringify({
+          path: args.path,
+          oldText: args.oldText,
+          newText: args.newText,
+          message: args.message,
+          branch: args.branch,
+          expectedOccurrences: args.expectedOccurrences,
+        }),
+      },
+      token,
+      metadata
+    );
+  }
+
+  throw new Error(`Unsupported owner project tool: ${call.name}`);
 }
 
 function vikingAriesPlatformChangeRequested(projectId, rawMessages) {
@@ -1246,6 +1535,20 @@ async function executeCloudflareTool(call, token, projectMetadata) {
 
   if (call.name === "cloudflare_get_build_logs") {
     return cloudflareGetBuildLogs(token, args.buildUuid);
+  }
+
+  if (call.name === "files_media_copy_project_file" && result?.file?.id) {
+    return {
+      provider: "Files & Media",
+      action: "project_file_copy",
+      tool: call.name,
+      sourceProjectId: result.sourceProjectId || String(args.sourceProjectId || "").trim() || null,
+      destinationProjectId: result.destinationProjectId || String(args.destinationProjectId || "").trim() || null,
+      sourceFileId: String(args.fileId || "").trim() || null,
+      destinationFileId: result.file.id,
+      name: result.file.name || null,
+      recordedAt,
+    };
   }
 
   if (call.name === "cloudflare_trigger_build") {
@@ -1627,15 +1930,34 @@ function projectFilesToolEnabled(authenticated, env, projectId) {
 }
 
 function buildProjectFilesTools() {
+  const projectIds = Object.keys(PROJECT_RUNTIME_CONFIG).sort().join(", ");
   return [
     {
       type: "function",
       name: "files_media_list_project_files",
       description:
-        "List the live Files & Media records for the currently selected Viking Aries project. Use this tool first for any question about files shown in Files & Media, including what files exist, their filenames, MIME types, sizes, upload dates, or file record identifiers. This is project-scoped Convex data, not repository content: do not inspect GitHub to answer those questions.",
+        "List live Files & Media metadata from any registered owner project. projectId defaults to the selected project; pass 'all' for all registered Personal projects. Registered project IDs: " + projectIds + ".",
       parameters: {
         type: "object",
-        properties: {},
+        properties: {
+          projectId: { type: "string", description: "Optional project ID or 'all'. Defaults to the selected project." },
+        },
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "files_media_search_files",
+      description:
+        "Search Files & Media by filename/type across all registered owner projects or within one project. Returns metadata only and never exposes storage secrets or raw bytes.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          projectId: { type: "string", description: "Optional project ID. Defaults to all registered owner projects." },
+        },
+        required: ["query"],
         additionalProperties: false,
       },
       strict: false,
@@ -1644,13 +1966,52 @@ function buildProjectFilesTools() {
       type: "function",
       name: "files_media_get_project_file_preview",
       description:
-        "Create a secure, owner-authenticated image preview reference for one live Files & Media record in the currently selected Viking Aries project. Use files_media_list_project_files first to get the file ID. This is for showing an image to the owner, not for repository inspection. It never returns a private Convex storage URL, storage secret, or file bytes to the model.",
+        "Create a secure owner-authenticated preview reference for an image in any registered owner project's Files & Media. Raw storage URLs and bytes are never returned to the model.",
       parameters: {
         type: "object",
         properties: {
-          fileId: { type: "string", description: "The Files & Media record ID returned by files_media_list_project_files." },
+          projectId: { type: "string", description: "Source project ID. Defaults to the selected project." },
+          fileId: { type: "string", description: "Files & Media record ID." },
         },
         required: ["fileId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "files_media_copy_project_file",
+      description:
+        "Securely copy a Files & Media asset from one registered owner project to another. The destination write must be the selected project or explicitly named/authorized by the user's latest instruction. The copied record preserves source provenance.",
+      parameters: {
+        type: "object",
+        properties: {
+          sourceProjectId: { type: "string" },
+          destinationProjectId: { type: "string" },
+          fileId: { type: "string" },
+          name: { type: "string" },
+        },
+        required: ["sourceProjectId", "destinationProjectId", "fileId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "files_media_copy_file_to_project_repository",
+      description:
+        "Copy a binary Files & Media asset directly into a registered owner's GitHub repository without exposing raw bytes to the model. Use this for logos, favicons, images, PDFs, and other binary assets. The destination project must be selected or explicitly authorized by the user's latest instruction.",
+      parameters: {
+        type: "object",
+        properties: {
+          sourceProjectId: { type: "string" },
+          fileId: { type: "string" },
+          destinationProjectId: { type: "string" },
+          destinationPath: { type: "string" },
+          message: { type: "string" },
+          branch: { type: "string" },
+        },
+        required: ["sourceProjectId", "fileId", "destinationProjectId", "destinationPath", "message"],
         additionalProperties: false,
       },
       strict: false,
@@ -1662,7 +2023,7 @@ async function getVAProjectFilePreview(env, projectId, fileId) {
   const listed = await listVAProjectFiles(env, projectId);
   const safeId = String(fileId || "").trim();
   const file = listed.files.find((item) => item.id === safeId);
-  if (!file) throw new Error("That file is not available in the selected project.");
+  if (!file) throw new Error("That file is not available in the requested owner project.");
   if (!String(file.type || "").startsWith("image/")) {
     throw new Error("Only image files have a preview operation.");
   }
@@ -1680,19 +2041,84 @@ async function getVAProjectFilePreview(env, projectId, fileId) {
   };
 }
 
-async function executeProjectFilesTool(call, env, projectId) {
+async function executeProjectFilesTool(call, env, selectedProjectId, githubToken, rawMessages) {
+  let args = {};
+  try {
+    args = JSON.parse(call.arguments || "{}");
+  } catch {
+    throw new Error("The Files & Media tool arguments were invalid JSON.");
+  }
+
   if (call.name === "files_media_list_project_files") {
-    return listVAProjectFiles(env, projectId);
+    const requested = String(args.projectId || selectedProjectId || "").trim();
+    return requested === "all" ? listVAAllProjectFiles(env) : listVAProjectFiles(env, requested);
+  }
+  if (call.name === "files_media_search_files") {
+    const query = String(args.query || "").trim().toLowerCase();
+    if (!query) throw new Error("A Files & Media search query is required.");
+    const requested = String(args.projectId || "all").trim();
+    const listed = requested === "all" ? await listVAAllProjectFiles(env) : await listVAProjectFiles(env, requested);
+    return {
+      query,
+      projectId: requested,
+      files: (listed.files || []).filter((file) =>
+        [file.name, file.type, file.projectId, file.projectName]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query))
+      ),
+    };
   }
   if (call.name === "files_media_get_project_file_preview") {
-    let args = {};
-    try {
-      args = JSON.parse(call.arguments || "{}");
-    } catch {
-      throw new Error("The Files & Media tool arguments were invalid JSON.");
-    }
-    return getVAProjectFilePreview(env, projectId, args.fileId);
+    const sourceProjectId = String(args.projectId || selectedProjectId || "").trim();
+    return getVAProjectFilePreview(env, sourceProjectId, args.fileId);
   }
+  if (call.name === "files_media_copy_project_file") {
+    const sourceProjectId = String(args.sourceProjectId || "").trim();
+    const destinationProjectId = String(args.destinationProjectId || selectedProjectId || "").trim();
+    if (!registeredProjectConfig(sourceProjectId) || !registeredProjectConfig(destinationProjectId)) {
+      throw new Error("Both source and destination must be registered owner projects.");
+    }
+    if (!crossProjectWriteAuthorized(selectedProjectId, destinationProjectId, rawMessages)) {
+      throw new Error(
+        `Cross-project file copy blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(destinationProjectId)}.`
+      );
+    }
+    return copyVAProjectFile(env, {
+      sourceProjectId,
+      destinationProjectId,
+      fileId: args.fileId,
+      name: args.name,
+    });
+  }
+  if (call.name === "files_media_copy_file_to_project_repository") {
+    const sourceProjectId = String(args.sourceProjectId || "").trim();
+    const destinationProjectId = String(args.destinationProjectId || selectedProjectId || "").trim();
+    const destinationConfig = registeredProjectConfig(destinationProjectId);
+    if (!registeredProjectConfig(sourceProjectId) || !destinationConfig?.repository) {
+      throw new Error("Both source and destination must be registered owner projects.");
+    }
+    if (!githubToken) throw new Error("GitHub is not connected for repository asset copy.");
+    if (!crossProjectWriteAuthorized(selectedProjectId, destinationProjectId, rawMessages)) {
+      throw new Error(
+        `Cross-project repository write blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(destinationProjectId)}.`
+      );
+    }
+    const asset = await readVAProjectFileBytes(env, sourceProjectId, args.fileId);
+    const result = await githubWriteBinaryFile(githubToken, destinationConfig.repository, {
+      path: args.destinationPath,
+      bytes: asset.bytes,
+      message: args.message,
+      branch: args.branch || destinationConfig.defaultBranch || "main",
+    });
+    return {
+      ...result,
+      sourceProjectId,
+      sourceFileId: String(args.fileId || ""),
+      sourceName: asset.name,
+      destinationProjectId,
+    };
+  }
+
   throw new Error(`Unsupported Files & Media tool: ${call.name}`);
 }
 
@@ -1754,7 +2180,10 @@ function buildVerifiedActionReceipt(call, result, projectMetadata) {
       call.name === "github_write_file" ||
       call.name === "github_replace_text" ||
       call.name === "va_platform_write_file" ||
-      call.name === "va_platform_replace_text"
+      call.name === "va_platform_replace_text" ||
+      call.name === "owner_project_write_file" ||
+      call.name === "owner_project_replace_text" ||
+      call.name === "files_media_copy_file_to_project_repository"
     ) &&
     result?.commitSha
   ) {
@@ -2117,15 +2546,100 @@ async function listVAProjectFiles(env, projectId) {
   const files = Array.isArray(payload?.files) ? payload.files : [];
   return {
     projectId: scopedProjectId,
+    projectName: registeredProjectName(scopedProjectId),
     files: files.map((file) => ({
       id: typeof file?.id === "string" ? file.id : null,
+      projectId: scopedProjectId,
+      projectName: registeredProjectName(scopedProjectId),
       name: typeof file?.name === "string" ? file.name : "Unnamed file",
       type: typeof file?.type === "string" ? file.type : "application/octet-stream",
       size: Number.isFinite(Number(file?.size)) ? Number(file.size) : 0,
       uploadedAt: Number.isFinite(Number(file?.uploadedAt)) ? Number(file.uploadedAt) : null,
+      sourceProjectId: typeof file?.sourceProjectId === "string" ? file.sourceProjectId : null,
+      sourceFileId: typeof file?.sourceFileId === "string" ? file.sourceFileId : null,
       storage: "convex",
       status: "Stored",
     })),
+  };
+}
+
+async function listVAAllProjectFiles(env) {
+  const results = await Promise.all(
+    Object.keys(PROJECT_RUNTIME_CONFIG).sort().map(async (id) => {
+      try {
+        return await listVAProjectFiles(env, id);
+      } catch (error) {
+        return {
+          projectId: id,
+          projectName: registeredProjectName(id),
+          files: [],
+          error: error instanceof Error ? error.message : "Files & Media unavailable.",
+        };
+      }
+    })
+  );
+  return {
+    scope: "all-owner-projects",
+    projects: results.map(({ projectId, projectName, error }) => ({ projectId, projectName, error: error || null })),
+    files: results.flatMap((result) => result.files || [])
+      .sort((a, b) => Number(b.uploadedAt || 0) - Number(a.uploadedAt || 0)),
+  };
+}
+
+async function copyVAProjectFile(env, { sourceProjectId, destinationProjectId, fileId, name }) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("Private Files & Media storage is not configured.");
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/files/copy`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sourceProjectId,
+      destinationProjectId,
+      fileId,
+      name: name || undefined,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Files & Media copy failed with status ${response.status}`);
+  }
+  return {
+    ok: true,
+    sourceProjectId,
+    destinationProjectId,
+    file: payload?.file || null,
+  };
+}
+
+async function readVAProjectFileBytes(env, projectId, fileId) {
+  const scopedProjectId = String(projectId || "").trim();
+  if (!registeredProjectConfig(scopedProjectId)) {
+    throw new Error("The source project is not a registered owner project.");
+  }
+  const listed = await listVAProjectFiles(env, scopedProjectId);
+  const file = (listed.files || []).find((item) => item.id === String(fileId || "").trim());
+  if (!file) throw new Error("That Files & Media asset was not found in the source project.");
+
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("Private Files & Media storage is not configured.");
+  const response = await fetch(
+    `${VA_CONVEX_SITE_URL}/files/raw?id=${encodeURIComponent(file.id)}&projectId=${encodeURIComponent(scopedProjectId)}`,
+    { headers: { Authorization: `Bearer ${secret}` } }
+  );
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error || `Stored asset read failed with status ${response.status}`);
+  }
+  const buffer = await response.arrayBuffer();
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    bytes: new Uint8Array(buffer),
   };
 }
 
@@ -2193,12 +2707,28 @@ function describeRuntimeTool(call) {
     diagnostic_read_project_file: path
       ? `Reading related project file: ${path}`
       : "Reading related project file",
+    owner_projects_list: "Reading owner project registry",
+    owner_project_list_directory: path
+      ? `Inspecting ${registeredProjectName(args.projectId)} folder: ${path}`
+      : `Inspecting ${registeredProjectName(args.projectId)} repository`,
+    owner_project_read_file: path
+      ? `Reading ${registeredProjectName(args.projectId)} file: ${path}`
+      : `Reading ${registeredProjectName(args.projectId)} file`,
+    owner_project_write_file: path
+      ? `Writing ${registeredProjectName(args.projectId)} file: ${path}`
+      : `Writing ${registeredProjectName(args.projectId)} repository file`,
+    owner_project_replace_text: path
+      ? `Editing ${registeredProjectName(args.projectId)} file: ${path}`
+      : `Editing ${registeredProjectName(args.projectId)} repository file`,
     cloudflare_get_project_status: "Checking Cloudflare deployment status",
     cloudflare_get_build_logs: "Reading Cloudflare build logs",
     cloudflare_trigger_build: "Starting Cloudflare build",
     convex_get_deployment_status: "Checking Convex deployment status",
     files_media_list_project_files: "Reading live Files & Media records",
+    files_media_search_files: "Searching Files & Media across owner projects",
     files_media_get_project_file_preview: "Preparing a secure image preview",
+    files_media_copy_project_file: "Copying Files & Media asset between projects",
+    files_media_copy_file_to_project_repository: "Copying Files & Media asset into project repository",
   };
 
   return labels[call?.name] || "Running project tool";
@@ -2722,6 +3252,7 @@ const worker = {
       url.pathname === "/api/files/preview" ||
       url.pathname === "/api/files/delete" ||
       url.pathname === "/api/files/list" ||
+      url.pathname === "/api/files/copy" ||
       url.pathname === "/api/files/legacy-download" ||
       url.pathname === "/api/files/legacy-preview"
     ) {
@@ -2733,6 +3264,77 @@ const worker = {
       const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
       if (!secret) {
         return json({ error: "Private VA storage is not configured." }, { status: 503 });
+      }
+
+      if (url.pathname === "/api/files/list" && (url.searchParams.get("projectId") || "").trim() === "all") {
+        try {
+          const results = await Promise.all(
+            Object.keys(PROJECT_RUNTIME_CONFIG).sort().map(async (id) => {
+              const response = await fetch(
+                `${VA_CONVEX_SITE_URL}/files/list?projectId=${encodeURIComponent(id)}`,
+                { headers: { Authorization: `Bearer ${secret}` } }
+              );
+              const payload = await response.json().catch(() => ({}));
+              return {
+                projectId: id,
+                projectName: registeredProjectName(id),
+                files: response.ok && Array.isArray(payload.files)
+                  ? payload.files.map((file) => ({
+                      ...file,
+                      projectId: id,
+                      projectName: registeredProjectName(id),
+                    }))
+                  : [],
+                error: response.ok ? null : (payload.error || `Files query failed with status ${response.status}`),
+              };
+            })
+          );
+          return json({
+            ok: true,
+            scope: "all-owner-projects",
+            projects: results.map(({ projectId, projectName, error }) => ({ projectId, projectName, error })),
+            files: results.flatMap((result) => result.files)
+              .sort((a, b) => Number(b.uploadedAt || 0) - Number(a.uploadedAt || 0)),
+          }, { headers: { "Cache-Control": "private, no-store" } });
+        } catch (error) {
+          return json(
+            { error: error instanceof Error ? error.message : "Could not list owner project files." },
+            { status: 502 }
+          );
+        }
+      }
+
+      if (url.pathname === "/api/files/copy" && request.method === "POST") {
+        const bodyText = await request.text();
+        let body = {};
+        try { body = JSON.parse(bodyText || "{}"); } catch { body = {}; }
+        const sourceProjectId = String(body?.sourceProjectId || "").trim();
+        const destinationProjectId = String(body?.destinationProjectId || "").trim();
+        if (!registeredProjectConfig(sourceProjectId) || !registeredProjectConfig(destinationProjectId)) {
+          return json({ error: "Both source and destination must be registered owner projects." }, { status: 400 });
+        }
+        try {
+          const response = await fetch(`${VA_CONVEX_SITE_URL}/files/copy`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              "Content-Type": "application/json",
+            },
+            body: bodyText,
+          });
+          const responseHeaders = new Headers(response.headers);
+          responseHeaders.set("Cache-Control", "private, no-store");
+          return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+          });
+        } catch (error) {
+          return json(
+            { error: error instanceof Error ? error.message : "Cross-project file copy failed." },
+            { status: 502 }
+          );
+        }
       }
 
       const legacyFileRoute =
@@ -2772,7 +3374,13 @@ const worker = {
         const headers = new Headers({ Authorization: `Bearer ${secret}` });
         const init = { method: request.method, headers };
         if (request.method === "POST") {
-          init.body = await request.formData();
+          const contentType = request.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            headers.set("Content-Type", "application/json");
+            init.body = await request.text();
+          } else {
+            init.body = await request.formData();
+          }
         }
         const response = await fetch(target.toString(), init);
         const responseHeaders = new Headers(response.headers);
@@ -4169,13 +4777,13 @@ const worker = {
       "Clearly distinguish information that is safe to paste into chat, such as a non-secret provider ID, from secrets or bank credentials that must go through the Secrets tab or provider UI. Never ask Erik to paste secret keys, routing numbers, account numbers, passwords, or private tokens into chat.",
       "Do not make Erik perform work Viking Aries can already do with its connected tools. Only hand off the parts that genuinely require his account access, physical action, approval, or information that is not available to the runtime.",
       "When multiple owner actions are on the same screen and are simple, reversible, and naturally completed together, you may group them into one step; otherwise keep the flow one step at a time.",
-      "Maintain awareness that Viking Aries manages multiple related projects while keeping ordinary project write actions scoped to the selected project.",
+      "Owner Personal-workspace projects are transparent to one another for read/search operations. The selected project remains the default write target. Read other registered owner projects whenever useful for reuse, comparison, or integration. Do not write to another project unless the owner's latest instruction explicitly names/authorizes that destination.",
       "Viking Aries platform surfaces such as the Secrets tab, Theme, project selector, AI Builder chat UI, preview pane, model recommendation UI, and platform settings belong to dakotawireless/VikingAries, not to the selected app repository. When the owner explicitly asks to change one of those platform surfaces and va_platform_* tools are available, use those tools even if another project is selected. Do not use va_platform_* tools for changes to the selected app itself.",
       "When a project needs a credential or API secret, never ask the owner to paste the value into AI chat. Direct them to the project Secrets tab, where the value can be sent directly to the secure runtime without entering model context.",
       "Project records should either be stored in Viking Aries or point to a durable retrievable source such as a repository file, commit, deployment, provider record, or Drive item.",
       "Never expose secret values to the AI layer unless the owner explicitly requests that exact value for an immediate task. Secret values belong in the secure vault; normal project context should include only names, providers, purposes, and configuration status.",
       "Treat uploaded attachments as opaque attachments. Do not reproduce raw PDF text, OCR output, base64, binary data, or full document contents in the chat. Keep the attachment represented by its filename and type, and inspect or summarize its contents only when the owner explicitly asks you to do so.",
-      "For questions about the current project's Files & Media screen or uploaded project files, use the Files & Media tool first when it is available. Those live Convex records are separate from the GitHub repository. Do not inspect the repository to identify, date, or size Files & Media records.",
+      "For Files & Media questions, use the Files & Media tools first. In the owner's Personal workspace these tools can list/search registered owner projects globally, preview assets securely, and explicitly copy assets between projects or into an authorized project repository. These live Convex records are separate from GitHub; do not inspect repositories merely to identify, date, or size Files & Media records.",
       "Do not claim that you changed code, deployed an app, accessed a repository, or called an external service unless the Viking Aries runtime actually supplied a tool result or verified prior action receipt proving that action occurred.",
       "Verified prior action receipts are authoritative evidence of earlier runtime actions. When the owner asks whether an earlier write, commit, or deployment action occurred, consult those receipts before answering. Never deny an action that a verified receipt proves occurred.",
       "If the owner asks whether an earlier action occurred and no verified receipt is available, do not infer that it did not happen. Use the available provider inspection tools (for example GitHub history) to verify the current external record before answering when practical.",
@@ -4215,10 +4823,13 @@ const worker = {
           ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
             ? buildGithubTools()
             : []),
+          ...(ownerAuthenticated && githubToken && registeredProjectConfig(projectId)
+            ? buildOwnerProjectTools()
+            : []),
           ...(platformToolsRequested && ownerAuthenticated && githubToken
             ? buildVikingAriesPlatformTools()
             : []),
-          ...(repeatedRepairDiagnosis && ownerAuthenticated && githubToken
+          ...(repeatedRepairDiagnosis && ownerAuthenticated && githubToken && registeredProjectConfig(projectId)
             ? buildCrossProjectDiagnosticTools()
             : []),
           ...(cloudflareToolsEnabled(ownerAuthenticated, cloudflareToken, projectMetadata.cloudflareWorker)
@@ -4236,10 +4847,10 @@ const worker = {
       );
     }
     if (!modelKnowledgeQuestion && projectFilesToolEnabled(ownerAuthenticated, env, projectId)) {
-      runtimeCapabilityNotes.push("The read-only Files & Media tool is available for the currently selected project. Use it first for filenames, file types, sizes, upload times, and file record identifiers shown in Files & Media. It reads only that project's live Convex records and does not expose private storage URLs or secrets. For an image the owner wants to see, use the secure preview tool after listing the records; it returns only an owner-authenticated Viking Aries preview path, never a Convex storage URL or secret.");
+      runtimeCapabilityNotes.push("Files & Media is owner-wide across registered Personal projects. You may list/search/read metadata and preview images from any registered owner project. You may securely copy an asset between owner projects or into a project repository when the destination is the selected project or the latest user instruction explicitly authorizes that destination. Never expose private storage URLs, storage IDs, secrets, or raw binary bytes to the model.");
     }
     if (!modelKnowledgeQuestion && githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
-      runtimeCapabilityNotes.push("GitHub read/list/write tools are available for the selected project's server-registered repository. Use them when needed, and report commit SHAs from tool results after writes.");
+      runtimeCapabilityNotes.push("GitHub tools for the selected project remain the default write path. Owner-wide owner_project_* tools can list/read any registered Personal project repository. Cross-project owner_project_* writes are runtime-blocked unless the latest user instruction explicitly names/authorizes that destination project. Use owner_projects_list when project mappings are unclear.");
     }
     if (platformToolsRequested && ownerAuthenticated && githubToken) {
       runtimeCapabilityNotes.push("The owner explicitly requested a Viking Aries platform UI change. va_platform_* tools are available and are hard-scoped to dakotawireless/VikingAries on main. Use them for the platform change while keeping ordinary github_* tools scoped to the selected project.");
@@ -4461,6 +5072,10 @@ const worker = {
             "github_replace_text",
             "va_platform_write_file",
             "va_platform_replace_text",
+            "owner_project_write_file",
+            "owner_project_replace_text",
+            "files_media_copy_project_file",
+            "files_media_copy_file_to_project_repository",
           ]).has(call.name);
           if (writeTool) {
             let writeArgs = {};
@@ -4469,8 +5084,9 @@ const worker = {
             } catch {
               writeArgs = {};
             }
-            const writePath = String(writeArgs.path || "").trim() || "(unknown path)";
-            const writeKey = `${call.name.replace(/^va_platform_/, "github_")}:${writePath}`;
+            const writePath = String(writeArgs.path || writeArgs.destinationPath || "").trim() || "(unknown path)";
+            const writeProject = String(writeArgs.projectId || writeArgs.destinationProjectId || projectId || "").trim();
+            const writeKey = `${call.name.replace(/^va_platform_/, "github_")}:${writeProject}:${writePath}`;
             const attempts = (writeAttempts.get(writeKey) || 0) + 1;
             writeAttempts.set(writeKey, attempts);
             if (attempts > MAX_WRITE_ATTEMPTS_PER_PATH) {
@@ -4503,6 +5119,8 @@ const worker = {
             let result;
             if (call.name.startsWith("github_")) {
               result = await executeGithubTool(call, githubToken, projectMetadata);
+            } else if (call.name.startsWith("owner_project")) {
+              result = await executeOwnerProjectTool(call, githubToken, projectId, body?.messages);
             } else if (call.name.startsWith("va_platform_")) {
               result = await executeVikingAriesPlatformTool(call, githubToken);
             } else if (call.name.startsWith("diagnostic_")) {
@@ -4512,7 +5130,7 @@ const worker = {
             } else if (call.name.startsWith("convex_")) {
               result = await executeConvexTool(call, convexToken, projectMetadata);
             } else if (call.name.startsWith("files_media_")) {
-              result = await executeProjectFilesTool(call, env, projectId);
+              result = await executeProjectFilesTool(call, env, projectId, githubToken, body?.messages);
             } else {
               throw new Error(`Unsupported runtime tool: ${call.name}`);
             }

@@ -9,6 +9,8 @@ export const createProjectFile = internalMutation({
     size: v.number(),
     storageId: v.id("_storage"),
     uploadedAt: v.number(),
+    sourceProjectId: v.optional(v.string()),
+    sourceFileId: v.optional(v.string()),
   },
   handler: async (ctx, args) => ctx.db.insert("projectFiles", args),
 });
