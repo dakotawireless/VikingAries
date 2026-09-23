@@ -26,6 +26,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     startedAt: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    cancelRequestedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   })
     .index("by_jobId", ["jobId"])

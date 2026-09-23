@@ -1,5 +1,5 @@
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
-import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
+import { budgetedFetch as fetch, withRequestBudget, setRequestAbortSignal, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_REQUEST_TIMEOUT_MS = 180000;
@@ -3455,6 +3455,8 @@ const worker = {
     } catch {
       return json({ error: "Invalid JSON request." }, { status: 400 });
     }
+
+    setRequestAbortSignal(request.signal);
 
     const jobId =
       typeof body?.jobId === "string" ? body.jobId.trim().slice(0, 120) : "";

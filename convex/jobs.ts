@@ -3,7 +3,26 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 const RUNNER_URL = "https://vikingaries.dakotawireless.net/api/chat";
-const STALE_RUNNING_MS = 30 * 60 * 1000;
+const HEARTBEAT_INTERVAL_MS = 5 * 1000;
+const STALE_RUNNING_MS = 45 * 1000;
+const STALE_QUEUED_MS = 2 * 60 * 1000;
+const MAX_RUNNING_MS = 10 * 60 * 1000;
+
+function isTerminalStatus(status: string) {
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "canceled" ||
+    status === "timed_out"
+  );
+}
+
+function terminalError(status: string) {
+  if (status === "cancelled" || status === "canceled") return "Stopped by the owner.";
+  if (status === "timed_out") return "The run timed out before completion.";
+  return "The background job stopped before completion.";
+}
 
 export const createJob = internalMutation({
   args: {
@@ -58,6 +77,93 @@ export const listProjectJobs = internalQuery({
   },
 });
 
+export const getJobState = internalQuery({
+  args: { jobId: v.string() },
+  handler: async (ctx, { jobId }) => {
+    const row = await ctx.db
+      .query("aiJobs")
+      .withIndex("by_jobId", (q) => q.eq("jobId", jobId))
+      .unique();
+    if (!row) return null;
+    return {
+      jobId: row.jobId,
+      status: row.status,
+      startedAt: row.startedAt,
+      heartbeatAt: row.heartbeatAt,
+      updatedAt: row.updatedAt,
+      completedAt: row.completedAt,
+    };
+  },
+});
+
+export const heartbeatJob = internalMutation({
+  args: { jobId: v.string(), at: v.number() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("aiJobs")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .unique();
+
+    if (!row) return null;
+    if (row.status !== "running") return { status: row.status };
+
+    const startedAt = row.startedAt || row.createdAt;
+    if (args.at - startedAt >= MAX_RUNNING_MS) {
+      await ctx.db.patch(row._id, {
+        status: "timed_out",
+        error: "The run exceeded the maximum execution time.",
+        completedAt: args.at,
+        heartbeatAt: args.at,
+        updatedAt: args.at,
+      });
+      return { status: "timed_out" };
+    }
+
+    await ctx.db.patch(row._id, { heartbeatAt: args.at, updatedAt: args.at });
+    return { status: "running" };
+  },
+});
+
+export const reconcileProjectJobs = internalMutation({
+  args: { projectId: v.string() },
+  handler: async (ctx, { projectId }) => {
+    const rows = await ctx.db
+      .query("aiJobs")
+      .withIndex("by_project_updatedAt", (q) => q.eq("projectId", projectId))
+      .order("desc")
+      .take(250);
+
+    const now = Date.now();
+    let reconciled = 0;
+
+    for (const row of rows) {
+      if (row.status === "running") {
+        const lastHeartbeat = row.heartbeatAt || row.updatedAt || row.startedAt || row.createdAt;
+        if (now - lastHeartbeat > STALE_RUNNING_MS) {
+          await ctx.db.patch(row._id, {
+            status: "timed_out",
+            error: "The run stopped sending heartbeats and was timed out.",
+            completedAt: now,
+            updatedAt: now,
+          });
+          reconciled += 1;
+        }
+      } else if (row.status === "queued" && now - row.updatedAt > STALE_QUEUED_MS) {
+        // Never replay old queued prompts during reconnect. New jobs are
+        // scheduled when created; an abandoned queue entry becomes terminal.
+        await ctx.db.patch(row._id, {
+          status: "timed_out",
+          error: "The queued run did not start before the queue timeout.",
+          completedAt: now,
+          updatedAt: now,
+        });
+        reconciled += 1;
+      }
+    }
+    return { reconciled };
+  },
+});
+
 export const listPriorThreadJobs = internalQuery({
   args: {
     projectId: v.string(),
@@ -79,10 +185,7 @@ export const listPriorThreadJobs = internalQuery({
 });
 
 export const claimNextThreadJob = internalMutation({
-  args: {
-    projectId: v.string(),
-    threadId: v.string(),
-  },
+  args: { projectId: v.string(), threadId: v.string() },
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("aiJobs")
@@ -92,13 +195,21 @@ export const claimNextThreadJob = internalMutation({
       .collect();
 
     const now = Date.now();
-    const staleBefore = now - STALE_RUNNING_MS;
-
     for (const row of rows) {
-      if (row.status === "running" && row.updatedAt < staleBefore) {
+      if (row.status === "running") {
+        const lastHeartbeat = row.heartbeatAt || row.updatedAt || row.startedAt || row.createdAt;
+        if (now - lastHeartbeat > STALE_RUNNING_MS) {
+          await ctx.db.patch(row._id, {
+            status: "timed_out",
+            error: "The run stopped sending heartbeats and was timed out.",
+            completedAt: now,
+            updatedAt: now,
+          });
+        }
+      } else if (row.status === "queued" && now - row.updatedAt > STALE_QUEUED_MS) {
         await ctx.db.patch(row._id, {
-          status: "failed",
-          error: "The background job stopped before completion.",
+          status: "timed_out",
+          error: "The queued run did not start before the queue timeout.",
           completedAt: now,
           updatedAt: now,
         });
@@ -123,19 +234,18 @@ export const claimNextThreadJob = internalMutation({
     await ctx.db.patch(next._id, {
       status: "running",
       startedAt: now,
+      heartbeatAt: now,
       updatedAt: now,
+      completedAt: undefined,
       error: undefined,
     });
 
-    return { ...next, status: "running", startedAt: now, updatedAt: now };
+    return { ...next, status: "running", startedAt: now, heartbeatAt: now, updatedAt: now };
   },
 });
 
 export const cancelThreadJobs = internalMutation({
-  args: {
-    projectId: v.string(),
-    threadId: v.string(),
-  },
+  args: { projectId: v.string(), threadId: v.string() },
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("aiJobs")
@@ -143,19 +253,21 @@ export const cancelThreadJobs = internalMutation({
         q.eq("projectId", args.projectId).eq("threadId", args.threadId)
       )
       .collect();
+
     const now = Date.now();
-    let canceled = 0;
+    let cancelled = 0;
     for (const row of rows) {
       if (row.status !== "queued" && row.status !== "running") continue;
       await ctx.db.patch(row._id, {
-        status: "canceled",
+        status: "cancelled",
         error: "Stopped by the owner.",
+        cancelRequestedAt: now,
         completedAt: now,
         updatedAt: now,
       });
-      canceled += 1;
+      cancelled += 1;
     }
-    return { canceled };
+    return { cancelled, canceled: cancelled };
   },
 });
 
@@ -172,7 +284,7 @@ export const completeJob = internalMutation({
       .query("aiJobs")
       .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
       .unique();
-    if (!row || row.status === "canceled") return false;
+    if (!row || isTerminalStatus(row.status)) return false;
 
     await ctx.db.patch(row._id, {
       status: "completed",
@@ -180,6 +292,7 @@ export const completeJob = internalMutation({
       model: args.model || row.model,
       responseId: args.responseId,
       completedAt: args.completedAt,
+      heartbeatAt: args.completedAt,
       updatedAt: args.completedAt,
       error: undefined,
     });
@@ -188,29 +301,26 @@ export const completeJob = internalMutation({
 });
 
 export const failJob = internalMutation({
-  args: {
-    jobId: v.string(),
-    error: v.string(),
-    completedAt: v.number(),
-  },
+  args: { jobId: v.string(), error: v.string(), completedAt: v.number() },
   handler: async (ctx, args) => {
     const row = await ctx.db
       .query("aiJobs")
       .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
       .unique();
-    if (!row || row.status === "canceled") return false;
+    if (!row || isTerminalStatus(row.status)) return false;
 
     await ctx.db.patch(row._id, {
       status: "failed",
       error: args.error,
       completedAt: args.completedAt,
+      heartbeatAt: args.completedAt,
       updatedAt: args.completedAt,
     });
     return true;
   },
 });
 
-function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
+function enrichMessagesForQueuedJobfunction enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
   const messages = Array.isArray(requestBody?.messages)
     ? requestBody.messages.map((message) => ({ ...message }))
     : [];
@@ -240,7 +350,11 @@ function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
   };
 
   for (const prior of priorJobs) {
-    if (prior.status !== "completed" && prior.status !== "failed") continue;
+    if (
+      prior.status !== "completed" &&
+      prior.status !== "failed" &&
+      prior.status !== "timed_out"
+    ) continue;
 
     let userIndex = findUserIndex(prior);
     if (userIndex < 0 && prior.userMessageContent) {
@@ -268,8 +382,8 @@ function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
     }
 
     const assistantContent =
-      prior.status === "failed"
-        ? `I couldn’t complete that request. ${prior.error || "The background job failed."}`
+      prior.status === "failed" || prior.status === "timed_out"
+        ? `I couldn’t complete that request. ${prior.error || terminalError(prior.status)}`
         : prior.resultText;
 
     if (assistantContent) {
@@ -288,13 +402,50 @@ function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
 }
 
 export const processThread = internalAction({
-  args: {
-    projectId: v.string(),
-    threadId: v.string(),
-  },
+  args: { projectId: v.string(), threadId: v.string() },
   handler: async (ctx, args) => {
     const job = await ctx.runMutation(internal.jobs.claimNextThreadJob, args);
     if (!job) return;
+
+    const controller = new AbortController();
+    let monitorStopped = false;
+    let wakeMonitor: (() => void) | null = null;
+
+    const monitorPromise = (async () => {
+      while (!monitorStopped) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, HEARTBEAT_INTERVAL_MS);
+          wakeMonitor = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        wakeMonitor = null;
+        if (monitorStopped) break;
+
+        try {
+          const state = await ctx.runMutation(internal.jobs.heartbeatJob, {
+            jobId: job.jobId,
+            at: Date.now(),
+          });
+          if (!state || state.status !== "running") {
+            controller.abort(
+              new Error(
+                state?.status === "cancelled" || state?.status === "canceled"
+                  ? "RUN_CANCELLED"
+                  : state?.status === "timed_out"
+                    ? "RUN_TIMED_OUT"
+                    : "RUN_TERMINATED"
+              )
+            );
+            break;
+          }
+        } catch {
+          controller.abort(new Error("RUN_HEARTBEAT_FAILED"));
+          break;
+        }
+      }
+    })();
 
     try {
       const secret = process.env.VA_USAGE_INGEST_SECRET;
@@ -306,7 +457,6 @@ export const processThread = internalAction({
         threadId: job.threadId,
         beforeCreatedAt: job.createdAt,
       });
-
       enrichMessagesForQueuedJob(requestBody, job, priorJobs);
 
       const response = await fetch(RUNNER_URL, {
@@ -316,6 +466,7 @@ export const processThread = internalAction({
           "X-VA-Internal-Job-Secret": secret,
         },
         body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
 
       const payload = await response.json().catch(() => ({}));
@@ -331,12 +482,18 @@ export const processThread = internalAction({
         completedAt: Date.now(),
       });
     } catch (error) {
-      await ctx.runMutation(internal.jobs.failJob, {
-        jobId: job.jobId,
-        error: error instanceof Error ? error.message : "The AI job failed.",
-        completedAt: Date.now(),
-      });
+      const state = await ctx.runQuery(internal.jobs.getJobState, { jobId: job.jobId });
+      if (!state || !isTerminalStatus(state.status)) {
+        await ctx.runMutation(internal.jobs.failJob, {
+          jobId: job.jobId,
+          error: error instanceof Error ? error.message : "The AI job failed.",
+          completedAt: Date.now(),
+        });
+      }
     } finally {
+      monitorStopped = true;
+      wakeMonitor?.();
+      await monitorPromise.catch(() => undefined);
       await ctx.scheduler.runAfter(0, internal.jobs.processThread, args);
     }
   },

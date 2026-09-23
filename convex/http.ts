@@ -367,6 +367,7 @@ http.route({
       return Response.json({ error: "projectId is required." }, { status: 400 });
     }
 
+    await ctx.runMutation(internal.jobs.reconcileProjectJobs, { projectId });
     const jobs = await ctx.runQuery(internal.jobs.listProjectJobs, { projectId, limit });
     return Response.json({
       jobs: jobs.map((job) => ({
@@ -385,6 +386,8 @@ http.route({
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
         startedAt: job.startedAt,
+        heartbeatAt: job.heartbeatAt,
+        cancelRequestedAt: job.cancelRequestedAt,
         completedAt: job.completedAt,
       })),
     });

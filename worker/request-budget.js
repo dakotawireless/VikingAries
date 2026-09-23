@@ -13,7 +13,13 @@ export class RequestBudgetExceeded extends Error {
 }
 
 export function withRequestBudget(callback) {
-  return requests.run({ used: 0, secrets: new Map() }, callback);
+  return requests.run({ used: 0, secrets: new Map(), abortSignal: null }, callback);
+}
+
+export function setRequestAbortSignal(signal) {
+  const state = requests.getStore();
+  if (!state) return;
+  state.abortSignal = signal || null;
 }
 
 export function remainingRequests() {
@@ -68,6 +74,13 @@ export async function budgetedFetch(input, init) {
 
   let currentInput = input;
   let currentInit = { ...(init || {}), redirect: "manual" };
+
+  if (state.abortSignal) {
+    currentInit.signal =
+      currentInit.signal && currentInit.signal !== state.abortSignal
+        ? AbortSignal.any([currentInit.signal, state.abortSignal])
+        : state.abortSignal;
+  }
 
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
     consume();
