@@ -1,9 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker/index.js';
-import { withRequestBudget, budgetedFetch, remainingRequests, resolveBoundSecret, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from '../worker/request-budget.js';
+import { withRequestBudget, budgetedFetch, remainingRequests, resolveBoundSecret, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS, MAX_AGENT_COST_USD } from '../worker/request-budget.js';
 
 const requestLimit = withRequestBudget(() => remainingRequests());
+
+test('production safety ceilings stay intentionally small', () => {
+  assert.equal(MAX_AGENT_ROUNDS, 8);
+  assert.equal(MAX_AGENT_TOOLS, 20);
+  assert.equal(MAX_AGENT_COST_USD, 0.50);
+  assert.equal(requestLimit, 44);
+});
 
 test('hard limit isolates simultaneous requests', async (t) => {
   t.mock.method(globalThis, 'fetch', async (_url, init) => {
