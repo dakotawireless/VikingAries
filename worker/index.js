@@ -4386,7 +4386,12 @@ const worker = {
             continue;
           }
           executedTools += 1;
-          const toolProgressId = await beginProgress(describeRuntimeTool(call));
+          const operationLabel = describeRuntimeTool(call);
+          updateRunRecoveryState({
+            toolExecutions: executedTools,
+            finalOperation: operationLabel,
+          });
+          const toolProgressId = await beginProgress(operationLabel);
           try {
             let result;
             if (call.name.startsWith("github_")) {
