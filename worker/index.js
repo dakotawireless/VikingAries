@@ -1045,6 +1045,180 @@ async function executeCrossProjectDiagnosticTool(call, token) {
   throw new Error(`Unsupported diagnostic tool: ${call.name}`);
 }
 
+function buildOwnerProjectTools() {
+  const projectIds = Object.keys(PROJECT_RUNTIME_CONFIG).sort().join(", ");
+  return [
+    {
+      type: "function",
+      name: "owner_projects_list",
+      description:
+        "List the owner's registered Personal projects and safe integration metadata. This is owner-wide read-only context and never returns secret values.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_list_directory",
+      description:
+        "Read-only: list a directory in any registered owner project repository. Registered project IDs: " + projectIds + ".",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          ref: { type: "string" },
+        },
+        required: ["projectId", "path"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_read_file",
+      description:
+        "Read-only: read a source file from any registered owner project repository, even when another project is selected. Registered project IDs: " + projectIds + ".",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          ref: { type: "string" },
+        },
+        required: ["projectId", "path"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_write_file",
+      description:
+        "Write to a registered owner project repository only when the user's latest instruction explicitly names/authorizes that target project. The selected project is always an allowed write target. For unrelated projects, the runtime rejects ambiguous writes.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          content: { type: "string" },
+          message: { type: "string" },
+          branch: { type: "string" },
+        },
+        required: ["projectId", "path", "content", "message"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_replace_text",
+      description:
+        "Targeted edit in a registered owner project repository only when the user's latest instruction explicitly names/authorizes that target project. The selected project is always an allowed write target.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          path: { type: "string" },
+          oldText: { type: "string" },
+          newText: { type: "string" },
+          message: { type: "string" },
+          branch: { type: "string" },
+          expectedOccurrences: { type: "integer", minimum: 1, maximum: 50 },
+        },
+        required: ["projectId", "path", "oldText", "newText", "message"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+  ];
+}
+
+async function executeOwnerProjectTool(call, token, selectedProjectId, rawMessages) {
+  let args = {};
+  try {
+    args = JSON.parse(call?.arguments || "{}");
+  } catch {
+    throw new Error("The owner project tool arguments were invalid JSON.");
+  }
+
+  if (call.name === "owner_projects_list") {
+    return {
+      projects: Object.keys(PROJECT_RUNTIME_CONFIG)
+        .sort()
+        .map((id) => safeOwnerProjectMetadata(id))
+        .filter(Boolean),
+      access: "Owner Personal projects are globally readable. Writes remain selected-project by default and require explicit authorization for another project.",
+    };
+  }
+
+  const targetProjectId = String(args.projectId || "").trim();
+  const config = registeredProjectConfig(targetProjectId);
+  if (!config?.repository) {
+    throw new Error("That project is not a registered owner project.");
+  }
+
+  const metadata = {
+    repository: config.repository,
+    defaultBranch: config.defaultBranch || "main",
+  };
+
+  if (call.name === "owner_project_list_directory") {
+    return executeGithubTool(
+      { name: "github_list_directory", arguments: JSON.stringify({ path: args.path || "", ref: args.ref }) },
+      token,
+      metadata
+    );
+  }
+  if (call.name === "owner_project_read_file") {
+    return executeGithubTool(
+      { name: "github_read_file", arguments: JSON.stringify({ path: args.path, ref: args.ref }) },
+      token,
+      metadata
+    );
+  }
+
+  if (!crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMessages)) {
+    throw new Error(
+      `Cross-project write blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(targetProjectId)}.`
+    );
+  }
+
+  if (call.name === "owner_project_write_file") {
+    return executeGithubTool(
+      {
+        name: "github_write_file",
+        arguments: JSON.stringify({
+          path: args.path,
+          content: args.content,
+          message: args.message,
+          branch: args.branch,
+        }),
+      },
+      token,
+      metadata
+    );
+  }
+  if (call.name === "owner_project_replace_text") {
+    return executeGithubTool(
+      {
+        name: "github_replace_text",
+        arguments: JSON.stringify({
+          path: args.path,
+          oldText: args.oldText,
+          newText: args.newText,
+          message: args.message,
+          branch: args.branch,
+          expectedOccurrences: args.expectedOccurrences,
+        }),
+      },
+      token,
+      metadata
+    );
+  }
+
+  throw new Error(`Unsupported owner project tool: ${call.name}`);
+}
+
 function vikingAriesPlatformChangeRequested(projectId, rawMessages) {
   if (projectId === "viking-aries") return false;
   if (!Array.isArray(rawMessages)) return false;
