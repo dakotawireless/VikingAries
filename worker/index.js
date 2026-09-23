@@ -203,6 +203,10 @@ function crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMess
   const text = latestUserText(rawMessages).toLowerCase();
   if (!text) return false;
   const targetNamed = ownerProjectAliases(target).some((alias) => text.includes(alias));
+  const explicitNoWrite =
+    /\b(?:do\s+not|don't|dont|without)\s+(?:make\s+)?(?:any\s+)?(?:changes?|edits?|writes?|updates?|modifications?)\b/.test(text) ||
+    /\bread[-\s]?only\b/.test(text);
+  if (explicitNoWrite) return false;
   const writeIntent = /\b(copy|move|use|write|edit|modify|change|update|add|remove|create|implement|integrate|sync|commit|apply|deploy|replace|share)\b/.test(text);
   return targetNamed && writeIntent;
 }
@@ -1689,31 +1693,6 @@ async function executeCloudflareTool(call, token, projectMetadata) {
     return cloudflareGetBuildLogs(token, args.buildUuid);
   }
 
-  if (call.name === "owner_project_update_metadata" && result?.ok) {
-    return {
-      provider: "Viking Aries",
-      action: "project_metadata_update",
-      tool: call.name,
-      projectId: result.projectId || String(args.projectId || "").trim() || null,
-      changedFields: Array.isArray(result.changedFields) ? result.changedFields : [],
-      recordedAt,
-    };
-  }
-
-  if (call.name === "files_media_copy_project_file" && result?.file?.id) {
-    return {
-      provider: "Files & Media",
-      action: "project_file_copy",
-      tool: call.name,
-      sourceProjectId: result.sourceProjectId || String(args.sourceProjectId || "").trim() || null,
-      destinationProjectId: result.destinationProjectId || String(args.destinationProjectId || "").trim() || null,
-      sourceFileId: String(args.fileId || "").trim() || null,
-      destinationFileId: result.file.id,
-      name: result.file.name || null,
-      recordedAt,
-    };
-  }
-
   if (call.name === "cloudflare_trigger_build") {
     return cloudflareTriggerBuild(
       token,
@@ -2363,6 +2342,31 @@ function buildVerifiedActionReceipt(call, result, projectMetadata) {
       commitSha: result.commitSha,
       commitUrl: result.commitUrl || null,
       commitMessage: String(args.message || "").trim().slice(0, 240) || null,
+      recordedAt,
+    };
+  }
+
+  if (call.name === "owner_project_update_metadata" && result?.ok) {
+    return {
+      provider: "Viking Aries",
+      action: "project_metadata_update",
+      tool: call.name,
+      projectId: result.projectId || String(args.projectId || "").trim() || null,
+      changedFields: Array.isArray(result.changedFields) ? result.changedFields : [],
+      recordedAt,
+    };
+  }
+
+  if (call.name === "files_media_copy_project_file" && result?.file?.id) {
+    return {
+      provider: "Files & Media",
+      action: "project_file_copy",
+      tool: call.name,
+      sourceProjectId: result.sourceProjectId || String(args.sourceProjectId || "").trim() || null,
+      destinationProjectId: result.destinationProjectId || String(args.destinationProjectId || "").trim() || null,
+      sourceFileId: String(args.fileId || "").trim() || null,
+      destinationFileId: result.file.id,
+      name: result.file.name || null,
       recordedAt,
     };
   }
