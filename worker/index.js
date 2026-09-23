@@ -4367,6 +4367,13 @@ const worker = {
       for (let step = 0; step < MAX_AGENT_ROUNDS; step += 1) {
         const calls = extractFunctionCalls(payload);
         if (!calls.length) break;
+        if (Date.now() >= currentRunRecoveryAt()) {
+          const error = new Error("Recovery window reached before the next tool round");
+          error.name = "RecoveryWindowReached";
+          throw error;
+        }
+        toolRounds += 1;
+        updateRunRecoveryState({ toolRounds, toolExecutions: executedTools });
 
         const outputs = [];
         for (const call of calls) {
