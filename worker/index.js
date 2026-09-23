@@ -93,6 +93,88 @@ function safeOwnerProjectMetadata(projectId) {
     cloudflareWorker: config.cloudflareWorker || null,
     deploymentUrl: config.deploymentUrl || null,
     status: config.status || null,
+    navigationLinks: Array.isArray(config.navigationLinks) ? config.navigationLinks : [],
+    contextSummary: config.contextSummary || null,
+  };
+}
+
+function projectMetadataStateKey(projectId) {
+  const safe = String(projectId || "").trim().replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 120);
+  return safe ? `viking-aries:project-metadata:${safe}` : "";
+}
+
+function sanitizeProjectNavigationLinks(value) {
+  if (!Array.isArray(value)) return undefined;
+  return value.slice(0, 20).map((item, index) => {
+    const path = String(item?.path || "").trim().slice(0, 500);
+    const url = String(item?.url || "").trim().slice(0, 500);
+    const label = String(item?.label || item?.name || `Link ${index + 1}`).trim().slice(0, 80);
+    const id = String(item?.id || label || `link-${index + 1}`)
+      .trim().replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 80);
+    return { id, label, ...(path ? { path } : {}), ...(url ? { url } : {}) };
+  }).filter((item) => item.path || item.url);
+}
+
+function sanitizeProjectMetadataPatch(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const patch = {};
+  if (typeof source.name === "string" && source.name.trim()) patch.name = source.name.trim().slice(0, 120);
+  if (typeof source.deploymentUrl === "string") patch.deploymentUrl = source.deploymentUrl.trim().slice(0, 500);
+  if (typeof source.status === "string") patch.status = source.status.trim().slice(0, 80);
+  if (typeof source.contextSummary === "string") patch.contextSummary = source.contextSummary.trim().slice(0, 12000);
+  const links = sanitizeProjectNavigationLinks(source.navigationLinks);
+  if (links) patch.navigationLinks = links;
+  return patch;
+}
+
+async function readProjectMetadataOverride(env, projectId) {
+  const key = projectMetadataStateKey(projectId);
+  if (!key) return {};
+  try {
+    const state = await readVAState(env);
+    const entry = (Array.isArray(state?.entries) ? state.entries : []).find(
+      (item) => item?.key === key && !item?.deleted
+    );
+    if (!entry?.value) return {};
+    const parsed = JSON.parse(entry.value);
+    return sanitizeProjectMetadataPatch(parsed);
+  } catch {
+    return {};
+  }
+}
+
+async function resolvedOwnerProjectMetadata(env, projectId) {
+  const base = safeOwnerProjectMetadata(projectId);
+  if (!base) return null;
+  const override = await readProjectMetadataOverride(env, projectId);
+  return { ...base, ...override, id: base.id, repository: base.repository, defaultBranch: base.defaultBranch, backend: base.backend, backendDeployment: base.backendDeployment, backendUrl: base.backendUrl, cloudflareWorker: base.cloudflareWorker };
+}
+
+async function updateOwnerProjectMetadata(env, projectId, patch) {
+  const base = safeOwnerProjectMetadata(projectId);
+  if (!base) throw new Error("That project is not a registered owner project.");
+  const clean = sanitizeProjectMetadataPatch(patch);
+  if (!Object.keys(clean).length) throw new Error("No supported project metadata fields were provided.");
+
+  const existing = await readProjectMetadataOverride(env, projectId);
+  const merged = { ...existing, ...clean };
+  const before = { ...base, ...existing };
+  const after = { ...base, ...merged };
+  const changedFields = Object.keys(clean).filter((key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null));
+
+  await writeVAState(env, {
+    key: projectMetadataStateKey(projectId),
+    value: JSON.stringify(merged),
+    updatedAt: Date.now(),
+  });
+
+  return {
+    ok: true,
+    projectId,
+    projectName: registeredProjectName(projectId),
+    changedFields,
+    metadata: after,
+    protectedFields: ["repository", "defaultBranch", "cloudflareWorker", "backend", "backendDeployment", "backendUrl", "credentials", "routing"],
   };
 }
 
@@ -121,6 +203,10 @@ function crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMess
   const text = latestUserText(rawMessages).toLowerCase();
   if (!text) return false;
   const targetNamed = ownerProjectAliases(target).some((alias) => text.includes(alias));
+  const explicitNoWrite =
+    /\b(?:do\s+not|don't|dont|without)\s+(?:make\s+)?(?:any\s+)?(?:changes?|edits?|writes?|updates?|modifications?)\b/.test(text) ||
+    /\bread[-\s]?only\b/.test(text);
+  if (explicitNoWrite) return false;
   const writeIntent = /\b(copy|move|use|write|edit|modify|change|update|add|remove|create|implement|integrate|sync|commit|apply|deploy|replace|share)\b/.test(text);
   return targetNamed && writeIntent;
 }
@@ -1058,6 +1144,51 @@ function buildOwnerProjectTools() {
     },
     {
       type: "function",
+      name: "owner_project_get_metadata",
+      description:
+        "Read the effective project metadata record for a registered Personal project, including active deployment URL, status, navigation links, and protected provider mappings. Never returns secrets.",
+      parameters: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "owner_project_update_metadata",
+      description:
+        "Update safe owner project metadata such as display name, active deployment URL, status, context summary, and app navigation links. This does not change repository, GitHub branch, Cloudflare Worker, Convex deployment/backend URL, credentials, or application routing. Cross-project updates require the latest user instruction to explicitly name/authorize the target project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          name: { type: "string" },
+          deploymentUrl: { type: "string" },
+          status: { type: "string" },
+          contextSummary: { type: "string" },
+          navigationLinks: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                label: { type: "string" },
+                path: { type: "string" },
+                url: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["projectId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
       name: "owner_project_list_directory",
       description:
         "Read-only: list a directory in any registered owner project repository. Registered project IDs: " + projectIds + ".",
@@ -1133,7 +1264,7 @@ function buildOwnerProjectTools() {
   ];
 }
 
-async function executeOwnerProjectTool(call, token, selectedProjectId, rawMessages) {
+async function executeOwnerProjectTool(call, token, env, selectedProjectId, rawMessages) {
   let args = {};
   try {
     args = JSON.parse(call?.arguments || "{}");
@@ -1142,20 +1273,45 @@ async function executeOwnerProjectTool(call, token, selectedProjectId, rawMessag
   }
 
   if (call.name === "owner_projects_list") {
+    const projects = await Promise.all(
+      Object.keys(PROJECT_RUNTIME_CONFIG).sort().map((id) => resolvedOwnerProjectMetadata(env, id))
+    );
     return {
-      projects: Object.keys(PROJECT_RUNTIME_CONFIG)
-        .sort()
-        .map((id) => safeOwnerProjectMetadata(id))
-        .filter(Boolean),
-      access: "Owner Personal projects are globally readable. Writes remain selected-project by default and require explicit authorization for another project.",
+      projects: projects.filter(Boolean),
+      access: "Owner Personal projects are globally readable. Safe metadata is durably writable; repository/provider mappings remain protected. Cross-project writes require explicit authorization.",
     };
   }
 
   const targetProjectId = String(args.projectId || "").trim();
   const config = registeredProjectConfig(targetProjectId);
-  if (!config?.repository) {
+  if (!config) {
     throw new Error("That project is not a registered owner project.");
   }
+
+  if (call.name === "owner_project_get_metadata") {
+    return resolvedOwnerProjectMetadata(env, targetProjectId);
+  }
+
+  if (call.name === "owner_project_update_metadata") {
+    if (!crossProjectWriteAuthorized(selectedProjectId, targetProjectId, rawMessages)) {
+      throw new Error(
+        `Project metadata update blocked. The latest user instruction must explicitly authorize changes to ${registeredProjectName(targetProjectId)}.`
+      );
+    }
+    return updateOwnerProjectMetadata(env, targetProjectId, {
+      name: args.name,
+      deploymentUrl: args.deploymentUrl,
+      status: args.status,
+      contextSummary: args.contextSummary,
+      navigationLinks: args.navigationLinks,
+    });
+  }
+
+  if (!config.repository) {
+    throw new Error("That owner project does not have a registered repository.");
+  }
+
+  if (!token) throw new Error("GitHub is not connected for repository operations.");
 
   const metadata = {
     repository: config.repository,
@@ -1535,20 +1691,6 @@ async function executeCloudflareTool(call, token, projectMetadata) {
 
   if (call.name === "cloudflare_get_build_logs") {
     return cloudflareGetBuildLogs(token, args.buildUuid);
-  }
-
-  if (call.name === "files_media_copy_project_file" && result?.file?.id) {
-    return {
-      provider: "Files & Media",
-      action: "project_file_copy",
-      tool: call.name,
-      sourceProjectId: result.sourceProjectId || String(args.sourceProjectId || "").trim() || null,
-      destinationProjectId: result.destinationProjectId || String(args.destinationProjectId || "").trim() || null,
-      sourceFileId: String(args.fileId || "").trim() || null,
-      destinationFileId: result.file.id,
-      name: result.file.name || null,
-      recordedAt,
-    };
   }
 
   if (call.name === "cloudflare_trigger_build") {
@@ -2204,6 +2346,31 @@ function buildVerifiedActionReceipt(call, result, projectMetadata) {
     };
   }
 
+  if (call.name === "owner_project_update_metadata" && result?.ok) {
+    return {
+      provider: "Viking Aries",
+      action: "project_metadata_update",
+      tool: call.name,
+      projectId: result.projectId || String(args.projectId || "").trim() || null,
+      changedFields: Array.isArray(result.changedFields) ? result.changedFields : [],
+      recordedAt,
+    };
+  }
+
+  if (call.name === "files_media_copy_project_file" && result?.file?.id) {
+    return {
+      provider: "Files & Media",
+      action: "project_file_copy",
+      tool: call.name,
+      sourceProjectId: result.sourceProjectId || String(args.sourceProjectId || "").trim() || null,
+      destinationProjectId: result.destinationProjectId || String(args.destinationProjectId || "").trim() || null,
+      sourceFileId: String(args.fileId || "").trim() || null,
+      destinationFileId: result.file.id,
+      name: result.file.name || null,
+      recordedAt,
+    };
+  }
+
   if (call.name === "cloudflare_trigger_build") {
     return {
       provider: "Cloudflare",
@@ -2708,6 +2875,8 @@ function describeRuntimeTool(call) {
       ? `Reading related project file: ${path}`
       : "Reading related project file",
     owner_projects_list: "Reading owner project registry",
+    owner_project_get_metadata: `Reading ${registeredProjectName(args.projectId)} project metadata`,
+    owner_project_update_metadata: `Updating ${registeredProjectName(args.projectId)} project metadata`,
     owner_project_list_directory: path
       ? `Inspecting ${registeredProjectName(args.projectId)} folder: ${path}`
       : `Inspecting ${registeredProjectName(args.projectId)} repository`,
@@ -4823,7 +4992,7 @@ const worker = {
           ...(githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)
             ? buildGithubTools()
             : []),
-          ...(ownerAuthenticated && githubToken && registeredProjectConfig(projectId)
+          ...(ownerAuthenticated && registeredProjectConfig(projectId)
             ? buildOwnerProjectTools()
             : []),
           ...(platformToolsRequested && ownerAuthenticated && githubToken
@@ -4850,7 +5019,7 @@ const worker = {
       runtimeCapabilityNotes.push("Files & Media is owner-wide across registered Personal projects. You may list/search/read metadata and preview images from any registered owner project. You may securely copy an asset between owner projects or into a project repository when the destination is the selected project or the latest user instruction explicitly authorizes that destination. Never expose private storage URLs, storage IDs, secrets, or raw binary bytes to the model.");
     }
     if (!modelKnowledgeQuestion && githubToolsEnabled(ownerAuthenticated, githubToken, projectMetadata.repository)) {
-      runtimeCapabilityNotes.push("GitHub tools for the selected project remain the default write path. Owner-wide owner_project_* tools can list/read any registered Personal project repository. Cross-project owner_project_* writes are runtime-blocked unless the latest user instruction explicitly names/authorizes that destination project. Use owner_projects_list when project mappings are unclear.");
+      runtimeCapabilityNotes.push("Owner-wide owner_project_* tools can read registered Personal project metadata and repositories. Safe project metadata (name, active deployment URL, status, context summary, navigation links) is durably writable without editing application code. Repository, branch, Cloudflare Worker, Convex deployment/backend URL, credentials, and routing remain protected provider mappings. Cross-project writes are runtime-blocked unless the latest user instruction explicitly names/authorizes that destination project. Use owner_projects_list when mappings are unclear.");
     }
     if (platformToolsRequested && ownerAuthenticated && githubToken) {
       runtimeCapabilityNotes.push("The owner explicitly requested a Viking Aries platform UI change. va_platform_* tools are available and are hard-scoped to dakotawireless/VikingAries on main. Use them for the platform change while keeping ordinary github_* tools scoped to the selected project.");
@@ -5074,6 +5243,7 @@ const worker = {
             "va_platform_replace_text",
             "owner_project_write_file",
             "owner_project_replace_text",
+            "owner_project_update_metadata",
             "files_media_copy_project_file",
             "files_media_copy_file_to_project_repository",
           ]).has(call.name);
@@ -5120,7 +5290,7 @@ const worker = {
             if (call.name.startsWith("github_")) {
               result = await executeGithubTool(call, githubToken, projectMetadata);
             } else if (call.name.startsWith("owner_project")) {
-              result = await executeOwnerProjectTool(call, githubToken, projectId, body?.messages);
+              result = await executeOwnerProjectTool(call, githubToken, env, projectId, body?.messages);
             } else if (call.name.startsWith("va_platform_")) {
               result = await executeVikingAriesPlatformTool(call, githubToken);
             } else if (call.name.startsWith("diagnostic_")) {

@@ -5,7 +5,7 @@ import { MIGRATED_PROJECTS, migrateProjectMappings } from '../shared/projects.js
 
 test('existing project integrations migrate without losing unrelated settings', () => {
   const result = migrateProjectMappings('dw-pos', { github: { branch: 'main' }, convex: { deployment: 'sleek-bear-647' }, drive: { folderUrl: 'keep' } });
-  assert.equal(result.github.branch, 'migration-staging');
+  assert.equal(result.github.branch, 'main');
   assert.equal(result.convex.deployment, 'energized-crane-577');
   assert.equal(result.cloudflare.deploymentUrl, MIGRATED_PROJECTS['dw-pos'].deploymentUrl);
   assert.equal(result.drive.folderUrl, 'keep');

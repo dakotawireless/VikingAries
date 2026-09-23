@@ -2,21 +2,25 @@
 export const MIGRATED_PROJECTS = {
   "dw-pos": {
     repository: "dakotawireless/Dakota-Wireless-POS---New",
-    defaultBranch: "migration-staging",
+    defaultBranch: "main",
     cloudflareWorker: "dakota-wireless-pos---new",
-    deploymentUrl: "https://migration-staging-dakota-wireless-pos---new.erik-f2c.workers.dev",
+    deploymentUrl: "https://dakota-wireless-pos---new.erik-f2c.workers.dev",
     backend: "Convex",
     backendDeployment: "energized-crane-577",
     backendUrl: "https://energized-crane-577.convex.cloud",
     convexDashboardUrl: "https://dashboard.convex.dev/t/erik-2df00/dakota-wireless-pos/energized-crane-577",
-    status: "Migration",
+    status: "Active",
+    navigationLinks: [
+      { id: "open-app", label: "Open App", path: "/" },
+      { id: "transaction", label: "Transactions", path: "/transaction" },
+    ],
     contextSummary: [
-      "Complete migrated POS source is in dakotawireless/Dakota-Wireless-POS---New on migration-staging, including frontend, Convex functions, schema, cron jobs, and integration adapters.",
-      "The migrated backend is energized-crane-577. Legacy sleek-bear-647 and pos.dakotawireless.net are separate; do not confuse their data or job histories with the migrated app.",
-      "Native employee PIN authentication and Microsoft 365 email transport are implemented. Test email mode redirects messages; it does not disable billing jobs.",
-      "Late fees remain enabled without a separate late-fee email; reminder and Houston suspension emails remain enabled.",
-      "The POS supplies website ordering, customer portal, pricing, payment, and order-status APIs. Preserve Authorize.Net, EasyPost, Zoho, Valor, Timekeeper commission APIs and current business behavior.",
-      "Do not change production routing, email test mode, credentials, or perform a data cutover without explicit direction. Migration validation and final data reconciliation remain separate work.",
+      "Dakota Wireless POS production source is dakotawireless/Dakota-Wireless-POS---New on main.",
+      "Production hosting is Cloudflare Worker dakota-wireless-pos---new at https://dakota-wireless-pos---new.erik-f2c.workers.dev.",
+      "Production backend is Convex deployment energized-crane-577 at https://energized-crane-577.convex.cloud.",
+      "Native employee PIN authentication and Microsoft 365 email transport are implemented.",
+      "Late fees, billing reminders, suspension/reactivation messaging, website ordering, customer portal, Authorize.Net, EasyPost, Zoho, Valor, and Timekeeper commission integrations are production responsibilities of this POS.",
+      "Preserve the production repository, Worker, Convex deployment, credentials, routing, and business behavior unless Erik explicitly requests a change.",
     ].join("\n"),
   },
   "smoke-pos": {
@@ -81,10 +85,10 @@ export const MIGRATED_PROJECTS = {
 // and allowing subsequent user edits to persist.
 export function migrateProjectMappings(projectId, mappings = {}) {
   const project = MIGRATED_PROJECTS[projectId];
-  if (!project || mappings?.migratedProjectVersion === 1) return mappings;
+  if (!project || mappings?.migratedProjectVersion === 2) return mappings;
   return {
     ...mappings,
-    migratedProjectVersion: 1,
+    migratedProjectVersion: 2,
     github: { ...mappings?.github, enabled: true, repository: project.repository, branch: project.defaultBranch },
     cloudflare: { ...mappings?.cloudflare, enabled: Boolean(project.cloudflareWorker || project.deploymentUrl), worker: project.cloudflareWorker, deploymentUrl: project.deploymentUrl },
     convex: { ...mappings?.convex, enabled: true, deployment: project.backendDeployment, url: project.backendUrl, dashboardUrl: project.convexDashboardUrl },

@@ -147,6 +147,28 @@ function getProjectIcon(project, fallback = Boxes) {
   return projectIconMap[project?.id] || fallback;
 }
 
+function projectNavigationHref(project, link) {
+  const explicit = String(link?.url || "").trim();
+  if (/^https?:\/\//i.test(explicit)) return explicit;
+  const base = String(project?.deploymentUrl || "").trim();
+  if (!base) return "";
+  try {
+    return new URL(String(link?.path || "/"), base.endsWith("/") ? base : `${base}/`).toString();
+  } catch {
+    return "";
+  }
+}
+
+function readProjectMetadataOverride(projectId) {
+  try {
+    const raw = window.localStorage.getItem(`viking-aries:project-metadata:${projectId}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 const navItems = [
   { label: "AI Builder", icon: MessageSquare, group: "BUILD" },
   { label: "Features", icon: PackageCheck, group: "BUILD" },
@@ -430,6 +452,31 @@ function Sidebar({
         onAddContractor={onAddContractor}
         onAddContractorProject={onAddContractorProject}
       />
+
+      {Array.isArray(project?.navigationLinks) && project.navigationLinks.length > 0 && (
+        <div className="sidebar-section sidebar-app-links">
+          <div className="sidebar-kicker">APP</div>
+          <nav className="sidebar-nav">
+            {project.navigationLinks.map((link) => {
+              const href = projectNavigationHref(project, link);
+              if (!href) return null;
+              return (
+                <a
+                  key={link.id || link.label || href}
+                  className="sidebar-link"
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={href}
+                >
+                  <Globe2 size={18} />
+                  <span>{link.label || "Open App"}</span>
+                </a>
+              );
+            })}
+          </nav>
+        </div>
+      )}
 
       <div className="sidebar-section sidebar-project-tools">
         {["BUILD", "DATA & LOGIC", "TEST & RELEASE", "PROJECT"].map((group) => (
@@ -750,9 +797,36 @@ function loadProjectThreads(projectId) {
 
 function loadProjectIntegrationMappings(project) {
   if (MIGRATED_PROJECTS[project.id]) {
+    let migrated;
     try {
-      return migrateProjectMappings(project.id, JSON.parse(window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`)) || {});
-    } catch { return migrateProjectMappings(project.id); }
+      migrated = migrateProjectMappings(
+        project.id,
+        JSON.parse(window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`)) || {}
+      );
+    } catch {
+      migrated = migrateProjectMappings(project.id);
+    }
+    return {
+      ...migrated,
+      github: {
+        ...migrated.github,
+        repository: project.repository || migrated.github?.repository || "",
+        branch: project.defaultBranch || migrated.github?.branch || "main",
+      },
+      cloudflare: {
+        ...migrated.cloudflare,
+        enabled: Boolean(project.cloudflareWorker || project.deploymentUrl || migrated.cloudflare?.enabled),
+        worker: project.cloudflareWorker || migrated.cloudflare?.worker || "",
+        deploymentUrl: project.deploymentUrl || migrated.cloudflare?.deploymentUrl || "",
+      },
+      convex: {
+        ...migrated.convex,
+        enabled: project.backend === "Convex" || Boolean(project.backendUrl || migrated.convex?.enabled),
+        deployment: project.backendDeployment || migrated.convex?.deployment || "",
+        url: project.backendUrl || migrated.convex?.url || "",
+        dashboardUrl: project.convexDashboardUrl || migrated.convex?.dashboardUrl || "",
+      },
+    };
   }
   try {
     const saved = window.localStorage.getItem(`viking-aries:${project.id}:integration-mappings-v1`);
@@ -783,13 +857,12 @@ function loadProjectIntegrationMappings(project) {
     convex: {
       enabled: project.backend === "Convex" || Boolean(project.backendUrl),
       deployment:
-        project.id === "dw-pos"
-          ? "sleek-bear-647"
-          : project.id === "timekeeper"
-            ? "aware-caiman-251"
-            : project.id === "viking-aries"
-              ? "flippant-mandrill-487"
-              : "",
+        project.backendDeployment ||
+        (project.id === "timekeeper"
+          ? "aware-caiman-251"
+          : project.id === "viking-aries"
+            ? "flippant-mandrill-487"
+            : ""),
       url: project.backendUrl || "",
       dashboardUrl: project.convexDashboardUrl || "",
     },
@@ -2590,6 +2663,47 @@ function VikingAriesApp({ onLogout, authConfigured }) {
   useEffect(() => {
     window.localStorage.setItem("viking-aries:personal-projects", JSON.stringify(personalProjectsState));
   }, [personalProjectsState]);
+
+  useEffect(() => {
+    const applyProjectMetadataOverrides = () => {
+      setPersonalProjectsState((current) => {
+        let changed = false;
+        const next = current.map((item) => {
+          const override = readProjectMetadataOverride(item.id);
+          if (!override) return item;
+          const safeOverride = {
+            ...(typeof override.name === "string" && override.name.trim() ? { name: override.name.trim() } : {}),
+            ...(typeof override.deploymentUrl === "string" ? { deploymentUrl: override.deploymentUrl } : {}),
+            ...(typeof override.status === "string" ? { status: override.status } : {}),
+            ...(typeof override.contextSummary === "string" ? { contextSummary: override.contextSummary } : {}),
+            ...(Array.isArray(override.navigationLinks) ? { navigationLinks: override.navigationLinks } : {}),
+          };
+          const differs = Object.entries(safeOverride).some(
+            ([key, value]) => JSON.stringify(item[key] ?? null) !== JSON.stringify(value ?? null)
+          );
+          if (!differs) return item;
+          changed = true;
+          return { ...item, ...safeOverride, icon: item.icon };
+        });
+        return changed ? next : current;
+      });
+    };
+
+    applyProjectMetadataOverrides();
+    const timer = window.setInterval(applyProjectMetadataOverrides, 1500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (workspace !== "Personal") return;
+    const latest = personalProjectsState.find((item) => item.id === project?.id);
+    if (!latest || latest === project) return;
+    const fields = ["name", "deploymentUrl", "status", "contextSummary", "navigationLinks"];
+    const differs = fields.some(
+      (key) => JSON.stringify(latest[key] ?? null) !== JSON.stringify(project?.[key] ?? null)
+    );
+    if (differs) setProject(latest);
+  }, [personalProjectsState, project, workspace]);
 
   useEffect(() => {
     window.localStorage.setItem("viking-aries:contractors", JSON.stringify(contractorsState));
