@@ -8,10 +8,11 @@ import {
   updateRunRecoveryState,
 } from "./run-control.js";
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
-import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS } from "./request-budget.js";
+import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS, MAX_AGENT_COST_USD } from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_REQUEST_TIMEOUT_MS = 180000;
+const MAX_WRITE_ATTEMPTS_PER_PATH = 3;
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 const CONVEX_MANAGEMENT_API_BASE = "https://api.convex.dev/v1";
 const CLOUDFLARE_ACCOUNT_ID = "f2ca2f43ab364db1c4391a015d6698fe";
@@ -1860,7 +1861,7 @@ async function callOpenAI({
   finalOnly = false,
   abortSignal = null,
   timeoutMs = OPENAI_REQUEST_TIMEOUT_MS,
-  maxOutputTokens = 30000,
+  maxOutputTokens = 12000,
 }) {
   const body = {
     model,
@@ -2534,7 +2535,7 @@ function recoveryFallbackText(state, stop) {
     `## Where it stopped\n${state?.finalOperation || "The active model/provider step ended before normal completion."}`,
     `## What remains\n${remains}`,
     `## Change safety\n${safety}`,
-    `## Next best action\nSend **continue** to resume from this checkpoint. Viking Aries will use the saved progress and will not automatically replay writes or destructive actions.`,
+    `## Next best action\nSend continue to resume from this checkpoint. Viking Aries will use the saved progress and will not automatically replay writes or destructive actions.`,
   ].join("\n\n");
 }
 
@@ -4220,8 +4221,10 @@ const worker = {
 
     let payload;
     let budgetPaused = false;
+    let budgetStop = null;
     let executedTools = 0;
     let toolRounds = 0;
+    const writeAttempts = new Map();
     const actionReceipts = [];
     const runState = currentRunRecoveryState() || {
       startedAt: Date.now(), completedOperations: [], writes: [],
@@ -4254,6 +4257,14 @@ const worker = {
       }
       const usage = openAIUsageForResponse(model, response);
       chatUsage = addUsageTotals(chatUsage, usage);
+      updateRunRecoveryState({ estimatedCostUsd: chatUsage.estimatedCostUsd });
+      if (chatUsage.estimatedCostUsd >= MAX_AGENT_COST_USD) {
+        budgetPaused = true;
+        budgetStop = {
+          code: "paused",
+          label: `AI cost ceiling reached (${MAX_AGENT_COST_USD.toFixed(2)} per run)`,
+        };
+      }
       // Save each provider response before running tools or requesting another.
       // Later failures must not erase calls that have already consumed tokens.
       try {
@@ -4301,7 +4312,10 @@ const worker = {
         "Use only supported findings from the conversation and checkpoint. State exactly which writes/deployments occurred or that none occurred. Recommend a specific bounded next step. Say that 'continue' resumes from saved progress without replaying writes. Do not call tools.",
       ].join("\n");
 
-      if (!currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
+      const costCeilingReached =
+        stop.label.startsWith("AI cost ceiling reached") ||
+        chatUsage.estimatedCostUsd >= MAX_AGENT_COST_USD;
+      if (!costCeilingReached && !currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
         try {
           const recoveryPayload = await callOpenAI({
             apiKey,
@@ -4322,7 +4336,18 @@ const worker = {
         }
       }
 
-      if (!recoveryText) recoveryText = recoveryFallbackText(state, stop);
+      const requiredRecoveryHeadings = [
+        "## Stop reason",
+        "## What was completed",
+        "## Where it stopped",
+        "## What remains",
+        "## Change safety",
+        "## Next best action",
+      ];
+      const recoveryIsStructured =
+        recoveryText &&
+        requiredRecoveryHeadings.every((heading) => recoveryText.includes(heading));
+      if (!recoveryIsStructured) recoveryText = recoveryFallbackText(state, stop);
       updateRunRecoveryState({ recoveryText });
       await persistRecoveryCheckpoint(env, projectId, threadId, currentRunRecoveryState() || state);
 
@@ -4364,6 +4389,10 @@ const worker = {
       await captureUsage(payload);
       await finishProgress(analysisProgressId, "done");
 
+      if (budgetStop) {
+        return json(await buildRecoveryResult(new RequestBudgetExceeded(), budgetStop));
+      }
+
       for (let step = 0; step < MAX_AGENT_ROUNDS; step += 1) {
         const calls = extractFunctionCalls(payload);
         if (!calls.length) break;
@@ -4381,10 +4410,48 @@ const worker = {
           // Reserve four provider calls, two audit operations, and finalization.
           if (budgetPaused || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8) {
             budgetPaused = true;
+            budgetStop ||= { code: "paused", label: "Execution/tool budget reached" };
             outputs.push({ type: "function_call_output", call_id: call.call_id,
-              output: JSON.stringify({ ok: false, deferred: true, error: "Not executed: this batch reached its request budget. Ask the user to continue in a new message." }) });
+              output: JSON.stringify({ ok: false, deferred: true, error: "Not executed: this batch reached its safety budget. Send continue to resume from saved progress." }) });
             continue;
           }
+
+          const writeTool = new Set([
+            "github_write_file",
+            "github_replace_text",
+            "va_platform_write_file",
+            "va_platform_replace_text",
+          ]).has(call.name);
+          if (writeTool) {
+            let writeArgs = {};
+            try {
+              writeArgs = JSON.parse(call.arguments || "{}");
+            } catch {
+              writeArgs = {};
+            }
+            const writePath = String(writeArgs.path || "").trim() || "(unknown path)";
+            const writeKey = `${call.name.replace(/^va_platform_/, "github_")}:${writePath}`;
+            const attempts = (writeAttempts.get(writeKey) || 0) + 1;
+            writeAttempts.set(writeKey, attempts);
+            if (attempts > MAX_WRITE_ATTEMPTS_PER_PATH) {
+              budgetPaused = true;
+              budgetStop = { code: "paused", label: "Repeated write safety limit reached" };
+              updateRunRecoveryState({
+                finalOperation: `Stopped repeated edits to ${writePath} after ${MAX_WRITE_ATTEMPTS_PER_PATH} attempts`,
+              });
+              outputs.push({
+                type: "function_call_output",
+                call_id: call.call_id,
+                output: JSON.stringify({
+                  ok: false,
+                  deferred: true,
+                  error: `Stopped: ${writePath} already had ${MAX_WRITE_ATTEMPTS_PER_PATH} write attempts in this run. Re-read the file and continue in a fresh bounded invocation instead of retrying the same edit.`,
+                }),
+              });
+              continue;
+            }
+          }
+
           executedTools += 1;
           const operationLabel = describeRuntimeTool(call);
           updateRunRecoveryState({
@@ -4461,6 +4528,11 @@ const worker = {
               finalOperation: `${operationLabel}: ${detail}`,
             });
             await persistRecoveryCheckpoint(env, projectId, threadId, currentRunRecoveryState() || state);
+
+            if (error?.name === "RecoveryWindowReached" || currentRunSignal()?.aborted) {
+              throw error;
+            }
+
             outputs.push({
               type: "function_call_output",
               call_id: call.call_id,
@@ -4469,7 +4541,10 @@ const worker = {
           }
         }
 
-        budgetPaused ||= step === MAX_AGENT_ROUNDS - 1 || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8;
+        if (step === MAX_AGENT_ROUNDS - 1 || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8) {
+          budgetPaused = true;
+          budgetStop ||= { code: "paused", label: "Execution/tool budget reached" };
+        }
         payload = await callOpenAI({
           apiKey,
           model,
@@ -4492,7 +4567,7 @@ const worker = {
     if (budgetPaused) {
       return json(await buildRecoveryResult(
         new RequestBudgetExceeded(),
-        { code: "paused", label: "Execution/tool budget reached" }
+        budgetStop || { code: "paused", label: "Execution/tool budget reached" }
       ));
     }
 

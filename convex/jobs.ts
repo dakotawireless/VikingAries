@@ -312,9 +312,10 @@ function enrichMessagesForQueuedJob(requestBody, currentJob, priorJobs) {
     }
 
     const assistantContent =
-      prior.status !== "completed"
+      prior.resultText ||
+      (prior.status !== "completed"
         ? `I couldn’t complete that request. ${prior.error || "The background job failed."}`
-        : prior.resultText;
+        : "");
 
     if (assistantContent) {
       userIndex = findUserIndex(prior);
@@ -368,6 +369,35 @@ export const processThread = internalAction({
         throw new Error(payload?.error || `AI job runner returned status ${response.status}.`);
       }
 
+      const interruptedStatus = String(payload?.executionStatus || "");
+      if (["paused", "timed_out", "canceled", "failed"].includes(interruptedStatus)) {
+        const diagnostics =
+          payload?.diagnostics && typeof payload.diagnostics === "object"
+            ? payload.diagnostics
+            : {};
+        await ctx.runMutation(internal.jobs.finalizeInterruptedJob, {
+          jobId: job.jobId,
+          status: interruptedStatus,
+          resultText: String(
+            payload?.text ||
+              "The AI run stopped before normal completion. Send continue to resume from saved progress."
+          ),
+          stopReason: String(
+            diagnostics.stopReason ||
+              (interruptedStatus === "paused"
+                ? "Execution/tool budget reached"
+                : interruptedStatus === "timed_out"
+                  ? "Execution timeout"
+                  : interruptedStatus === "canceled"
+                    ? "User cancellation"
+                    : "AI runner failure")
+          ),
+          diagnosticsJson: JSON.stringify(diagnostics),
+          completedAt: Date.now(),
+        });
+        return;
+      }
+
       await ctx.runMutation(internal.jobs.completeJob, {
         jobId: job.jobId,
         resultText: String(payload?.text || "The AI job completed without response text."),
@@ -376,9 +406,31 @@ export const processThread = internalAction({
         completedAt: Date.now(),
       });
     } catch (error) {
-      await ctx.runMutation(internal.jobs.failJob, {
+      const message = error instanceof Error ? error.message : "The AI job failed.";
+      const timedOut = /timeout|timed out|deadline|abort/i.test(message);
+      const stopReason = timedOut ? "Execution timeout" : "Backend/runtime failure";
+      const resultText = [
+        `## Stop reason\n${stopReason}.`,
+        "## What was completed\nThe durable runner stopped before it could return its final structured checkpoint. Any completed Activity steps and verified action receipts remain preserved.",
+        `## Where it stopped\n${message}`,
+        "## What remains\nResume from the saved run checkpoint and perform only the unfinished work.",
+        "## Change safety\nThe final runner response was not returned, so this finalizer will not guess about unverified writes. Completed writes are preserved in action receipts/checkpoints and must not be replayed automatically.",
+        "## Next best action\nSend **continue**. Viking Aries will use saved progress and verified receipts instead of restarting the investigation from scratch.",
+      ].join("\n\n");
+
+      await ctx.runMutation(internal.jobs.finalizeInterruptedJob, {
         jobId: job.jobId,
-        error: error instanceof Error ? error.message : "The AI job failed.",
+        status: timedOut ? "timed_out" : "failed",
+        resultText,
+        stopReason,
+        diagnosticsJson: JSON.stringify({
+          runId: job.jobId,
+          stopReason,
+          finalOperation: message,
+          provider: "OpenAI",
+          model: job.model || null,
+          runnerResponseReturned: false,
+        }),
         completedAt: Date.now(),
       });
     }

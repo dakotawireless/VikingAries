@@ -31,10 +31,16 @@ export async function withRunControl(
   let timer;
   let pending;
   let closed = false;
-  const recoveryAt = Math.max(Date.now(), deadlineAt - recoveryReserveMs);
+  const startedAt = Date.now();
+  const runWindowMs = Math.max(0, deadlineAt - startedAt);
+  const effectiveRecoveryReserveMs = Math.min(
+    recoveryReserveMs,
+    Math.max(100, Math.floor(runWindowMs * 0.25))
+  );
+  const recoveryAt = Math.max(startedAt, deadlineAt - effectiveRecoveryReserveMs);
   const recoveryState = {
     runId: null,
-    startedAt: Date.now(),
+    startedAt,
     deadlineAt,
     recoveryAt,
     toolRounds: 0,

@@ -65,16 +65,21 @@ test("each tool-loop response is recorded once before the next model call", asyn
   assert.equal(result.records[0].projectId, "test-project");
   assert.equal(result.records[0].threadId, "test-thread");
 });
-test("a later network failure preserves earlier billable usage", async (t) => {
+test("a later network failure preserves earlier billable usage and returns recovery", async (t) => {
   const result = await runChat(t, [toolResponse("a"), new Error("network failed")]);
-  assert.equal(result.status, 502);
+  assert.equal(result.status, 200);
   assert.equal(result.records.length, 1);
   assert.equal(result.body.usage.requests, 1);
+  assert.equal(result.body.executionStatus, "failed");
+  assert.match(result.body.text, /## Stop reason/);
+  assert.match(result.body.text, /Network error/);
 });
-test("incomplete response with no text is still recorded", async (t) => {
+test("incomplete response with no text is recorded and returns recovery", async (t) => {
   const result = await runChat(t, [response("a", { output_text: "", status: "incomplete" })]);
-  assert.equal(result.status, 502);
+  assert.equal(result.status, 200);
   assert.equal(result.records.length, 1);
+  assert.equal(result.body.executionStatus, "failed");
+  assert.match(result.body.text, /## Stop reason/);
 });
 test("storage failure warns visibly without breaking chat", async (t) => {
   const result = await runChat(t, [response("a")], { failStore: true });
@@ -93,11 +98,13 @@ test("missing provider usage is not recorded as a zero-cost call", async (t) => 
   assert.equal(result.records.length, 0);
   assert.equal(result.body.usageRecorded, false);
 });
-test("a failed initial request does not fabricate token usage", async (t) => {
+test("a failed initial request does not fabricate token usage and returns recovery", async (t) => {
   const result = await runChat(t, [new Error("network failed")]);
-  assert.equal(result.status, 502);
+  assert.equal(result.status, 200);
   assert.equal(result.records.length, 0);
   assert.equal(result.body.usage.requests, 0);
+  assert.equal(result.body.executionStatus, "failed");
+  assert.match(result.body.text, /Network error/);
 });
 test("usage endpoint remains owner protected", async () => {
   const result = await worker.fetch(new Request("https://va.test/api/usage"), {});
