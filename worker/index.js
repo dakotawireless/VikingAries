@@ -4292,7 +4292,7 @@ const worker = {
       }
     };
 
-    const buildRecoveryResult = async (error, forcedStop = null) => {
+    const buildRecoveryResult = async (error, forcedStop = null, precomputedRecoveryText = "") => {
       const stop = forcedStop || classifyRunStop(error, budgetPaused);
       beginRunRecoveryMode();
       const state = currentRunRecoveryState() || runState;
@@ -4306,7 +4306,7 @@ const worker = {
         writesOccurred: (state.writes || []).length > 0,
       });
 
-      let recoveryText = "";
+      let recoveryText = String(precomputedRecoveryText || "").trim();
       const recoveryPrompt = [
         "The run must stop before normal completion. Produce a concise, factual recovery response using exactly these headings:",
         "## Stop reason",
@@ -4323,7 +4323,7 @@ const worker = {
       const costCeilingReached =
         stop.label.startsWith("AI cost ceiling reached") ||
         chatUsage.estimatedCostUsd >= MAX_AGENT_COST_USD;
-      if (!costCeilingReached && !currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
+      if (!recoveryText && !costCeilingReached && !currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
         try {
           const recoveryPayload = await callOpenAI({
             apiKey,
@@ -4558,7 +4558,7 @@ const worker = {
           apiKey,
           model,
           instructions: runtimeInstructions + (budgetPaused
-            ? "\nThis batch is paused. Summarize verified completed work and remaining work, including relevant paths and findings. Deferred tools did not run. Do not claim completion. Ask the user to send continue for a fresh execution budget."
+            ? "\nThis batch is paused. Return the recovery response now using exactly these headings: ## Stop reason, ## What was completed, ## Where it stopped, ## What remains, ## Change safety, ## Next best action. Use the tool outputs from this round, do not claim deferred tools ran, identify completed writes, and tell the user that continue resumes from saved progress without replaying writes."
             : ""),
           finalOnly: budgetPaused,
           input: outputs,
@@ -4576,7 +4576,8 @@ const worker = {
     if (budgetPaused) {
       return json(await buildRecoveryResult(
         new RequestBudgetExceeded(),
-        budgetStop || { code: "paused", label: "Execution/tool budget reached" }
+        budgetStop || { code: "paused", label: "Execution/tool budget reached" },
+        extractResponseText(payload)
       ));
     }
 
