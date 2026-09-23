@@ -794,6 +794,7 @@ function FilesMediaView({ project, projects = [], workspace = "Personal" }) {
   const [uploading, setUploading] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [scope, setScope] = useState("project");
+  const [filterText, setFilterText] = useState("");
   const [copyTargets, setCopyTargets] = useState({});
   const uploadInputRef = useRef(null);
   const projectOptions = useMemo(() => {
@@ -855,7 +856,11 @@ function FilesMediaView({ project, projects = [], workspace = "Personal" }) {
         if (!response.ok) throw new Error(payload.error || `Could not upload ${file.name}.`);
         if (payload.file) uploaded.push({ ...payload.file, status: "Stored", storage: "convex" });
       }
-      setStoredFiles((current) => [...uploaded.reverse(), ...current]);
+      if (scope === "all" && workspace === "Personal") {
+        await loadStoredFiles();
+      } else {
+        setStoredFiles((current) => [...uploaded.reverse(), ...current]);
+      }
       setUploadMessage(`${uploaded.length} file${uploaded.length === 1 ? "" : "s"} stored securely.`);
     } catch (error) {
       setUploadMessage(error.message || "Could not upload those files.");
@@ -912,9 +917,17 @@ function FilesMediaView({ project, projects = [], workspace = "Personal" }) {
     }
   };
 
-  const visibleItems = scope === "all" && workspace === "Personal"
+  const baseVisibleItems = scope === "all" && workspace === "Personal"
     ? storedFiles
     : [...storedFiles, ...items];
+  const normalizedFilter = filterText.trim().toLowerCase();
+  const visibleItems = normalizedFilter
+    ? baseVisibleItems.filter((item) =>
+        [item.name, item.type, item.projectName, item.projectId]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedFilter))
+      )
+    : baseVisibleItems;
 
   return (
     <WorkspacePage>
@@ -935,13 +948,23 @@ function FilesMediaView({ project, projects = [], workspace = "Personal" }) {
               <strong>File visibility</strong>
               <p>Browse this project or search visually across all registered owner projects.</p>
             </div>
-            <label>
-              <span>View</span>
-              <select value={scope} onChange={(event) => setScope(event.target.value)}>
-                <option value="project">Current Project</option>
-                <option value="all">All Projects</option>
-              </select>
-            </label>
+            <div className="media-card-actions">
+              <label>
+                <span>View</span>
+                <select value={scope} onChange={(event) => setScope(event.target.value)}>
+                  <option value="project">Current Project</option>
+                  <option value="all">All Projects</option>
+                </select>
+              </label>
+              <label>
+                <span>Search</span>
+                <input
+                  value={filterText}
+                  onChange={(event) => setFilterText(event.target.value)}
+                  placeholder="Filename, type, or project"
+                />
+              </label>
+            </div>
           </div>
         </section>
       )}
@@ -977,7 +1000,7 @@ function FilesMediaView({ project, projects = [], workspace = "Personal" }) {
           const retiredGithubUpload = item.storage === "github" && Boolean(item.storagePath);
           const browserCopy = Boolean(item.dataUrl);
           const privateCopy = item.storage === "convex";
-          const copyOptions = workspace === "Personal"
+          const copyOptions = workspace === "Personal" && privateCopy
             ? projectOptions.filter((entry) => entry.id !== itemProjectId)
             : [];
           const selectedCopyTarget = copyTargets[item.id] || (
