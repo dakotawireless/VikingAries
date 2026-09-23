@@ -4507,26 +4507,17 @@ const worker = {
         null;
       const pendingCalls = extractFunctionCalls(payload);
       if (pendingCalls.length) {
-        return json(
-          {
-            error:
-              "The AI response ended while a tool action was still pending. Retry the request; no successful completion was returned." + usageWarning(),
-            usage: chatUsage, usageRecorded,
-            responseStatus: incompleteReason,
-            pendingTools: pendingCalls.map((call) => call.name),
-          },
-          { status: 502 }
-        );
+        updateRunRecoveryState({
+          finalOperation: `Provider response ended with pending tools: ${pendingCalls.map((call) => call.name).join(", ")}`,
+        });
       }
-      return json(
-        {
-          error: (incompleteReason
-            ? `The AI response did not complete (${incompleteReason}). Please retry.`
-            : "The AI service returned no text.") + usageWarning(),
-          usage: chatUsage, usageRecorded,
-        },
-        { status: 502 }
+      const incompleteError = new Error(
+        incompleteReason
+          ? `The AI response did not complete (${incompleteReason}).`
+          : "The AI service returned no text."
       );
+      incompleteError.status = 502;
+      return json(await buildRecoveryResult(incompleteError));
     }
 
 
