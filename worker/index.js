@@ -1617,25 +1617,73 @@ function projectFilesToolEnabled(authenticated, env, projectId) {
 }
 
 function buildProjectFilesTools() {
-  return [{
-    type: "function",
-    name: "files_media_list_project_files",
-    description:
-      "List the live Files & Media records for the currently selected Viking Aries project. Use this tool first for any question about files shown in Files & Media, including what files exist, their filenames, MIME types, sizes, upload dates, or file record identifiers. This is project-scoped Convex data, not repository content: do not inspect GitHub to answer those questions.",
-    parameters: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
+  return [
+    {
+      type: "function",
+      name: "files_media_list_project_files",
+      description:
+        "List the live Files & Media records for the currently selected Viking Aries project. Use this tool first for any question about files shown in Files & Media, including what files exist, their filenames, MIME types, sizes, upload dates, or file record identifiers. This is project-scoped Convex data, not repository content: do not inspect GitHub to answer those questions.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      strict: false,
     },
-    strict: false,
-  }];
+    {
+      type: "function",
+      name: "files_media_get_project_file_preview",
+      description:
+        "Create a secure, owner-authenticated image preview reference for one live Files & Media record in the currently selected Viking Aries project. Use files_media_list_project_files first to get the file ID. This is for showing an image to the owner, not for repository inspection. It never returns a private Convex storage URL, storage secret, or file bytes to the model.",
+      parameters: {
+        type: "object",
+        properties: {
+          fileId: { type: "string", description: "The Files & Media record ID returned by files_media_list_project_files." },
+        },
+        required: ["fileId"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+  ];
+}
+
+async function getVAProjectFilePreview(env, projectId, fileId) {
+  const listed = await listVAProjectFiles(env, projectId);
+  const safeId = String(fileId || "").trim();
+  const file = listed.files.find((item) => item.id === safeId);
+  if (!file) throw new Error("That file is not available in the selected project.");
+  if (!String(file.type || "").startsWith("image/")) {
+    throw new Error("Only image files have a preview operation.");
+  }
+  return {
+    projectId: listed.projectId,
+    file: {
+      id: file.id,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      uploadedAt: file.uploadedAt,
+    },
+    previewPath: `/api/files/preview?id=${encodeURIComponent(file.id)}&projectId=${encodeURIComponent(listed.projectId)}`,
+    access: "The preview path requires the owner's authenticated Viking Aries session and is private/no-store.",
+  };
 }
 
 async function executeProjectFilesTool(call, env, projectId) {
-  if (call.name !== "files_media_list_project_files") {
-    throw new Error(`Unsupported Files & Media tool: ${call.name}`);
+  if (call.name === "files_media_list_project_files") {
+    return listVAProjectFiles(env, projectId);
   }
-  return listVAProjectFiles(env, projectId);
+  if (call.name === "files_media_get_project_file_preview") {
+    let args = {};
+    try {
+      args = JSON.parse(call.arguments || "{}");
+    } catch {
+      throw new Error("The Files & Media tool arguments were invalid JSON.");
+    }
+    return getVAProjectFilePreview(env, projectId, args.fileId);
+  }
+  throw new Error(`Unsupported Files & Media tool: ${call.name}`);
 }
 
 function extractFunctionCalls(payload) {
