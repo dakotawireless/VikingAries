@@ -2009,7 +2009,7 @@ async function getVAProjectFilePreview(env, projectId, fileId) {
   const listed = await listVAProjectFiles(env, projectId);
   const safeId = String(fileId || "").trim();
   const file = listed.files.find((item) => item.id === safeId);
-  if (!file) throw new Error("That file is not available in the selected project.");
+  if (!file) throw new Error("That file is not available in the requested owner project.");
   if (!String(file.type || "").startsWith("image/")) {
     throw new Error("Only image files have a preview operation.");
   }
@@ -2529,15 +2529,100 @@ async function listVAProjectFiles(env, projectId) {
   const files = Array.isArray(payload?.files) ? payload.files : [];
   return {
     projectId: scopedProjectId,
+    projectName: registeredProjectName(scopedProjectId),
     files: files.map((file) => ({
       id: typeof file?.id === "string" ? file.id : null,
+      projectId: scopedProjectId,
+      projectName: registeredProjectName(scopedProjectId),
       name: typeof file?.name === "string" ? file.name : "Unnamed file",
       type: typeof file?.type === "string" ? file.type : "application/octet-stream",
       size: Number.isFinite(Number(file?.size)) ? Number(file.size) : 0,
       uploadedAt: Number.isFinite(Number(file?.uploadedAt)) ? Number(file.uploadedAt) : null,
+      sourceProjectId: typeof file?.sourceProjectId === "string" ? file.sourceProjectId : null,
+      sourceFileId: typeof file?.sourceFileId === "string" ? file.sourceFileId : null,
       storage: "convex",
       status: "Stored",
     })),
+  };
+}
+
+async function listVAAllProjectFiles(env) {
+  const results = await Promise.all(
+    Object.keys(PROJECT_RUNTIME_CONFIG).sort().map(async (id) => {
+      try {
+        return await listVAProjectFiles(env, id);
+      } catch (error) {
+        return {
+          projectId: id,
+          projectName: registeredProjectName(id),
+          files: [],
+          error: error instanceof Error ? error.message : "Files & Media unavailable.",
+        };
+      }
+    })
+  );
+  return {
+    scope: "all-owner-projects",
+    projects: results.map(({ projectId, projectName, error }) => ({ projectId, projectName, error: error || null })),
+    files: results.flatMap((result) => result.files || [])
+      .sort((a, b) => Number(b.uploadedAt || 0) - Number(a.uploadedAt || 0)),
+  };
+}
+
+async function copyVAProjectFile(env, { sourceProjectId, destinationProjectId, fileId, name }) {
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("Private Files & Media storage is not configured.");
+
+  const response = await fetch(`${VA_CONVEX_SITE_URL}/files/copy`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sourceProjectId,
+      destinationProjectId,
+      fileId,
+      name: name || undefined,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Files & Media copy failed with status ${response.status}`);
+  }
+  return {
+    ok: true,
+    sourceProjectId,
+    destinationProjectId,
+    file: payload?.file || null,
+  };
+}
+
+async function readVAProjectFileBytes(env, projectId, fileId) {
+  const scopedProjectId = String(projectId || "").trim();
+  if (!registeredProjectConfig(scopedProjectId)) {
+    throw new Error("The source project is not a registered owner project.");
+  }
+  const listed = await listVAProjectFiles(env, scopedProjectId);
+  const file = (listed.files || []).find((item) => item.id === String(fileId || "").trim());
+  if (!file) throw new Error("That Files & Media asset was not found in the source project.");
+
+  const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
+  if (!secret) throw new Error("Private Files & Media storage is not configured.");
+  const response = await fetch(
+    `${VA_CONVEX_SITE_URL}/files/raw?id=${encodeURIComponent(file.id)}&projectId=${encodeURIComponent(scopedProjectId)}`,
+    { headers: { Authorization: `Bearer ${secret}` } }
+  );
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error || `Stored asset read failed with status ${response.status}`);
+  }
+  const buffer = await response.arrayBuffer();
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    bytes: new Uint8Array(buffer),
   };
 }
 
