@@ -1363,7 +1363,7 @@ function ChatWorkspace({ project, active = true }) {
         }
       }
 
-      if ((job.status === "completed" || job.status === "failed" || job.status === "timed_out" || job.status === "canceled") && userIndex >= 0) {
+      if ((job.status === "completed" || job.status === "failed" || job.status === "timed_out" || job.status === "canceled" || job.status === "paused") && userIndex >= 0) {
         userIndex = next.findIndex(
           (message) =>
             message.role === "user" &&
@@ -1371,11 +1371,14 @@ function ChatWorkspace({ project, active = true }) {
               (job.userMessageId && message.id === job.userMessageId))
         );
         const content =
-          job.status === "canceled"
+          job.resultText ||
+          (job.status === "canceled"
             ? "Stopped by the owner."
             : (job.status === "failed" || job.status === "timed_out")
               ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
-              : job.resultText || "The background job completed without response text.";
+              : job.status === "paused"
+                ? "This run paused at its safety limit. Send continue to resume from saved progress."
+                : "The background job completed without response text.");
 
         next.splice(userIndex + 1, 0, {
           id: assistantId,
@@ -2038,13 +2041,15 @@ function ChatWorkspace({ project, active = true }) {
                       message.queueStatus === "running" ||
                       message.queueStatus === "failed" ||
                       message.queueStatus === "timed_out" ||
+                      message.queueStatus === "paused" ||
                       message.queueStatus === "canceled") && (
                       <span className={`message-queue-status ${message.queueStatus}`}>
                         {message.queueStatus === "queued"
                           ? "Queued"
                           : message.queueStatus === "running"
                             ? "Working"
-                            : message.queueStatus === "timed_out" ? "Interrupted — not replayed"
+                            : message.queueStatus === "timed_out" ? "Timed Out — progress preserved"
+                            : message.queueStatus === "paused" ? "Paused — continue available"
                             : message.queueStatus === "canceled" ? "Cancelled" : "Failed"}
                       </span>
                     )}
