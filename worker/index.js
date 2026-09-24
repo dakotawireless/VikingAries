@@ -3853,6 +3853,49 @@ const worker = {
       }
     }
 
+    if (url.pathname === "/api/versions") {
+      if (request.method !== "GET") {
+        return json({ error: "Method not allowed." }, { status: 405 });
+      }
+
+      const auth = await ownerAuthConfig(env);
+      if (!auth.configured || !(await verifyOwnerSession(request, auth.sessionSecret))) {
+        return json({ error: "Owner login required." }, { status: 401 });
+      }
+
+      const projectId = (url.searchParams.get("projectId") || "").trim();
+      const projectConfig = registeredProjectConfig(projectId);
+      if (!projectConfig?.repository) {
+        return json({ error: "This project does not have a registered repository history." }, { status: 400 });
+      }
+
+      const githubToken = await resolveSecret(env.GITHUB_TOKEN);
+      if (!githubToken) {
+        return json({ error: "GitHub is not connected for version history." }, { status: 503 });
+      }
+
+      try {
+        const commits = await githubListCommits(
+          githubToken,
+          projectConfig.repository,
+          projectConfig.defaultBranch || "main",
+          100
+        );
+        return json({
+          ok: true,
+          projectId,
+          repository: projectConfig.repository,
+          branch: projectConfig.defaultBranch || "main",
+          commits,
+        });
+      } catch (error) {
+        return json(
+          { error: error instanceof Error ? error.message : "Could not load repository history." },
+          { status: 502 }
+        );
+      }
+    }
+
     if (url.pathname === "/api/integrations/status") {
       const auth = await ownerAuthConfig(env);
       const authenticated = auth.configured
