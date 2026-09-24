@@ -691,6 +691,26 @@ async function githubListDirectory(token, repository, path = "", ref = "main") {
   };
 }
 
+async function githubListCommits(token, repository, ref = "main", limit = 100) {
+  const safeRepo = normalizeRepository(repository);
+  if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 100));
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/commits?sha=${encodeURIComponent(ref || "main")}&per_page=${safeLimit}`
+  );
+  if (!Array.isArray(payload)) throw new Error("GitHub did not return repository history.");
+
+  return payload.map((commit) => ({
+    sha: String(commit?.sha || ""),
+    shortSha: String(commit?.sha || "").slice(0, 12),
+    message: String(commit?.commit?.message || "Commit").split("\n")[0].slice(0, 240),
+    committedAt: commit?.commit?.author?.date || commit?.commit?.committer?.date || null,
+    author: commit?.author?.login || commit?.commit?.author?.name || "Unknown author",
+    url: commit?.html_url || null,
+  }));
+}
+
 function assertNonDestructiveFileUpdate(path, currentContent, nextContent) {
   const current = String(currentContent || "");
   const next = String(nextContent || "");
