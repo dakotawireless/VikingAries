@@ -6192,7 +6192,7 @@ export default {
               elapsedMs: Date.now() - Number(state.startedAt || Date.now()),
             });
             return json({
-              text: recoveryFallbackText(state, stop),
+              text: stop.code === "canceled" ? "Stopped by the owner." : recoveryFallbackText(state, stop),
               executionStatus: stop.code,
               continuationRequired: stop.code === "paused",
               diagnostics: {
@@ -6221,7 +6221,7 @@ export default {
         finalOperation: error?.message || "Execution control failed",
       };
       return json({
-        text: recoveryFallbackText(state, stop),
+        text: stop.code === "canceled" ? "Stopped by the owner." : recoveryFallbackText(state, stop),
         executionStatus: stop.code,
         continuationRequired: stop.code === "paused",
         diagnostics: {
