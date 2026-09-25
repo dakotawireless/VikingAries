@@ -19,7 +19,7 @@ function database(initial=[]) {
   },scheduler:{runAfter:async(...args)=>scheduled.push(args)}};
   return {ctx,rows,scheduled};
 }
-const queued=()=>({_id:'a',jobId:'a',projectId:'p',threadId:'t',createdAt:Date.now(),updatedAt:Date.now(),status:'queued',lifecycleVersion:2});
+const queued=()=>({_id:'a',jobId:'a',projectId:'p',threadId:'t',createdAt:Date.now(),updatedAt:Date.now(),status:'queued',lifecycleVersion:4});
 const call=(name,ctx,args)=>jobs[name]._handler(ctx,args);
 
 test('one claim and one runner per job; terminal cancel cannot be overwritten',async()=>{
@@ -36,13 +36,69 @@ test('one claim and one runner per job; terminal cancel cannot be overwritten',a
 });
 test('watchdog clears abandoned runs without replaying historical queued requests',async()=>{
  const old={...queued(),status:'running',startedAt:Date.now()-120000,updatedAt:Date.now()-120000};
- const legacy={...queued(),_id:'b',jobId:'b',lifecycleVersion:undefined};
+ const legacy={...queued(),_id:'b',jobId:'b',lifecycleVersion:undefined,createdAt:Date.now()-10*60*1000,updatedAt:Date.now()-10*60*1000};
  const {ctx,rows}=database([old,legacy]);
  await call('reconcileJobs',ctx,{});
  assert.deepEqual(rows.map(r=>r.status),['timed_out','timed_out']);
  assert.equal(await call('claimNextThreadJob',ctx,{projectId:'p',threadId:'t'}),null);
  assert.equal(await call('completeJob',ctx,{jobId:'a',resultText:'late',completedAt:Date.now()}),false);
 });
+
+test('stale legacy queue cannot block a newer explicit request', async () => {
+  const now=Date.now();
+  const legacy={...queued(),_id:'legacy',jobId:'legacy',lifecycleVersion:undefined,createdAt:now-10*60*1000,updatedAt:now-10*60*1000};
+  const current={...queued(),_id:'current',jobId:'current',lifecycleVersion:4,createdAt:now,updatedAt:now};
+  const {ctx,rows}=database([legacy,current]);
+  const claimed=await call('claimNextThreadJob',ctx,{projectId:'p',threadId:'t'});
+  assert.equal(rows.find(r=>r.jobId==='legacy').status,'timed_out');
+  assert.equal(claimed.jobId,'current');
+  assert.equal(rows.find(r=>r.jobId==='current').status,'running');
+});
+
+test('fresh unversioned job from a rolling deploy can still run', async () => {
+  const now=Date.now();
+  const fresh={...queued(),_id:'fresh',jobId:'fresh',lifecycleVersion:undefined,createdAt:now,updatedAt:now};
+  const {ctx}=database([fresh]);
+  const claimed=await call('claimNextThreadJob',ctx,{projectId:'p',threadId:'t'});
+  assert.equal(claimed.jobId,'fresh');
+  assert.equal(claimed.status,'running');
+});
+
+test('Stop fences a job ID even when cancellation arrives before job creation', async () => {
+  const {ctx,rows}=database();
+  const stop=await call('cancelThreadJobs',ctx,{projectId:'p',threadId:'t',jobIds:['late-job']});
+  assert.deepEqual(stop.jobIds,['late-job']);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].status,'canceled');
+  assert.equal(rows[0].resultText,'Stopped by the owner.');
+
+  const created=await call('createJob',ctx,{
+    jobId:'late-job',
+    projectId:'p',
+    projectName:'P',
+    threadId:'t',
+    threadTitle:'T',
+    requestJson:'{}',
+    userMessageId:'user-late-job',
+    createdAt:Date.now()+1,
+  });
+  assert.equal(created.duplicate,true);
+  assert.equal(created.status,'canceled');
+  assert.equal(rows.length,1,'late create did not resurrect the stopped job');
+});
+
+test('reconcile wakes a thread after clearing a stale queued barrier', async () => {
+  const now=Date.now();
+  const stale={...queued(),_id:'legacy',jobId:'legacy',lifecycleVersion:undefined,createdAt:now-10*60*1000,updatedAt:now-10*60*1000};
+  const current={...queued(),_id:'current',jobId:'current',lifecycleVersion:4,createdAt:now,updatedAt:now};
+  const {ctx,rows,scheduled}=database([stale,current]);
+  await call('reconcileJobs',ctx,{});
+  assert.equal(rows.find(r=>r.jobId==='legacy').status,'timed_out');
+  assert.equal(rows.find(r=>r.jobId==='current').status,'queued');
+  assert.equal(scheduled.length,1);
+  assert.equal(scheduled[0][0],0);
+});
+
 test('duplicate submission by job or message ID schedules only once',async()=>{
  const {ctx,rows,scheduled}=database();
  const args={jobId:'a',projectId:'p',threadId:'t',projectName:'P',threadTitle:'T',requestJson:'{}',userMessageId:'u',createdAt:Date.now()};
@@ -50,7 +106,7 @@ test('duplicate submission by job or message ID schedules only once',async()=>{
  assert.equal((await call('createJob',ctx,args)).duplicate,true);
  assert.equal((await call('createJob',ctx,{...args,jobId:'b'})).duplicate,true);
  assert.equal(rows.length,1);assert.equal(scheduled.length,1);
- assert.equal(rows[0].lifecycleVersion,3);
+ assert.equal(rows[0].lifecycleVersion,4);
  assert.equal(rows[0].continuationCount,0);
  assert.equal(rows[0].cumulativeCostUsd,0);
  assert.match(rows[0].workBranch,/^aries\/task\//);
@@ -88,6 +144,17 @@ test('interrupted finalization preserves the recovery response and diagnostics',
  assert.equal(scheduled.length,1);
 });
 
+
+test('a terminal paused job never blocks a later user message in the same thread', async () => {
+  const now=Date.now();
+  const paused={...queued(),_id:'paused',jobId:'paused',status:'paused',lifecycleVersion:4,createdAt:now-1000,updatedAt:now-500,completedAt:now-500};
+  const next={...queued(),_id:'next',jobId:'next',status:'queued',lifecycleVersion:4,createdAt:now,updatedAt:now};
+  const {ctx,rows}=database([paused,next]);
+  const claimed=await call('claimNextThreadJob',ctx,{projectId:'p',threadId:'t'});
+  assert.equal(claimed.jobId,'next');
+  assert.equal(rows.find(r=>r.jobId==='paused').status,'paused');
+  assert.equal(rows.find(r=>r.jobId==='next').status,'running');
+});
 
 test('paused execution slice automatically requeues the same durable job', async () => {
   const now=Date.now();

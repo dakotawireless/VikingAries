@@ -484,10 +484,13 @@ http.route({
       const body = await request.json();
       const projectId = typeof body?.projectId === "string" ? body.projectId.slice(0, 120) : "";
       const threadId = typeof body?.threadId === "string" ? body.threadId.slice(0, 160) : "";
+      const jobIds = Array.isArray(body?.jobIds)
+        ? body.jobIds.map((id) => String(id || "").slice(0, 120)).filter(Boolean).slice(0, 50)
+        : undefined;
       if (!projectId || !threadId) {
         return Response.json({ error: "projectId and threadId are required." }, { status: 400 });
       }
-      const result = await ctx.runMutation(internal.jobs.cancelThreadJobs, { projectId, threadId });
+      const result = await ctx.runMutation(internal.jobs.cancelThreadJobs, { projectId, threadId, jobIds });
       return Response.json({ ok: true, ...result });
     } catch (error) {
       return Response.json(
