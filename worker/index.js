@@ -6223,7 +6223,7 @@ export default {
       return json({
         text: recoveryFallbackText(state, stop),
         executionStatus: stop.code,
-        continuationRequired: true,
+        continuationRequired: stop.code === "paused",
         diagnostics: {
           runId: body.jobId,
           stopReason: stop.label,
