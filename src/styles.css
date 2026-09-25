@@ -2075,8 +2075,8 @@ body.resizing-preview * {
   border-radius: inherit;
 }
 .owner-login-logo-tile {
-  width: 116px;
-  height: 116px;
+  width: 144px;
+  height: 144px;
   display: grid;
   place-items: center;
   overflow: hidden;
