@@ -1219,8 +1219,12 @@ function ChatWorkspace({ project, active = true }) {
       !stoppedJobIdsRef.current.has(message.jobId)
   );
   const hasPendingJob = (activeThread?.messages || []).some(
-    message => message.role === "user" && message.jobId &&
-      ["queued", "running"].includes(message.queueStatus)
+    (message) =>
+      message.role === "user" &&
+      message.jobId &&
+      ["queued", "running"].includes(message.queueStatus) &&
+      !answeredJobIds.has(message.jobId) &&
+      !stoppedJobIdsRef.current.has(message.jobId)
   );
 
   const projectIntegrationMappings = loadProjectIntegrationMappings(project);
@@ -1759,8 +1763,17 @@ function ChatWorkspace({ project, active = true }) {
 
     try {
       {
+        const queueController = new AbortController();
+        directRequestControllerRef.current = queueController;
+        directJobIdRef.current = jobId;
+        const queueTimeout = window.setTimeout(() => {
+          if (!queueController.signal.aborted) {
+            queueController.abort(new DOMException("Queue request timed out", "TimeoutError"));
+          }
+        }, 20000);
+
         const response = await fetch("/api/jobs", {
-          signal: AbortSignal.timeout(20000),
+          signal: queueController.signal,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1796,39 +1809,63 @@ function ChatWorkspace({ project, active = true }) {
           }),
         });
 
+        window.clearTimeout(queueTimeout);
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(payload.error || "Could not queue the AI job.");
         }
 
-        setStatusText("Message queued…");
+        if (payload.status === "canceled" || payload.status === "cancelled") {
+          stoppedJobIdsRef.current.add(jobId);
+          updateThread(threadId, (thread) => ({
+            ...thread,
+            messages: thread.messages.map((message) =>
+              message.jobId === jobId
+                ? { ...message, queueStatus: "canceled", progress: [] }
+                : message
+            ),
+          }));
+          setSending(false);
+          setStatusText("Stopped");
+        } else {
+          setStatusText("Message queued…");
+        }
         window.setTimeout(syncProjectJobs, 250);
       }
     } catch (error) {
+      const intentionallyStopped = stoppedJobIdsRef.current.has(jobId);
       updateThread(threadId, (thread) => ({
         ...thread,
         messages: thread.messages.map((message) =>
           message.jobId === jobId
-            ? { ...message, queueStatus: "failed" }
+            ? { ...message, queueStatus: intentionallyStopped ? "canceled" : "failed", progress: [] }
             : message
         ),
       }));
 
-      const errorMessage = {
-        id: `error-${jobId}`,
-        jobId,
-        role: "assistant",
-        content: `I couldn’t queue that request. ${error.message}`,
-        timestamp: formatChatTime(),
-        error: true,
-      };
-      updateThread(threadId, (thread) => ({
-        ...thread,
-        messages: [...thread.messages, errorMessage],
-      }));
-      setStatusText("Queue needs attention");
+      if (!intentionallyStopped) {
+        const errorMessage = {
+          id: `error-${jobId}`,
+          jobId,
+          role: "assistant",
+          content: `I couldn’t queue that request. ${error.message}`,
+          timestamp: formatChatTime(),
+          error: true,
+        };
+        updateThread(threadId, (thread) => ({
+          ...thread,
+          messages: [...thread.messages, errorMessage],
+        }));
+        setStatusText("Queue needs attention");
+      } else {
+        setStatusText("Stopped");
+      }
       window.setTimeout(syncProjectJobs, 250);
     } finally {
+      if (directJobIdRef.current === jobId) {
+        directRequestControllerRef.current = null;
+        directJobIdRef.current = "";
+      }
       submitGuardRef.current = false;
       setQueueing(false);
       window.setTimeout(() => textareaRef.current?.focus(), 0);
@@ -1836,21 +1873,92 @@ function ChatWorkspace({ project, active = true }) {
   };
 
   const stopAiJobs = async () => {
-    if (!activeThread || (!sending && !hasPendingJob)) return;
+    if (!activeThread || (!sending && !hasPendingJob && !directRequestControllerRef.current)) return;
+
+    const pendingJobIds = new Set(
+      activeThread.messages
+        .filter(
+          (message) =>
+            message.role === "user" &&
+            message.jobId &&
+            ["queued", "running"].includes(message.queueStatus)
+        )
+        .map((message) => message.jobId)
+    );
+    if (directJobIdRef.current) pendingJobIds.add(directJobIdRef.current);
+
+    for (const jobId of pendingJobIds) stoppedJobIdsRef.current.add(jobId);
+
+    // Abort a queue POST immediately. The backend cancellation fence below makes
+    // the same job ID terminal even if the create request already reached the server.
+    try {
+      directRequestControllerRef.current?.abort(
+        new DOMException("Stopped by the owner.", "AbortError")
+      );
+    } catch {
+      // The server-side cancellation remains authoritative.
+    }
 
     jobSyncSequence.current += 1;
+    submitGuardRef.current = false;
+    setQueueing(false);
+    setSending(false);
     setStatusText("Stopping…");
-    try {
+
+    updateThread(activeThread.id, (thread) => ({
+      ...thread,
+      messages: thread.messages.map((message) =>
+        message.role === "user" &&
+        message.jobId &&
+        pendingJobIds.has(message.jobId) &&
+        ["queued", "running"].includes(message.queueStatus)
+          ? { ...message, queueStatus: "canceled", progress: [] }
+          : message
+      ),
+    }));
+
+    const requestCancel = async () => {
       const response = await fetch("/api/jobs/cancel", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, threadId: activeThread.id }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          threadId: activeThread.id,
+          jobIds: [...pendingJobIds],
+        }),
         signal: AbortSignal.timeout(15000),
       });
-      if (!response.ok) throw new Error("Server did not confirm cancellation. Try Stop again.");
-      await syncProjectJobs();
-      setStatusText("Stopped; in-flight requests are being aborted.");
-    } catch (error) {
-      setStatusText(error.message || "Cancellation not confirmed. Try Stop again.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Server did not confirm cancellation.");
+      }
+      for (const jobId of payload.jobIds || pendingJobIds) {
+        stoppedJobIdsRef.current.add(jobId);
+      }
+      return payload;
+    };
+
+    try {
+      await requestCancel();
+      directRequestControllerRef.current = null;
+      directJobIdRef.current = "";
+      setStatusText("Stopped");
+      window.setTimeout(syncProjectJobs, 150);
+    } catch (firstError) {
+      // One short retry covers the narrow race where a browser POST was already
+      // in flight while Stop created the cancellation fence.
+      try {
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+        await requestCancel();
+        directRequestControllerRef.current = null;
+        directJobIdRef.current = "";
+        setStatusText("Stopped");
+        window.setTimeout(syncProjectJobs, 150);
+      } catch (error) {
+        for (const jobId of pendingJobIds) stoppedJobIdsRef.current.delete(jobId);
+        setStatusText(error.message || firstError.message || "Cancellation not confirmed. Try Stop again.");
+        window.setTimeout(syncProjectJobs, 150);
+      }
     }
   };
 
