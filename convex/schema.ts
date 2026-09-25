@@ -33,6 +33,16 @@ export default defineSchema({
     deadlineAt: v.optional(v.number()),
     runnerClaimed: v.optional(v.boolean()),
     lifecycleVersion: v.optional(v.number()),
+    continuationCount: v.optional(v.number()),
+    cumulativeCostUsd: v.optional(v.number()),
+    jobStartedAt: v.optional(v.number()),
+    maxContinuations: v.optional(v.number()),
+    maxJobCostUsd: v.optional(v.number()),
+    maxJobElapsedMs: v.optional(v.number()),
+    checkpointJson: v.optional(v.string()),
+    workBranch: v.optional(v.string()),
+    lastSliceStartedAt: v.optional(v.number()),
+    lastSliceCompletedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   })
     .index("by_jobId", ["jobId"])
