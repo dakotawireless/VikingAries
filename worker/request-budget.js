@@ -23,7 +23,7 @@ const MAX_SUBREQUESTS = 44;
 
 export class RequestBudgetExceeded extends Error {
   constructor() {
-    super("This execution batch reached its request budget.");
+    super("This execution slice reached its request budget.");
   }
 }
 
