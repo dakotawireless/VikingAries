@@ -9,16 +9,22 @@ import {
   DEFAULT_JOB_MAX_COST_USD,
   DEFAULT_JOB_MAX_ELAPSED_MS,
   jobContinuationLimitReason,
+  CURRENT_JOB_LIFECYCLE_VERSION,
+  LEGACY_QUEUE_GRACE_MS,
 } from '../shared/run-lifecycle.js';
 import { withRunControl } from '../worker/run-control.js';
 import { budgetedFetch, withRequestBudget } from '../worker/request-budget.js';
 import worker from '../worker/index.js';
 
-test('watchdog expires legacy queue, lost heartbeat and absolute deadline only', () => {
+test('watchdog tolerates fresh rolling-deploy jobs but expires truly stale legacy queue, lost heartbeat and absolute deadline', () => {
   const now = Date.now();
-  assert.match(expiryReason({status:'queued',createdAt:now}, now), /not replayed/);
+  assert.equal(expiryReason({status:'queued',createdAt:now}, now), null);
+  assert.match(
+    expiryReason({status:'queued',createdAt:now-LEGACY_QUEUE_GRACE_MS}, now),
+    /not replayed/
+  );
   assert.equal(expiryReason({status:'queued',lifecycleVersion:2,createdAt:now}, now), null);
-  assert.equal(expiryReason({status:'queued',lifecycleVersion:3,createdAt:now}, now), null);
+  assert.equal(expiryReason({status:'queued',lifecycleVersion:CURRENT_JOB_LIFECYCLE_VERSION,createdAt:now}, now), null);
   assert.match(expiryReason({status:'running',updatedAt:now-LEASE_MS,startedAt:now-LEASE_MS},now), /heartbeat/);
   assert.match(expiryReason({status:'running',updatedAt:now,startedAt:now-RUN_LIMIT_MS},now), /deadline/);
   for (const status of TERMINAL) assert.equal(expiryReason({status,updatedAt:0},now),null);
@@ -53,6 +59,26 @@ test('deadline aborts even when the server still reports running', async () => {
     await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
     assert.match(signal.reason.message,/deadline/);
   });
+});
+
+test('canceled runner claim returns a terminal response without any model call', async t => {
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async url=>{
+    calls++;
+    assert.match(String(url),/jobs\/control/);
+    return Response.json({status:'canceled'});
+  });
+  const result=await worker.fetch(new Request('https://va.test/api/chat',{
+    method:'POST',
+    headers:{'X-VA-Internal-Job-Secret':'test'},
+    body:JSON.stringify({jobId:'stopped',model:'gpt-5.6-luna'})
+  }),{VA_USAGE_INGEST_SECRET:'test'});
+  assert.equal(result.status,200);
+  const body=await result.json();
+  assert.equal(body.executionStatus,'canceled');
+  assert.equal(body.continuationRequired,false);
+  assert.match(body.text,/Stopped by the owner/);
+  assert.equal(calls,1);
 });
 
 test('duplicate runner delivery performs no model call', async t=>{
