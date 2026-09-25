@@ -3117,10 +3117,13 @@ function OwnerLogin({ onAuthenticated }) {
     <main className="owner-login-screen">
       <section className="owner-login-card">
         <div className="owner-login-brand">
-          <span className="brand-mark">VA</span>
+          <span className="brand-mark"><VikingAriesMark className="owner-login-brand-mark" /></span>
           <div>
             <h1>Viking Aries</h1>
             <p>Owner access</p>
+          </div>
+          <div className="owner-login-logo-tile" aria-hidden="true">
+            <VikingAriesMark className="owner-login-logo" />
           </div>
         </div>
 
