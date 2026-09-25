@@ -3,7 +3,23 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 const RUNNER_URL = "https://vikingaries.dakotawireless.net/api/chat";
-import { expiryReason, RUN_LIMIT_MS } from "../shared/run-lifecycle.js";
+import {
+  expiryReason,
+  RUN_LIMIT_MS,
+  DEFAULT_JOB_MAX_CONTINUATIONS,
+  DEFAULT_JOB_MAX_COST_USD,
+  DEFAULT_JOB_MAX_ELAPSED_MS,
+  jobContinuationLimitReason,
+} from "../shared/run-lifecycle.js";
+
+function workBranchForJob(jobId: string) {
+  const safe = String(jobId || "job")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `aries/task/${safe || "job"}`;
+}
 
 export const createJob = internalMutation({
   args: {
@@ -16,6 +32,9 @@ export const createJob = internalMutation({
     userMessageId: v.optional(v.string()),
     userMessageContent: v.optional(v.string()),
     model: v.optional(v.string()),
+    maxContinuations: v.optional(v.number()),
+    maxJobCostUsd: v.optional(v.number()),
+    maxJobElapsedMs: v.optional(v.number()),
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
@@ -35,7 +54,14 @@ export const createJob = internalMutation({
     await ctx.db.insert("aiJobs", {
       ...args,
       status: "queued",
-      lifecycleVersion: 2,
+      lifecycleVersion: 3,
+      continuationCount: 0,
+      cumulativeCostUsd: 0,
+      jobStartedAt: args.createdAt,
+      maxContinuations: args.maxContinuations ?? DEFAULT_JOB_MAX_CONTINUATIONS,
+      maxJobCostUsd: args.maxJobCostUsd ?? DEFAULT_JOB_MAX_COST_USD,
+      maxJobElapsedMs: args.maxJobElapsedMs ?? DEFAULT_JOB_MAX_ELAPSED_MS,
+      workBranch: workBranchForJob(args.jobId),
       updatedAt: args.createdAt,
     });
 
@@ -116,7 +142,7 @@ export const claimNextThreadJob = internalMutation({
     if (refreshed.some((row) => row.status === "running")) return null;
 
     const next = refreshed
-      .filter((row) => row.status === "queued" && row.lifecycleVersion === 2)
+      .filter((row) => row.status === "queued" && Number(row.lifecycleVersion || 0) >= 2)
       .sort((a, b) => a.createdAt - b.createdAt)[0];
 
     if (!next) return null;
@@ -126,6 +152,7 @@ export const claimNextThreadJob = internalMutation({
       startedAt: now,
       deadlineAt: now + RUN_LIMIT_MS,
       runnerClaimed: false,
+      lastSliceStartedAt: now,
       updatedAt: now,
       error: undefined,
     });
