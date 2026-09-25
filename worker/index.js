@@ -2403,28 +2403,42 @@ async function executeGithubTool(call, token, projectMetadata) {
 
   const repository = projectMetadata.repository;
   const defaultBranch = projectMetadata.defaultBranch || "main";
+  const workBranch = String(projectMetadata.workBranch || "").trim();
+  const activeReadBranch =
+    projectMetadata.taskBranchReady && workBranch ? workBranch : defaultBranch;
 
   if (call.name === "github_list_directory") {
-    return githubListDirectory(token, repository, args.path || "", args.ref || defaultBranch);
+    return githubListDirectory(token, repository, args.path || "", args.ref || activeReadBranch);
   }
   if (call.name === "github_read_file") {
-    return githubReadFile(token, repository, args.path, args.ref || defaultBranch);
+    return githubReadFile(token, repository, args.path, args.ref || activeReadBranch);
   }
-  if (call.name === "github_write_file") {
-    return githubWriteFile(token, repository, {
-      path: args.path,
-      content: args.content,
-      message: args.message,
-      branch: args.branch || defaultBranch,
-    });
+  if (call.name === "github_get_branch_validation") {
+    const branch = String(args.branch || workBranch || defaultBranch).trim();
+    return githubBranchValidation(token, repository, branch);
   }
-  if (call.name === "github_replace_text") {
+  if (call.name === "github_write_file" || call.name === "github_replace_text") {
+    const branch = workBranch || args.branch || defaultBranch;
+    if (workBranch) {
+      await githubEnsureBranch(token, repository, workBranch, defaultBranch);
+      projectMetadata.taskBranchReady = true;
+    }
+
+    if (call.name === "github_write_file") {
+      return githubWriteFile(token, repository, {
+        path: args.path,
+        content: args.content,
+        message: args.message,
+        branch,
+      });
+    }
+
     return githubReplaceText(token, repository, {
       path: args.path,
       oldText: args.oldText,
       newText: args.newText,
       message: args.message,
-      branch: args.branch || defaultBranch,
+      branch,
       expectedOccurrences: args.expectedOccurrences ?? 1,
     });
   }
@@ -4903,6 +4917,11 @@ const worker = {
         typeof body?.project?.defaultBranch === "string"
           ? body.project.defaultBranch.trim().slice(0, 120)
           : "",
+      workBranch:
+        typeof body?.workBranch === "string"
+          ? body.workBranch.trim().slice(0, 160)
+          : "",
+      taskBranchReady: false,
       deploymentUrl:
         typeof body?.project?.deploymentUrl === "string"
           ? body.project.deploymentUrl.trim().slice(0, 500)
