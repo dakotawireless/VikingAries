@@ -274,7 +274,9 @@ export const continueJobSlice = internalMutation({
 
     const cumulativeCostUsd =
       Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
-    const nextContinuationCount = Number(row.continuationCount || 0) + 1;
+    const validationWait = /validation.*(?:pending|waiting|unavailable)/i.test(args.stopReason || "");
+    const nextContinuationCount =
+      Number(row.continuationCount || 0) + (validationWait ? 0 : 1);
     const now = args.completedAt;
     const limitReason = jobContinuationLimitReason(row, {
       nextContinuationCount,
@@ -329,10 +331,14 @@ export const continueJobSlice = internalMutation({
       updatedAt: now,
     });
 
-    await ctx.scheduler.runAfter(150, internal.jobs.processThread, {
-      projectId: row.projectId,
-      threadId: row.threadId,
-    });
+    await ctx.scheduler.runAfter(
+      validationWait ? 10000 : 150,
+      internal.jobs.processThread,
+      {
+        projectId: row.projectId,
+        threadId: row.threadId,
+      }
+    );
 
     return {
       continued: true,
