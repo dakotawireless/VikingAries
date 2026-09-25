@@ -274,7 +274,7 @@ export const continueJobSlice = internalMutation({
 
     const cumulativeCostUsd =
       Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
-    const validationWait = /validation.*(?:pending|waiting|unavailable)/i.test(args.stopReason || "");
+    const validationWait = /(?:validation|deployment).*(?:pending|waiting|unavailable)/i.test(args.stopReason || "");
     const nextContinuationCount =
       Number(row.continuationCount || 0) + (validationWait ? 0 : 1);
     const now = args.completedAt;
