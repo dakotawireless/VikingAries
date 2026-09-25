@@ -8,7 +8,20 @@ import {
   updateRunRecoveryState,
 } from "./run-control.js";
 import { MIGRATED_PROJECTS } from "../shared/projects.js";
-import { budgetedFetch as fetch, withRequestBudget, remainingRequests, resolveBoundSecret, RequestBudgetExceeded, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS, MAX_AGENT_COST_USD } from "./request-budget.js";
+import {
+  budgetedFetch as fetch,
+  withRequestBudget,
+  remainingRequests,
+  resolveBoundSecret,
+  RequestBudgetExceeded,
+  MAX_AGENT_ROUNDS,
+  MAX_AGENT_TOOLS,
+  MAX_AGENT_COST_USD,
+  AUTO_CONTINUE_ROUNDS,
+  AUTO_CONTINUE_TOOLS,
+  AUTO_CONTINUE_COST_USD,
+  AUTO_CONTINUE_REQUEST_RESERVE,
+} from "./request-budget.js";
 import { openAIUsageForResponse, addUsageTotals } from "./usage.js";
 import { runtimeClockSnapshot, runtimeClockInstruction } from "./runtime-clock.js";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -617,6 +630,85 @@ function normalizeRepository(value) {
   return repository;
 }
 
+async function githubEnsureBranch(token, repository, branch, baseBranch = "main") {
+  const safeRepo = normalizeRepository(repository);
+  const safeBranch = String(branch || "").trim();
+  const safeBase = String(baseBranch || "main").trim() || "main";
+  if (!safeRepo || !safeBranch || safeBranch === safeBase) {
+    return { ok: true, branch: safeBranch || safeBase, created: false };
+  }
+
+  const refPath = safeBranch.split("/").map(encodeURIComponent).join("/");
+  const response = await fetch(`https://api.github.com/repos/${safeRepo}/git/ref/heads/${refPath}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "Viking-Aries",
+    },
+  });
+
+  if (response.ok) {
+    const payload = await response.json().catch(() => null);
+    return { ok: true, branch: safeBranch, created: false, sha: payload?.object?.sha || null };
+  }
+  if (response.status !== 404) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message || `Could not inspect task branch ${safeBranch}.`);
+  }
+
+  const basePath = safeBase.split("/").map(encodeURIComponent).join("/");
+  const base = await githubRequest(token, `/repos/${safeRepo}/git/ref/heads/${basePath}`);
+  const sha = base?.object?.sha;
+  if (!sha) throw new Error(`Could not resolve base branch ${safeBase}.`);
+
+  const created = await githubRequest(token, `/repos/${safeRepo}/git/refs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: `refs/heads/${safeBranch}`, sha }),
+  });
+
+  return { ok: true, branch: safeBranch, created: true, sha: created?.object?.sha || sha };
+}
+
+async function githubBranchValidation(token, repository, branch) {
+  const safeRepo = normalizeRepository(repository);
+  const safeBranch = String(branch || "").trim();
+  if (!safeRepo || !safeBranch) throw new Error("A repository and branch are required for validation.");
+
+  const branchPath = safeBranch.split("/").map(encodeURIComponent).join("/");
+  const branchInfo = await githubRequest(token, `/repos/${safeRepo}/branches/${branchPath}`);
+  const headSha = branchInfo?.commit?.sha || null;
+  if (!headSha) throw new Error("GitHub did not return the branch head commit.");
+
+  const payload = await githubRequest(
+    token,
+    `/repos/${safeRepo}/commits/${encodeURIComponent(headSha)}/check-runs?per_page=100`,
+    { headers: { Accept: "application/vnd.github+json" } }
+  );
+  const checks = (Array.isArray(payload?.check_runs) ? payload.check_runs : []).map((check) => ({
+    name: check?.name || "Check",
+    status: check?.status || null,
+    conclusion: check?.conclusion || null,
+    url: check?.html_url || null,
+  }));
+
+  const pending = checks.some((check) => check.status !== "completed");
+  const failed = checks.some(
+    (check) =>
+      check.status === "completed" &&
+      !["success", "neutral", "skipped"].includes(String(check.conclusion || "").toLowerCase())
+  );
+
+  return {
+    repository: safeRepo,
+    branch: safeBranch,
+    headSha,
+    status: checks.length === 0 ? "unavailable" : pending ? "pending" : failed ? "failed" : "success",
+    checks,
+  };
+}
+
 async function githubReadFile(token, repository, path, ref = "main") {
   const safeRepo = normalizeRepository(repository);
   if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
@@ -975,6 +1067,19 @@ function buildGithubTools() {
           branch: { type: "string", description: "Target branch. Defaults to the project's default branch." },
         },
         required: ["path", "content", "message"],
+        additionalProperties: false,
+      },
+      strict: false,
+    },
+    {
+      type: "function",
+      name: "github_get_branch_validation",
+      description: "Check GitHub Actions/check-run validation for the current durable task branch. Use this after code writes before declaring the task complete.",
+      parameters: {
+        type: "object",
+        properties: {
+          branch: { type: "string", description: "Branch to validate. Defaults to the durable task branch when one is active." },
+        },
         additionalProperties: false,
       },
       strict: false,
