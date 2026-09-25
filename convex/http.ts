@@ -427,6 +427,15 @@ http.route({
       const userMessageContent =
         typeof body?.userMessageContent === "string" ? body.userMessageContent.slice(0, 20000) : undefined;
       const model = typeof body?.model === "string" ? body.model.slice(0, 120) : undefined;
+      const maxContinuations = Number.isFinite(Number(body?.maxContinuations))
+        ? Math.min(20, Math.max(0, Math.floor(Number(body.maxContinuations))))
+        : undefined;
+      const maxJobCostUsd = Number.isFinite(Number(body?.maxJobCostUsd))
+        ? Math.min(25, Math.max(0.1, Number(body.maxJobCostUsd)))
+        : undefined;
+      const maxJobElapsedMs = Number.isFinite(Number(body?.maxJobElapsedMs))
+        ? Math.min(2 * 60 * 60 * 1000, Math.max(60 * 1000, Math.floor(Number(body.maxJobElapsedMs))))
+        : undefined;
 
       if (!jobId || !projectId || !threadId || !requestJson) {
         return Response.json(
@@ -448,6 +457,9 @@ http.route({
         userMessageId,
         userMessageContent,
         model,
+        maxContinuations,
+        maxJobCostUsd,
+        maxJobElapsedMs,
         createdAt: Date.now(),
       });
       return Response.json(result);
@@ -521,6 +533,13 @@ http.route({
         error: job.error,
         model: job.model,
         responseId: job.responseId,
+        continuationCount: job.continuationCount || 0,
+        cumulativeCostUsd: job.cumulativeCostUsd || 0,
+        workBranch: job.workBranch,
+        maxContinuations: job.maxContinuations,
+        maxJobCostUsd: job.maxJobCostUsd,
+        maxJobElapsedMs: job.maxJobElapsedMs,
+        stopReason: job.stopReason,
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
         startedAt: job.startedAt,
