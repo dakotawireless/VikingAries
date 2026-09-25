@@ -1,8 +1,14 @@
 // Persisted states retain the existing wire format for old clients.
 export const TERMINAL = new Set(['completed', 'failed', 'canceled', 'cancelled', 'timed_out', 'paused']);
+export const CURRENT_JOB_LIFECYCLE_VERSION = 4;
 export const RUN_LIMIT_MS = 4 * 60 * 1000;
 export const LEASE_MS = 60 * 1000;
 export const QUEUE_LIMIT_MS = 30 * 60 * 1000;
+// Rolling-deploy compatibility: a freshly-created unversioned job may come from
+// an older backend for a few minutes. Let it run rather than instantly branding
+// a brand-new owner request as legacy. Truly old unversioned queue rows still
+// expire safely and are never replayed.
+export const LEGACY_QUEUE_GRACE_MS = 5 * 60 * 1000;
 
 // A durable job may span several bounded Worker invocations. These are job-level
 // guardrails, separate from the per-invocation request/tool/cost ceilings.
@@ -37,9 +43,24 @@ export function jobContinuationLimitReason(job, {
   }
   return null;
 }
+export function isRunnableQueuedJob(job, now = Date.now()) {
+  if (job?.status !== 'queued') return false;
+  const version = Number(job?.lifecycleVersion || 0);
+  if (version >= 2) return true;
+  const createdAt = Number(job?.createdAt || 0);
+  return createdAt > 0 && now - createdAt < LEGACY_QUEUE_GRACE_MS;
+}
+
 export function expiryReason(job, now) {
-  if (job.status === 'queued' && Number(job.lifecycleVersion || 0) < 2) return 'Legacy queued request interrupted; not replayed.';
-  if (job.status === 'queued' && now - job.createdAt >= QUEUE_LIMIT_MS) return 'Queue deadline exceeded; request was not replayed.';
+  if (job.status === 'queued') {
+    const version = Number(job.lifecycleVersion || 0);
+    const age = now - Number(job.createdAt || 0);
+    if (version < 2 && age >= LEGACY_QUEUE_GRACE_MS) {
+      return 'Legacy queued request interrupted; not replayed.';
+    }
+    if (age >= QUEUE_LIMIT_MS) return 'Queue deadline exceeded; request was not replayed.';
+    return null;
+  }
   if (job.status !== 'running') return null;
   if (now >= (job.deadlineAt || (job.startedAt || job.updatedAt) + RUN_LIMIT_MS)) return 'Execution deadline exceeded. Inspect completed actions before continuing.';
   if (now - job.updatedAt >= LEASE_MS) return 'Execution heartbeat expired. Request was not replayed.';
