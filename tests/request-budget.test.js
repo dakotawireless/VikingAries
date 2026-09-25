@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker/index.js';
-import { withRequestBudget, budgetedFetch, remainingRequests, resolveBoundSecret, MAX_AGENT_ROUNDS, MAX_AGENT_TOOLS, MAX_AGENT_COST_USD } from '../worker/request-budget.js';
+import {
+  withRequestBudget,
+  budgetedFetch,
+  remainingRequests,
+  resolveBoundSecret,
+  MAX_AGENT_ROUNDS,
+  MAX_AGENT_TOOLS,
+  MAX_AGENT_COST_USD,
+  AUTO_CONTINUE_ROUNDS,
+  AUTO_CONTINUE_TOOLS,
+  AUTO_CONTINUE_COST_USD,
+  AUTO_CONTINUE_REQUEST_RESERVE,
+} from '../worker/request-budget.js';
 
 const requestLimit = withRequestBudget(() => remainingRequests());
 
@@ -10,6 +22,12 @@ test('production safety ceilings stay intentionally small', () => {
   assert.equal(MAX_AGENT_TOOLS, 20);
   assert.equal(MAX_AGENT_COST_USD, 0.50);
   assert.equal(requestLimit, 44);
+  assert.equal(AUTO_CONTINUE_ROUNDS, 6);
+  assert.equal(AUTO_CONTINUE_TOOLS, 16);
+  assert.equal(AUTO_CONTINUE_COST_USD, 0.42);
+  assert.equal(AUTO_CONTINUE_REQUEST_RESERVE, 12);
+  assert.ok(AUTO_CONTINUE_ROUNDS < MAX_AGENT_ROUNDS);
+  assert.ok(AUTO_CONTINUE_TOOLS < MAX_AGENT_TOOLS);
 });
 
 test('hard limit isolates simultaneous requests', async (t) => {
@@ -83,13 +101,13 @@ for (const mode of ['reads', 'writes', 'rounds', 'store-failure', 'summary-failu
     assert.equal(result.status, 200);
     assert.equal(body.executionStatus, 'paused');
     assert.equal(body.continuationRequired, true);
-    assert.match(body.text, /Send continue/);
+    assert.match(body.text, /continue automatically|automatic continuation/i);
     assert.ok(models <= MAX_AGENT_ROUNDS + 1);
     assert.equal(stored, successfulModels);
     assert.equal(body.usage.requests, stored);
     assert.equal(body.actionReceipts.length, writes);
     assert.equal(body.usageRecorded, mode !== 'store-failure');
-    if (mode === 'writes') assert.ok(writes > 0 && writes <= MAX_AGENT_TOOLS);
+    if (mode === 'writes') assert.ok(writes > 0 && writes <= AUTO_CONTINUE_TOOLS);
     if (mode !== 'rounds' && mode !== 'summary-failure') {
       assert.ok(finalInputs.some((input) =>
         Array.isArray(input) &&
@@ -240,9 +258,9 @@ test('cost ceiling stops the run without an extra recovery model call', async (t
   const body = await result.json();
   assert.equal(result.status, 200);
   assert.equal(body.executionStatus, 'paused');
-  assert.match(body.text, /AI cost ceiling reached/);
+  assert.match(body.text, /AI slice cost checkpoint reached/);
   assert.equal(modelCalls, 1);
-  assert.ok(body.usage.estimatedCostUsd >= MAX_AGENT_COST_USD);
+  assert.ok(body.usage.estimatedCostUsd >= AUTO_CONTINUE_COST_USD);
 });
 
 test('failed network attempts consume budget', async (t) => {
