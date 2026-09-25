@@ -1425,6 +1425,9 @@ function ChatWorkspace({ project, active = true }) {
           content: job.userMessageContent,
           timestamp: formatChatTimestamp(job.createdAt),
           queueStatus: job.status,
+          continuationCount: Number(job.continuationCount || 0),
+          cumulativeCostUsd: Number(job.cumulativeCostUsd || 0),
+          workBranch: job.workBranch || "",
           progress: Array.isArray(job.progress) ? job.progress : [],
         });
         userIndex = next.length - 1;
@@ -1434,6 +1437,9 @@ function ChatWorkspace({ project, active = true }) {
           jobId: job.jobId,
           model: job.model || next[userIndex].model || null,
           queueStatus: job.status,
+          continuationCount: Number(job.continuationCount || 0),
+          cumulativeCostUsd: Number(job.cumulativeCostUsd || 0),
+          workBranch: job.workBranch || next[userIndex].workBranch || "",
           progress: Array.isArray(job.progress)
             ? job.progress
             : next[userIndex].progress || [],
@@ -1465,7 +1471,7 @@ function ChatWorkspace({ project, active = true }) {
             : (job.status === "failed" || job.status === "timed_out")
               ? `I couldn’t complete that request. ${job.error || "The background job failed."}`
               : job.status === "paused"
-                ? "This run paused at its safety limit. Send continue to resume from saved progress."
+                ? "This durable job paused because a job-level guardrail or validation issue needs review. Completed work and checkpoints are preserved."
                 : "The background job completed without response text.");
 
         next.splice(userIndex + 1, 0, {
@@ -1531,13 +1537,27 @@ function ChatWorkspace({ project, active = true }) {
       setSending(hasPending || submitGuardRef.current);
 
       if (running.length) {
+        const continuationCount = Math.max(
+          0,
+          ...running.map((job) => Number(job.continuationCount || 0))
+        );
         setStatusText(
           queued.length
             ? `Viking Aries is working · ${queued.length} queued`
-            : "Viking Aries is working in the background…"
+            : continuationCount > 0
+              ? `Viking Aries is working · continuation ${continuationCount + 1}`
+              : "Viking Aries is working in the background…"
         );
       } else if (queued.length) {
-        setStatusText(`${queued.length} message${queued.length === 1 ? "" : "s"} queued`);
+        const continuationCount = Math.max(
+          0,
+          ...queued.map((job) => Number(job.continuationCount || 0))
+        );
+        setStatusText(
+          continuationCount > 0 && queued.length === 1
+            ? `Viking Aries is continuing automatically · slice ${continuationCount + 1}`
+            : `${queued.length} message${queued.length === 1 ? "" : "s"} queued`
+        );
       } else if (!listening && !queueing) {
         setStatusText("Ready");
       }
@@ -2135,9 +2155,11 @@ function ChatWorkspace({ project, active = true }) {
                         {message.queueStatus === "queued"
                           ? "Queued"
                           : message.queueStatus === "running"
-                            ? "Working"
+                            ? Number(message.continuationCount || 0) > 0
+                              ? `Working · continuation ${Number(message.continuationCount || 0) + 1}`
+                              : "Working"
                             : message.queueStatus === "timed_out" ? "Timed Out — progress preserved"
-                            : message.queueStatus === "paused" ? "Paused — continue available"
+                            : message.queueStatus === "paused" ? "Paused — review required"
                             : message.queueStatus === "canceled" ? "Cancelled" : "Failed"}
                       </span>
                     )}
