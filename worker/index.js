@@ -3460,7 +3460,7 @@ function recoveryFallbackText(state, stop) {
     stop?.code === "canceled"
       ? "Stopped by the owner. This job is terminal and will not continue or replay completed writes. A new message starts a new durable job."
       : stop?.code === "paused"
-        ? "The durable job may continue only through the recorded continuation path. Viking Aries will use the saved progress and will not replay verified writes or destructive actions."
+        ? "The durable job will continue automatically only through the recorded continuation path. Viking Aries will use the saved progress and will not replay verified writes or destructive actions."
         : "This job is terminal. Completed writes and checkpoints remain preserved; a future request can continue from them without replaying verified writes.";
   return [
     `## Stop reason\n${stop.label}.`,
