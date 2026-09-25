@@ -38,7 +38,7 @@ export function jobContinuationLimitReason(job, {
   return null;
 }
 export function expiryReason(job, now) {
-  if (job.status === 'queued' && job.lifecycleVersion !== 2) return 'Legacy queued request interrupted; not replayed.';
+  if (job.status === 'queued' && Number(job.lifecycleVersion || 0) < 2) return 'Legacy queued request interrupted; not replayed.';
   if (job.status === 'queued' && now - job.createdAt >= QUEUE_LIMIT_MS) return 'Queue deadline exceeded; request was not replayed.';
   if (job.status !== 'running') return null;
   if (now >= (job.deadlineAt || (job.startedAt || job.updatedAt) + RUN_LIMIT_MS)) return 'Execution deadline exceeded. Inspect completed actions before continuing.';
