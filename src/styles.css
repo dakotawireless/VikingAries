@@ -2052,7 +2052,7 @@ body.resizing-preview * {
     #eef3f8;
 }
 .owner-login-card {
-  width: min(430px, 100%);
+  width: min(560px, 100%);
   padding: 28px;
   border: 1px solid #cfdae4;
   border-radius: 8px;
