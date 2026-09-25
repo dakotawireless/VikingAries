@@ -5463,6 +5463,9 @@ const worker = {
           provider: "OpenAI",
           model,
           writesOccurred: (state.writes || []).length > 0,
+          validation: state.validation || null,
+          pendingCompletionText: state.pendingCompletionText || null,
+          workBranch: projectMetadata.workBranch || null,
         },
       };
     };
@@ -5498,7 +5501,12 @@ const worker = {
         });
 
         if (validation.status === "success" && !deploymentRequested) {
-          const priorText = String(priorRecoveryCheckpoint?.text || "").trim();
+          const priorText = String(
+            priorRecoveryCheckpoint?.diagnostics?.pendingCompletionText ||
+            priorRecoveryCheckpoint?.pendingCompletionText ||
+            priorRecoveryCheckpoint?.text ||
+            ""
+          ).trim();
           return json({
             text: [
               priorText,
@@ -5815,6 +5823,7 @@ const worker = {
 
         updateRunRecoveryState({
           validation,
+          pendingCompletionText: text,
           finalOperation: `Task branch validation: ${validation.status}`,
         });
 
