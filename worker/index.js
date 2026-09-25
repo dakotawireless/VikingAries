@@ -5972,6 +5972,7 @@ const worker = {
         });
 
         const strictValidation =
+          repository === projectMetadata.repository ||
           repository === "dakotawireless/VikingAries" ||
           validation.status !== "unavailable";
 
@@ -5991,8 +5992,125 @@ const worker = {
       }
     }
 
+    const selectedTaskWrites = allActionReceipts.filter(
+      (receipt) =>
+        receipt?.provider === "GitHub" &&
+        receipt?.action === "repository_write" &&
+        receipt?.repository === projectMetadata.repository &&
+        receipt?.branch === projectMetadata.workBranch
+    );
+    const promotionSuppressed = durablePromotionSuppressed(body?.messages);
+
+    if (
+      selectedTaskWrites.length &&
+      !promotionSuppressed &&
+      githubToken &&
+      projectMetadata.repository &&
+      projectMetadata.workBranch
+    ) {
+      let promotionReceipt = allActionReceipts.find(
+        (receipt) =>
+          receipt?.provider === "GitHub" &&
+          receipt?.action === "branch_promotion" &&
+          receipt?.repository === projectMetadata.repository &&
+          receipt?.headBranch === projectMetadata.workBranch
+      ) || null;
+
+      if (!promotionReceipt) {
+        const promotion = await githubPromoteTaskBranch(
+          githubToken,
+          projectMetadata.repository,
+          projectMetadata.workBranch,
+          projectMetadata.defaultBranch || "main"
+        );
+        promotionReceipt = {
+          provider: "GitHub",
+          action: "branch_promotion",
+          tool: "durable_job_promotion",
+          repository: projectMetadata.repository,
+          headBranch: projectMetadata.workBranch,
+          branch: promotion.baseBranch,
+          commitSha: promotion.commitSha,
+          recordedAt: new Date().toISOString(),
+        };
+        actionReceipts.push(promotionReceipt);
+        try {
+          await appendVerifiedActionReceipts(env, projectId, threadId, [promotionReceipt]);
+        } catch {
+          // Promotion already succeeded at GitHub; an audit-store outage must
+          // not cause the merge to be replayed.
+        }
+        updateRunRecoveryState({
+          promotion: promotionReceipt,
+          pendingCompletionText: text,
+          lastSuccessfulOperation: `Promoted ${projectMetadata.workBranch} to ${promotion.baseBranch}`,
+          finalOperation: `Promoted ${projectMetadata.workBranch} to ${promotion.baseBranch}`,
+        });
+        await persistRecoveryCheckpoint(
+          env,
+          projectId,
+          threadId,
+          currentRunRecoveryState() || runState
+        );
+      }
+
+      if (cloudflareToken && projectMetadata.cloudflareWorker) {
+        const builds = await cloudflareListBuilds(
+          cloudflareToken,
+          projectMetadata.cloudflareWorker
+        );
+        const commitSha = String(promotionReceipt.commitSha || "");
+        const branchName = String(projectMetadata.defaultBranch || "main");
+        const build =
+          builds.find((item) => commitSha && item.commitHash === commitSha) ||
+          builds.find((item) => item.branch === branchName) ||
+          null;
+        const outcome = String(build?.outcome || "").toLowerCase();
+        const deployment = {
+          status: /success|succeeded/.test(outcome)
+            ? "success"
+            : /fail|error|cancel/.test(outcome)
+              ? "failed"
+              : "pending",
+          outcome: build?.outcome || null,
+          buildId: build?.buildUuid || null,
+          branch: branchName,
+          commitSha,
+          worker: projectMetadata.cloudflareWorker,
+        };
+        updateRunRecoveryState({
+          deployment,
+          promotion: promotionReceipt,
+          pendingCompletionText: text,
+          finalOperation: `Cloudflare deployment: ${deployment.status}`,
+        });
+
+        if (deployment.status !== "success") {
+          const label =
+            deployment.status === "failed"
+              ? "Deployment failed"
+              : "Deployment pending";
+          return json(await buildRecoveryResult(
+            new Error(label),
+            { code: "paused", label },
+            deploymentRecoveryText(deployment, projectMetadata.workBranch)
+          ));
+        }
+      }
+    }
+
     return json({
-      text: text + usageWarning(),
+      text: [
+        text,
+        selectedTaskWrites.length && !promotionSuppressed
+          ? cloudflareToken && projectMetadata.cloudflareWorker
+            ? "Validation, promotion, and deployment succeeded."
+            : "Validation and promotion succeeded."
+          : selectedTaskWrites.length && promotionSuppressed
+            ? `Validation succeeded on ${projectMetadata.workBranch}; promotion was intentionally suppressed by the request.`
+            : "",
+        usageWarning(),
+      ].filter(Boolean).join("\n\n"),
       model,
       responseId: payload?.id || null,
       toolsAvailable: tools.map((tool) => tool.name),
