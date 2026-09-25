@@ -3374,7 +3374,7 @@ function recoveryFallbackText(state, stop) {
     `## Where it stopped\n${state?.finalOperation || "The active model/provider step ended before normal completion."}`,
     `## What remains\n${remains}`,
     `## Change safety\n${safety}`,
-    `## Next best action\nSend continue to resume from this checkpoint. Viking Aries will use the saved progress and will not automatically replay writes or destructive actions.`,
+    `## Next best action\nThe durable job will continue automatically from this checkpoint. Viking Aries will use the saved progress and will not replay verified writes or destructive actions.`,
   ].join("\n\n");
 }
 
@@ -5060,9 +5060,20 @@ const worker = {
       requestActionHistory
     ).slice(-40);
     const verifiedActionText = formatVerifiedActionHistory(verifiedActionHistory);
-    const continuationRequested = isContinuationRequest(body?.messages);
+    const continuationRequested =
+      body?.autoContinuation === true || isContinuationRequest(body?.messages);
+    let suppliedCheckpoint = null;
+    if (typeof body?.durableCheckpoint === "string" && body.durableCheckpoint.trim()) {
+      try {
+        suppliedCheckpoint = JSON.parse(body.durableCheckpoint);
+      } catch {
+        suppliedCheckpoint = null;
+      }
+    } else if (body?.durableCheckpoint && typeof body.durableCheckpoint === "object") {
+      suppliedCheckpoint = body.durableCheckpoint;
+    }
     const priorRecoveryCheckpoint = continuationRequested
-      ? await readRecoveryCheckpoint(env, projectId, threadId)
+      ? suppliedCheckpoint || await readRecoveryCheckpoint(env, projectId, threadId)
       : null;
 
     // Generate one authoritative clock snapshot at the start of every run.
@@ -5074,6 +5085,7 @@ const worker = {
     const projectFacts = [
       projectMetadata.repository ? `Repository: ${projectMetadata.repository}` : "",
       projectMetadata.defaultBranch ? `Default branch: ${projectMetadata.defaultBranch}` : "",
+      projectMetadata.workBranch ? `Durable task branch: ${projectMetadata.workBranch}` : "",
       projectMetadata.deploymentUrl ? `Production URL: ${projectMetadata.deploymentUrl}` : "",
       projectMetadata.cloudflareWorker ? `Cloudflare worker/project: ${projectMetadata.cloudflareWorker}` : "",
       projectMetadata.backend ? `Backend: ${projectMetadata.backend}` : "",
@@ -5154,7 +5166,10 @@ const worker = {
       "When a requested change is successfully committed to the selected GitHub repository, report it simply as 'Changes committed to GitHub' with the commit SHA. Treat Cloudflare as the repository's automatic deployment destination; do not add a warning that deployment is unverified or say the change is not deployed unless the owner specifically asks for deployment status or a tool result shows an actual deployment failure.",
       "Preserve existing product behavior unless the owner explicitly requests a change. In particular, keep the dollar API counter in the sidebar footer beside Log Out, keep API Usage as the detail-page navigation item, and keep both surfaces backed by the recorded usage totals. Do not remove, relocate, rename, or replace them during unrelated edits.",
       "GitHub editing supports both full-file replacement and targeted exact-text replacement. Prefer github_replace_text for focused edits to existing large files: first read the latest file, choose a unique oldText block, replace only that block, and commit. Use github_write_file when creating a file or when a full-file rewrite is genuinely appropriate. File size alone is never a reason to refuse a requested change. If a targeted replacement does not match exactly as expected, re-read the file and retry with a more specific block.",
-      "Work in focused batches. The runtime bounds tool calls and subrequests per message; when paused, summarize completed and remaining work accurately so the user can continue. Never repeat a verified write merely because a batch paused.",
+      "Work in focused execution slices. The runtime automatically checkpoints and continues a durable job before per-run ceilings are exhausted. A slice pause is not a user-visible failure and does not require Erik to type continue. Never repeat a verified write merely because execution moved to another slice.",
+      "For code-changing work, use the durable task branch supplied in project facts. The runtime enforces selected-project writes onto that branch. Treat the production/default branch as read-only until validation succeeds and a separately authorized promotion/deployment step is appropriate.",
+      "Do not describe a code task as complete merely because commits exist. Validate the durable task branch with github_get_branch_validation when available. If checks are still running or failed, keep the job open so the automatic continuation can wait, inspect failures, repair, and revalidate.",
+      "If the original request explicitly includes deploy, publish, rebuild, go live, or another production release action, do not claim completion until the deployment/build status is actually verified successful. A validated task branch by itself is not proof that production is live.",
       "Recognize when an investigation is becoming too broad. Before the execution window is exhausted, narrow to likely files and exact terms, stop rereading irrelevant files, preserve supported findings, and return the specific next bounded step instead of running into the deadline.",
       "For multi-file implementation work, batch independent read or inspection tool calls in the same model turn whenever safe instead of serializing every small step. Complete the requested implementation before returning a final answer.",
     ].filter(Boolean).join("\n");
@@ -5264,11 +5279,11 @@ const worker = {
       const usage = openAIUsageForResponse(model, response);
       chatUsage = addUsageTotals(chatUsage, usage);
       updateRunRecoveryState({ estimatedCostUsd: chatUsage.estimatedCostUsd });
-      if (chatUsage.estimatedCostUsd >= MAX_AGENT_COST_USD) {
+      if (chatUsage.estimatedCostUsd >= AUTO_CONTINUE_COST_USD) {
         budgetPaused = true;
         budgetStop = {
           code: "paused",
-          label: `AI cost ceiling reached (${MAX_AGENT_COST_USD.toFixed(2)} per run)`,
+          label: `AI slice cost checkpoint reached (${AUTO_CONTINUE_COST_USD.toFixed(2)})`,
         };
       }
       // Save each provider response before running tools or requesting another.
@@ -5315,12 +5330,12 @@ const worker = {
         "## Next best action",
         `Actual stop reason: ${stop.label}.`,
         `Run checkpoint: ${JSON.stringify(state)}.`,
-        "Use only supported findings from the conversation and checkpoint. State exactly which writes/deployments occurred or that none occurred. Recommend a specific bounded next step. Say that 'continue' resumes from saved progress without replaying writes. Do not call tools.",
+        "Use only supported findings from the conversation and checkpoint. State exactly which writes/deployments occurred or that none occurred. Recommend a specific bounded next step. State that automatic continuation resumes from saved progress without replaying writes. Do not call tools.",
       ].join("\n");
 
       const costCeilingReached =
-        stop.label.startsWith("AI cost ceiling reached") ||
-        chatUsage.estimatedCostUsd >= MAX_AGENT_COST_USD;
+        stop.label.startsWith("AI slice cost checkpoint") ||
+        chatUsage.estimatedCostUsd >= AUTO_CONTINUE_COST_USD;
       if (!recoveryText && !costCeilingReached && !currentRunSignal()?.aborted && currentRunDeadlineAt() - Date.now() > 3000) {
         try {
           const recoveryPayload = await callOpenAI({
@@ -5415,11 +5430,11 @@ const worker = {
         for (const call of calls) {
           currentRunSignal()?.throwIfAborted();
           // Reserve four provider calls, two audit operations, and finalization.
-          if (budgetPaused || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8) {
+          if (budgetPaused || executedTools >= AUTO_CONTINUE_TOOLS || remainingRequests() < AUTO_CONTINUE_REQUEST_RESERVE) {
             budgetPaused = true;
             budgetStop ||= { code: "paused", label: "Execution/tool budget reached" };
             outputs.push({ type: "function_call_output", call_id: call.call_id,
-              output: JSON.stringify({ ok: false, deferred: true, error: "Not executed: this batch reached its safety budget. Send continue to resume from saved progress." }) });
+              output: JSON.stringify({ ok: false, deferred: true, error: "Not executed: this execution slice reached its soft safety checkpoint. The durable job will continue automatically from saved progress." }) });
             continue;
           }
 
@@ -5556,7 +5571,7 @@ const worker = {
           }
         }
 
-        if (step === MAX_AGENT_ROUNDS - 1 || executedTools >= MAX_AGENT_TOOLS || remainingRequests() < 8) {
+        if (step >= AUTO_CONTINUE_ROUNDS - 1 || executedTools >= AUTO_CONTINUE_TOOLS || remainingRequests() < AUTO_CONTINUE_REQUEST_RESERVE) {
           budgetPaused = true;
           budgetStop ||= { code: "paused", label: "Execution/tool budget reached" };
         }
@@ -5564,7 +5579,7 @@ const worker = {
           apiKey,
           model,
           instructions: runtimeInstructions + (budgetPaused
-            ? "\nThis batch is paused. Return the recovery response now using exactly these headings: ## Stop reason, ## What was completed, ## Where it stopped, ## What remains, ## Change safety, ## Next best action. Use the tool outputs from this round, do not claim deferred tools ran, identify completed writes, and tell the user that continue resumes from saved progress without replaying writes."
+            ? "\nThis batch is paused. Return the recovery response now using exactly these headings: ## Stop reason, ## What was completed, ## Where it stopped, ## What remains, ## Change safety, ## Next best action. Use the tool outputs from this round, do not claim deferred tools ran, identify completed writes, and state that the durable job will continue automatically from saved progress without replaying writes."
             : ""),
           finalOnly: budgetPaused,
           input: outputs,
