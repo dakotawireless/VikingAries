@@ -191,6 +191,8 @@ export const completeJob = internalMutation({
     resultText: v.string(),
     model: v.optional(v.string()),
     responseId: v.optional(v.string()),
+    sliceCostUsd: v.optional(v.number()),
+    checkpointJson: v.optional(v.string()),
     completedAt: v.number(),
   },
   handler: async (ctx, args) => {
@@ -206,11 +208,17 @@ export const completeJob = internalMutation({
       return false;
     }
 
+    const cumulativeCostUsd =
+      Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
+
     await ctx.db.patch(row._id, {
       status: "completed",
       resultText: args.resultText,
       model: args.model || row.model,
       responseId: args.responseId,
+      cumulativeCostUsd,
+      checkpointJson: args.checkpointJson || row.checkpointJson,
+      lastSliceCompletedAt: args.completedAt,
       completedAt: args.completedAt,
       updatedAt: args.completedAt,
       error: undefined,
@@ -244,6 +252,98 @@ export const failJob = internalMutation({
   },
 });
 
+export const continueJobSlice = internalMutation({
+  args: {
+    jobId: v.string(),
+    resultText: v.string(),
+    stopReason: v.string(),
+    diagnosticsJson: v.optional(v.string()),
+    checkpointJson: v.optional(v.string()),
+    responseId: v.optional(v.string()),
+    sliceCostUsd: v.optional(v.number()),
+    completedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("aiJobs")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .unique();
+    if (!row || row.status !== "running") {
+      return { continued: false, status: row?.status || "missing", reason: "Job is no longer running." };
+    }
+
+    const cumulativeCostUsd =
+      Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
+    const nextContinuationCount = Number(row.continuationCount || 0) + 1;
+    const now = args.completedAt;
+    const limitReason = jobContinuationLimitReason(row, {
+      nextContinuationCount,
+      nextCumulativeCostUsd: cumulativeCostUsd,
+      now,
+    });
+
+    if (limitReason) {
+      const finalText = [
+        args.resultText,
+        "",
+        `Automatic continuation paused because the durable job guardrail was reached: ${limitReason}`,
+        "Completed writes and checkpoints are preserved. Review the job before starting another continuation.",
+      ].filter(Boolean).join("\n");
+
+      await ctx.db.patch(row._id, {
+        status: "paused",
+        resultText: finalText,
+        error: limitReason,
+        stopReason: limitReason,
+        diagnosticsJson: args.diagnosticsJson,
+        checkpointJson: args.checkpointJson || row.checkpointJson,
+        responseId: args.responseId || row.responseId,
+        continuationCount: nextContinuationCount,
+        cumulativeCostUsd,
+        lastSliceCompletedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      });
+      await ctx.scheduler.runAfter(0, internal.jobs.processThread, {
+        projectId: row.projectId,
+        threadId: row.threadId,
+      });
+      return { continued: false, status: "paused", reason: limitReason, continuationCount: nextContinuationCount };
+    }
+
+    await ctx.db.patch(row._id, {
+      status: "queued",
+      resultText: args.resultText,
+      error: undefined,
+      stopReason: args.stopReason,
+      diagnosticsJson: args.diagnosticsJson,
+      checkpointJson: args.checkpointJson || row.checkpointJson,
+      responseId: args.responseId || row.responseId,
+      continuationCount: nextContinuationCount,
+      cumulativeCostUsd,
+      runnerClaimed: false,
+      startedAt: undefined,
+      deadlineAt: undefined,
+      lastSliceCompletedAt: now,
+      completedAt: undefined,
+      updatedAt: now,
+    });
+
+    await ctx.scheduler.runAfter(150, internal.jobs.processThread, {
+      projectId: row.projectId,
+      threadId: row.threadId,
+    });
+
+    return {
+      continued: true,
+      status: "queued",
+      continuationCount: nextContinuationCount,
+      cumulativeCostUsd,
+      workBranch: row.workBranch,
+    };
+  },
+});
+
 export const finalizeInterruptedJob = internalMutation({
   args: {
     jobId: v.string(),
@@ -251,6 +351,8 @@ export const finalizeInterruptedJob = internalMutation({
     resultText: v.string(),
     stopReason: v.string(),
     diagnosticsJson: v.optional(v.string()),
+    sliceCostUsd: v.optional(v.number()),
+    checkpointJson: v.optional(v.string()),
     completedAt: v.number(),
   },
   handler: async (ctx, args) => {
@@ -264,12 +366,18 @@ export const finalizeInterruptedJob = internalMutation({
     const status = allowed.has(args.status) ? args.status : "failed";
     if (!["running", "canceled", "timed_out", "failed", "paused"].includes(row.status)) return false;
 
+    const cumulativeCostUsd =
+      Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
+
     await ctx.db.patch(row._id, {
       status: row.status === "canceled" ? "canceled" : row.status === "timed_out" ? "timed_out" : status,
       resultText: args.resultText,
       error: args.stopReason,
       stopReason: args.stopReason,
       diagnosticsJson: args.diagnosticsJson,
+      checkpointJson: args.checkpointJson || row.checkpointJson,
+      cumulativeCostUsd,
+      lastSliceCompletedAt: args.completedAt,
       completedAt: args.completedAt,
       updatedAt: args.completedAt,
     });
