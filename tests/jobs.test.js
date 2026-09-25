@@ -145,6 +145,17 @@ test('interrupted finalization preserves the recovery response and diagnostics',
 });
 
 
+test('a terminal paused job never blocks a later user message in the same thread', async () => {
+  const now=Date.now();
+  const paused={...queued(),_id:'paused',jobId:'paused',status:'paused',lifecycleVersion:4,createdAt:now-1000,updatedAt:now-500,completedAt:now-500};
+  const next={...queued(),_id:'next',jobId:'next',status:'queued',lifecycleVersion:4,createdAt:now,updatedAt:now};
+  const {ctx,rows}=database([paused,next]);
+  const claimed=await call('claimNextThreadJob',ctx,{projectId:'p',threadId:'t'});
+  assert.equal(claimed.jobId,'next');
+  assert.equal(rows.find(r=>r.jobId==='paused').status,'paused');
+  assert.equal(rows.find(r=>r.jobId==='next').status,'running');
+});
+
 test('paused execution slice automatically requeues the same durable job', async () => {
   const now=Date.now();
   const row={
