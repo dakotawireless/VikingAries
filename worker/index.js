@@ -3216,7 +3216,7 @@ async function listVAJobs(env, projectId, limit = 50) {
   return payload;
 }
 
-async function cancelVAJobs(env, projectId, threadId) {
+async function cancelVAJobs(env, projectId, threadId, jobIds = []) {
   const secret = await resolveSecret(env.VA_USAGE_INGEST_SECRET);
   if (!secret) throw new Error("VA_USAGE_INGEST_SECRET is not configured.");
 
@@ -3226,7 +3226,7 @@ async function cancelVAJobs(env, projectId, threadId) {
       Authorization: `Bearer ${secret}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ projectId, threadId }),
+    body: JSON.stringify({ projectId, threadId, jobIds }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -4747,10 +4747,13 @@ const worker = {
         const body = await request.json();
         const projectId = typeof body?.projectId === "string" ? body.projectId.trim().slice(0, 120) : "";
         const threadId = typeof body?.threadId === "string" ? body.threadId.trim().slice(0, 160) : "";
+        const jobIds = Array.isArray(body?.jobIds)
+          ? body.jobIds.map((id) => String(id || "").trim().slice(0, 120)).filter(Boolean).slice(0, 50)
+          : [];
         if (!projectId || !threadId) {
           return json({ error: "A project and thread are required." }, { status: 400 });
         }
-        return json(await cancelVAJobs(env, projectId, threadId));
+        return json(await cancelVAJobs(env, projectId, threadId, jobIds));
       } catch (error) {
         return json({ error: error.message || "Could not stop AI jobs." }, { status: 502 });
       }
@@ -5512,7 +5515,7 @@ const worker = {
         actionReceipts,
         runtimeClock,
         executionStatus: stop.code,
-        continuationRequired: true,
+        continuationRequired: stop.code === "paused",
         diagnostics: {
           runId: state.runId || jobId || null,
           stopReason: stop.label,
@@ -6124,7 +6127,45 @@ export default {
     };
     try {
       const claimed = await control(true);
-      if (claimed.status !== "running") return json({ error: "Execution is " + claimed.status }, { status: 409 });
+      if (claimed.status !== "running") {
+        const terminalStatus =
+          claimed.status === "cancelled" ? "canceled" : claimed.status;
+        if (["canceled", "timed_out", "failed", "paused"].includes(terminalStatus)) {
+          const stop = terminalStatus === "canceled"
+            ? { code: "canceled", label: "User cancellation" }
+            : terminalStatus === "timed_out"
+              ? { code: "timed_out", label: "Execution timeout" }
+              : terminalStatus === "paused"
+                ? { code: "paused", label: "Execution paused" }
+                : { code: "failed", label: "Backend/runtime failure" };
+          return json({
+            text: terminalStatus === "canceled"
+              ? "Stopped by the owner."
+              : recoveryFallbackText({
+                  runId: body.jobId,
+                  startedAt: Date.now(),
+                  completedOperations: [],
+                  writes: [],
+                  finalOperation: `Execution is ${terminalStatus}`,
+                }, stop),
+            executionStatus: terminalStatus,
+            continuationRequired: terminalStatus === "paused",
+            diagnostics: {
+              runId: body.jobId,
+              stopReason: stop.label,
+              elapsedMs: 0,
+              toolRounds: 0,
+              toolExecutions: 0,
+              lastSuccessfulOperation: null,
+              finalOperation: `Execution is ${terminalStatus}`,
+              provider: "OpenAI",
+              model: body.model || null,
+              writesOccurred: false,
+            },
+          });
+        }
+        return json({ error: "Execution is " + terminalStatus }, { status: 409 });
+      }
       return await withRunControl(
         { heartbeat: control, deadlineAt: claimed.deadlineAt },
         () => withRequestBudget(async () => {
@@ -6147,7 +6188,7 @@ export default {
             return json({
               text: recoveryFallbackText(state, stop),
               executionStatus: stop.code,
-              continuationRequired: true,
+              continuationRequired: stop.code === "paused",
               diagnostics: {
                 runId: body.jobId,
                 stopReason: stop.label,
