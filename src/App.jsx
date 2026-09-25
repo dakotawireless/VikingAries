@@ -195,7 +195,7 @@ const chatTabs = ["Migration", "Payroll", "Commission Sync"];
 
 // Private Viking Aries mark uploaded in Files & Media. Keep the image bounded by
 // the existing brand/avatar containers so it can never become a page-sized overlay.
-const VA_MARK_SRC = "/api/files/preview?id=jh76h8wa6w3skmddhs5c9tnypx8ey1kc&projectId=viking-aries";
+const VA_MARK_SRC = "/viking-aries-logo.png";
 
 function VikingAriesMark({ className = "" }) {
   return <img className={`viking-aries-mark ${className}`.trim()} src={VA_MARK_SRC} alt="Viking Aries" />;
