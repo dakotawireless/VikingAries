@@ -1120,14 +1120,16 @@ function buildVikingAriesPlatformTools() {
   }));
 }
 
-async function executeVikingAriesPlatformTool(call, token) {
+async function executeVikingAriesPlatformTool(call, token, taskMetadata = null) {
   const mappedCall = {
     ...call,
     name: call.name.replace(/^va_platform_/, "github_"),
   };
-  return executeGithubTool(mappedCall, token, {
+  return executeGithubTool(mappedCall, token, taskMetadata || {
     repository: "dakotawireless/VikingAries",
     defaultBranch: "main",
+    workBranch: "",
+    taskBranchReady: false,
   });
 }
 
@@ -5179,6 +5181,48 @@ const worker = {
       resolveSecret(env.CLOUDFLARE_API_TOKEN),
       resolveSecret(env.CONVEX_PERSONAL_ACCESS_TOKEN),
     ]);
+
+    // Continuation slices must read the same task branch that prior slices wrote.
+    // The first write lazily creates the branch; later slices verify it once before
+    // the model sees repository state.
+    if (
+      body?.autoContinuation === true &&
+      githubToken &&
+      projectMetadata.repository &&
+      projectMetadata.workBranch
+    ) {
+      await githubEnsureBranch(
+        githubToken,
+        projectMetadata.repository,
+        projectMetadata.workBranch,
+        projectMetadata.defaultBranch || "main"
+      );
+      projectMetadata.taskBranchReady = true;
+    }
+
+    const platformTaskMetadata = {
+      repository: "dakotawireless/VikingAries",
+      defaultBranch: "main",
+      workBranch: projectMetadata.workBranch || "",
+      taskBranchReady: false,
+    };
+    if (
+      body?.autoContinuation === true &&
+      githubToken &&
+      platformTaskMetadata.workBranch &&
+      projectId !== "viking-aries"
+    ) {
+      // A cross-project Viking Aries platform edit uses the same durable branch
+      // name in the VikingAries repository, but remains isolated from main.
+      await githubEnsureBranch(
+        githubToken,
+        platformTaskMetadata.repository,
+        platformTaskMetadata.workBranch,
+        platformTaskMetadata.defaultBranch
+      );
+      platformTaskMetadata.taskBranchReady = true;
+    }
+
     const modelKnowledgeQuestion = openAIModelKnowledgeQuestion(body?.messages);
     const repeatedRepairDiagnosis = repeatedRepairDiagnosisRequested(body?.messages);
     const platformToolsRequested =
@@ -5494,7 +5538,11 @@ const worker = {
             } else if (call.name.startsWith("owner_project")) {
               result = await executeOwnerProjectTool(call, githubToken, env, projectId, body?.messages);
             } else if (call.name.startsWith("va_platform_")) {
-              result = await executeVikingAriesPlatformTool(call, githubToken);
+              result = await executeVikingAriesPlatformTool(
+                call,
+                githubToken,
+                projectId === "viking-aries" ? projectMetadata : platformTaskMetadata
+              );
             } else if (call.name.startsWith("diagnostic_")) {
               result = await executeCrossProjectDiagnosticTool(call, githubToken);
             } else if (call.name.startsWith("cloudflare_")) {
@@ -5602,10 +5650,7 @@ const worker = {
       ));
     }
 
-    const pauseNotice = "Execution paused at the batch limit. Completed actions are preserved. Send continue to work on the remaining steps.";
-    const text = budgetPaused
-      ? [extractResponseText(payload), pauseNotice].filter(Boolean).join("\n\n")
-      : extractResponseText(payload);
+    const text = extractResponseText(payload);
     if (!text) {
       const incompleteReason =
         payload?.incomplete_details?.reason ||
