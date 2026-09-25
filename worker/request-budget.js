@@ -9,6 +9,13 @@ const requests = new AsyncLocalStorage();
 export const MAX_AGENT_ROUNDS = 8;
 export const MAX_AGENT_TOOLS = 20;
 export const MAX_AGENT_COST_USD = 0.50;
+
+// Soft checkpoint thresholds. The durable runner stops broad work before the
+// hard Worker/request ceilings, persists state, and continues in a fresh slice.
+export const AUTO_CONTINUE_ROUNDS = 6;
+export const AUTO_CONTINUE_TOOLS = 16;
+export const AUTO_CONTINUE_COST_USD = 0.42;
+export const AUTO_CONTINUE_REQUEST_RESERVE = 12;
 // This budget applies only to model/provider/tool network work. Internal Viking Aries
 // bookkeeping (usage logging, checkpoints, progress, secret reads) is deliberately
 // excluded so a healthy run cannot exhaust itself merely by recording its progress.
