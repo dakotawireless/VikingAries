@@ -709,6 +709,40 @@ async function githubBranchValidation(token, repository, branch) {
   };
 }
 
+async function githubPromoteTaskBranch(token, repository, headBranch, baseBranch = "main") {
+  const safeRepo = normalizeRepository(repository);
+  const safeHead = String(headBranch || "").trim();
+  const safeBase = String(baseBranch || "main").trim() || "main";
+  if (!safeRepo || !safeHead) throw new Error("A repository and durable task branch are required for promotion.");
+  if (safeHead === safeBase) throw new Error("The durable task branch cannot be the production/default branch.");
+
+  let payload;
+  try {
+    payload = await githubRequest(token, `/repos/${safeRepo}/merges`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base: safeBase,
+        head: safeHead,
+        commit_message: `Viking Aries: promote validated task branch ${safeHead}`,
+      }),
+    });
+  } catch (error) {
+    throw new Error(`Validated task branch could not be promoted to ${safeBase}: ${error instanceof Error ? error.message : "merge failed"}`);
+  }
+
+  const basePath = safeBase.split("/").map(encodeURIComponent).join("/");
+  const base = await githubRequest(token, `/repos/${safeRepo}/git/ref/heads/${basePath}`);
+  return {
+    ok: true,
+    repository: safeRepo,
+    headBranch: safeHead,
+    baseBranch: safeBase,
+    commitSha: payload?.sha || base?.object?.sha || null,
+    alreadyUpToDate: !payload,
+  };
+}
+
 async function githubReadFile(token, repository, path, ref = "main") {
   const safeRepo = normalizeRepository(repository);
   if (!safeRepo) throw new Error("No valid GitHub repository is mapped to this project.");
@@ -1139,6 +1173,16 @@ function latestUserText(rawMessages) {
     .reverse()
     .find((message) => message?.role === "user" && typeof message?.content === "string");
   return String(latest?.content || "").trim();
+}
+
+function durablePromotionSuppressed(rawMessages) {
+  const text = latestUserText(rawMessages).toLowerCase();
+  if (!text) return false;
+  return (
+    /\b(?:do not|don't|dont)\s+(?:merge|deploy|publish|promote|go live)\b/.test(text) ||
+    /\b(?:branch|staging|preview)\s+only\b/.test(text) ||
+    /\bkeep\s+(?:it|this|changes?)\s+(?:off|out of)\s+(?:main|production)\b/.test(text)
+  );
 }
 
 function openAIModelKnowledgeQuestion(rawMessages) {
