@@ -3427,6 +3427,23 @@ function branchValidationRecoveryText(validation, workBranch) {
   ].join("\n\n");
 }
 
+function deploymentRecoveryText(deployment, workBranch) {
+  const status = String(deployment?.status || "pending");
+  const outcome = deployment?.outcome ? ` (${deployment.outcome})` : "";
+  return [
+    `## Stop reason\nDeployment ${status}${outcome}.`,
+    `## What was completed\nThe validated task branch ${workBranch || ""} has been promoted to the configured default branch.`,
+    `## Where it stopped\nCloudflare deployment status is ${status}${outcome}.`,
+    status === "failed"
+      ? "## What remains\nInspect the failed deployment/build, repair the failure on a new validated slice, and redeploy."
+      : "## What remains\nWait for the existing deployment to finish and verify its final outcome.",
+    "## Change safety\nThe durable job will not replay the promotion or start duplicate deployments while waiting.",
+    status === "failed"
+      ? "## Next best action\nViking Aries will continue automatically with the recorded deployment failure available to the next repair slice."
+      : "## Next best action\nThe durable job will continue automatically and poll deployment without another model call.",
+  ].join("\n\n");
+}
+
 function recoveryFallbackText(state, stop) {
   const completed = Array.isArray(state?.completedOperations) ? state.completedOperations : [];
   const writes = Array.isArray(state?.writes) ? state.writes : [];
@@ -5509,6 +5526,8 @@ const worker = {
           writesOccurred: (state.writes || []).length > 0,
           validation: state.validation || null,
           pendingCompletionText: state.pendingCompletionText || null,
+          deployment: state.deployment || null,
+          promotion: state.promotion || null,
           workBranch: projectMetadata.workBranch || null,
         },
       };
@@ -5521,9 +5540,90 @@ const worker = {
       priorRecoveryCheckpoint?.diagnostics?.validation ||
       priorRecoveryCheckpoint?.validation ||
       null;
+    const checkpointDeployment =
+      priorRecoveryCheckpoint?.diagnostics?.deployment ||
+      priorRecoveryCheckpoint?.deployment ||
+      null;
     const deploymentRequested = /\b(deploy|publish|go live|push live|release to production|rebuild(?:\s+the)?\s+(?:app|site|worker|production))\b/i.test(
       latestUserText(body?.messages)
     );
+
+    if (
+      body?.autoContinuation === true &&
+      checkpointDeployment &&
+      checkpointDeployment.status === "pending" &&
+      cloudflareToken &&
+      projectMetadata.cloudflareWorker
+    ) {
+      try {
+        const builds = await cloudflareListBuilds(
+          cloudflareToken,
+          projectMetadata.cloudflareWorker
+        );
+        const commitSha = String(checkpointDeployment.commitSha || "");
+        const branch = String(
+          checkpointDeployment.branch || projectMetadata.defaultBranch || "main"
+        );
+        const build =
+          builds.find((item) => commitSha && item.commitHash === commitSha) ||
+          builds.find((item) => item.branch === branch) ||
+          null;
+        const outcome = String(build?.outcome || "").toLowerCase();
+        const deployment = {
+          ...checkpointDeployment,
+          buildId: build?.buildUuid || checkpointDeployment.buildId || null,
+          outcome: build?.outcome || null,
+          status: /success|succeeded/.test(outcome)
+            ? "success"
+            : /fail|error|cancel/.test(outcome)
+              ? "failed"
+              : "pending",
+        };
+        updateRunRecoveryState({
+          deployment,
+          pendingCompletionText:
+            priorRecoveryCheckpoint?.diagnostics?.pendingCompletionText ||
+            priorRecoveryCheckpoint?.pendingCompletionText ||
+            null,
+          finalOperation: `Checking deployment: ${deployment.status}`,
+        });
+
+        if (deployment.status === "success") {
+          const priorText = String(
+            priorRecoveryCheckpoint?.diagnostics?.pendingCompletionText ||
+            priorRecoveryCheckpoint?.pendingCompletionText ||
+            priorRecoveryCheckpoint?.text ||
+            ""
+          ).trim();
+          return json({
+            text: [
+              priorText,
+              "Validation, promotion, and Cloudflare deployment all succeeded.",
+            ].filter(Boolean).join("\n\n"),
+            model,
+            responseId: priorRecoveryCheckpoint?.responseId || null,
+            toolsAvailable: tools.map((tool) => tool.name),
+            usage: chatUsage,
+            usageRecorded,
+            actionReceipts,
+            runtimeClock,
+            diagnostics: { deployment, workBranch: projectMetadata.workBranch },
+          });
+        }
+
+        if (deployment.status === "pending") {
+          return json(await buildRecoveryResult(
+            new Error("Deployment pending"),
+            { code: "paused", label: "Deployment pending" },
+            deploymentRecoveryText(deployment, projectMetadata.workBranch)
+          ));
+        }
+
+        runtimeInstructions += `\nRuntime deployment update: the promoted build failed. Inspect the Cloudflare build status/logs, repair only the failing issue on the durable task branch, validate again, and redeploy. Deployment details: ${JSON.stringify(deployment)}`;
+      } catch (error) {
+        runtimeInstructions += `\nRuntime deployment preflight could not complete: ${error instanceof Error ? error.message : "unknown deployment error"}. Verify deployment before claiming completion.`;
+      }
+    }
 
     if (
       body?.autoContinuation === true &&
