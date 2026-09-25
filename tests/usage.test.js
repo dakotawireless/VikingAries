@@ -85,7 +85,7 @@ test("storage failure warns visibly without breaking chat", async (t) => {
   const result = await runChat(t, [response("a")], { failStore: true });
   assert.equal(result.status, 200);
   assert.equal(result.body.usageRecorded, false);
-  assert.match(result.body.text, /Done\..*API Counter warning/);
+  assert.match(result.body.text, /Done\..*API Counter warning/s);
 });
 test("missing control secret refuses execution without spending tokens", async (t) => {
   const result = await runChat(t, [response("a")], { secret: "" });
