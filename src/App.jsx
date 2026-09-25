@@ -1176,6 +1176,7 @@ function ChatWorkspace({ project, active = true }) {
   const [attachments, setAttachments] = useState([]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [confirmedRunningJobIds, setConfirmedRunningJobIds] = useState([]);
   const [queueing, setQueueing] = useState(false);
   const [listening, setListening] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
@@ -1215,6 +1216,7 @@ function ChatWorkspace({ project, active = true }) {
       message.role === "user" &&
       message.queueStatus === "running" &&
       message.jobId &&
+      confirmedRunningJobIds.includes(message.jobId) &&
       !answeredJobIds.has(message.jobId) &&
       !stoppedJobIdsRef.current.has(message.jobId)
   );
@@ -1538,6 +1540,7 @@ function ChatWorkspace({ project, active = true }) {
         (job) => job.status === "queued" && !localAnsweredJobIds.has(job.jobId)
       );
       const hasPending = running.length > 0 || queued.length > 0;
+      setConfirmedRunningJobIds(running.map((job) => job.jobId).filter(Boolean));
       setSending(hasPending || submitGuardRef.current);
 
       if (running.length) {
@@ -1566,11 +1569,21 @@ function ChatWorkspace({ project, active = true }) {
         setStatusText("Ready");
       }
     } catch (error) {
+      if (sequence !== jobSyncSequence.current) return;
+      // Never render a fake typing state from stale browser-local queue flags.
+      // If the authoritative job store cannot be read, fail closed visually:
+      // preserve the messages, but clear backend-confirmed running state until
+      // a later sync succeeds.
+      setConfirmedRunningJobIds([]);
+      if (!submitGuardRef.current && !directRequestControllerRef.current) {
+        setSending(false);
+      }
       setStatusText(error.message || "Background job sync needs attention");
     }
   };
 
   useEffect(() => {
+    setConfirmedRunningJobIds([]);
     syncProjectJobs();
     const timer = window.setInterval(() => {
       if (active || sending) syncProjectJobs();
@@ -1903,6 +1916,7 @@ function ChatWorkspace({ project, active = true }) {
     submitGuardRef.current = false;
     setQueueing(false);
     setSending(false);
+    setConfirmedRunningJobIds([]);
     setStatusText("Stopping…");
 
     updateThread(activeThread.id, (thread) => ({
@@ -2339,7 +2353,7 @@ function ChatWorkspace({ project, active = true }) {
             </article>
           ))}
 
-          {hasUnansweredRunningJob && (
+          {sending && hasUnansweredRunningJob && (
             <article className="message-row">
               <div className="assistant-avatar"><VikingAriesMark className="assistant-avatar-image" /></div>
               <div className="message-stack">

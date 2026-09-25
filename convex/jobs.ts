@@ -108,7 +108,7 @@ export const listProjectJobs = internalQuery({
       .order("desc")
       .take(take);
     const active = (await Promise.all(["queued", "running"].map(status =>
-      ctx.db.query("aiJobs").withIndex("by_project_status", q => q.eq("projectId", projectId).eq("status", status)).collect()
+      ctx.db.query("aiJobs").withIndex("by_project_status", q => q.eq("projectId", projectId).eq("status", status)).take(100)
     ))).flat().filter(row => row.projectId === projectId);
     return [...new Map([...recent, ...active].map(row => [row.jobId, row])).values()];
   },
@@ -732,7 +732,7 @@ export const reconcileJobs = internalMutation({
     const wake = new Map();
     const now = Date.now();
     for (const status of ["queued", "running"]) {
-      const rows = await ctx.db.query("aiJobs").withIndex("by_status", q => q.eq("status", status)).take(200);
+      const rows = await ctx.db.query("aiJobs").withIndex("by_status", q => q.eq("status", status)).take(50);
       for (const row of rows) {
         const reason = expiryReason(row, now);
         if (!reason) continue;

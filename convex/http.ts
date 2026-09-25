@@ -520,10 +520,14 @@ http.route({
       return Response.json({ error: "projectId is required." }, { status: 400 });
     }
 
-    await ctx.runMutation(internal.jobs.reconcileJobs, {});
-    const jobs = await ctx.runQuery(internal.jobs.listProjectJobs, { projectId, limit });
-    return Response.json({
-      jobs: jobs.map((job) => ({
+    // Listing jobs is a hot UI polling path and must remain read-only.
+    // Global stale-job cleanup runs independently from the 30-second cron;
+    // coupling it to every browser poll caused job-list 500s during legacy
+    // backlog cleanup and left clients stuck in ghost "thinking" states.
+    try {
+      const jobs = await ctx.runQuery(internal.jobs.listProjectJobs, { projectId, limit });
+      return Response.json({
+        jobs: jobs.map((job) => ({
         jobId: job.jobId,
         projectId: job.projectId,
         projectName: job.projectName,
@@ -547,8 +551,14 @@ http.route({
         updatedAt: job.updatedAt,
         startedAt: job.startedAt,
         completedAt: job.completedAt,
-      })),
-    });
+        })),
+      });
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : "Could not list AI jobs." },
+        { status: 503 }
+      );
+    }
   }),
 });
 
