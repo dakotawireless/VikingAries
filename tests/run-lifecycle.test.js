@@ -18,6 +18,7 @@ test('watchdog expires legacy queue, lost heartbeat and absolute deadline only',
   const now = Date.now();
   assert.match(expiryReason({status:'queued',createdAt:now}, now), /not replayed/);
   assert.equal(expiryReason({status:'queued',lifecycleVersion:2,createdAt:now}, now), null);
+  assert.equal(expiryReason({status:'queued',lifecycleVersion:3,createdAt:now}, now), null);
   assert.match(expiryReason({status:'running',updatedAt:now-LEASE_MS,startedAt:now-LEASE_MS},now), /heartbeat/);
   assert.match(expiryReason({status:'running',updatedAt:now,startedAt:now-RUN_LIMIT_MS},now), /deadline/);
   for (const status of TERMINAL) assert.equal(expiryReason({status,updatedAt:0},now),null);
