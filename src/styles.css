@@ -2052,7 +2052,7 @@ body.resizing-preview * {
     #eef3f8;
 }
 .owner-login-card {
-  width: min(430px, 100%);
+  width: min(560px, 100%);
   padding: 28px;
   border: 1px solid #cfdae4;
   border-radius: 8px;
@@ -2060,11 +2060,35 @@ body.resizing-preview * {
   box-shadow: 0 16px 44px rgba(15, 23, 42, .10);
 }
 .owner-login-brand {
-  display: flex;
+  display: grid;
+  grid-template-columns: 35px minmax(0, 1fr) 144px;
   align-items: center;
   gap: 11px;
   padding-bottom: 20px;
   border-bottom: 1px solid #e3eaf0;
+}
+.owner-login-brand-mark {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  border-radius: inherit;
+}
+.owner-login-logo-tile {
+  width: 144px;
+  height: 144px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #d8e5ef;
+  border-radius: 8px;
+  background: #f5faff;
+}
+.owner-login-logo {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
 }
 .owner-login-brand h1 {
   margin: 0;
