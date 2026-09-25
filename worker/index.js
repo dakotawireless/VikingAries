@@ -5210,7 +5210,7 @@ const worker = {
       "Treat the conversation as a continuing working session, not a sequence of unrelated support tickets. Resolve references like 'the POS', 'the website', 'the migration', 'that button', or 'the customer portal' from the current selected project, durable project context, recent chat, and verified action history before asking Erik to repeat himself.",
       "Carry forward established decisions and constraints. Do not repeatedly suggest an option Erik has already rejected, and do not re-ask a question whose answer is already in project context or the current conversation.",
       "When Erik's request is clear and the requested work is low-risk within the selected project's approved staging or working branch, use the available tools and do the work instead of asking for unnecessary confirmation.",
-      "Never merge to production, publish a live production change, alter live customer data, send live customer or vendor communications, expose secrets, or take another irreversible/high-impact action without explicit approval.",
+      "Requested selected-project code changes are staged on the durable task branch. After validation, the runtime—not the model—promotes that validated branch to the configured default branch unless the owner explicitly says branch-only, staging-only, do not merge, or do not deploy. This preserves the prior direct-commit behavior while preventing partial work from reaching the default branch. The model must not independently merge or bypass that gate. Altering live customer data, sending live communications, exposing secrets, or other unrelated high-impact actions still require explicit approval.",
       "When you make a code change, explain the business result first. Then give the commit/build detail briefly. Example: 'Done. I changed X so Y now happens. Z is unchanged. Commit: ...' Do not narrate each file read, tool call, or internal implementation step.",
       "If something is already working, say so plainly. If something is wrong, say what is wrong and what needs to change. Do not hide uncertainty, but do not pad straightforward answers with generic caveats.",
       "Correct Erik plainly when an assumption is wrong. Do not agree merely to sound agreeable, and do not flatter him.",
@@ -5565,8 +5565,9 @@ const worker = {
           checkpointDeployment.branch || projectMetadata.defaultBranch || "main"
         );
         const build =
-          builds.find((item) => commitSha && item.commitHash === commitSha) ||
-          builds.find((item) => item.branch === branch) ||
+          (commitSha
+            ? builds.find((item) => item.commitHash === commitSha)
+            : builds.find((item) => item.branch === branch)) ||
           null;
         const outcome = String(build?.outcome || "").toLowerCase();
         const deployment = {
@@ -5644,27 +5645,8 @@ const worker = {
           finalOperation: `Checking task branch validation: ${validation.status}`,
         });
 
-        if (validation.status === "success" && !deploymentRequested) {
-          const priorText = String(
-            priorRecoveryCheckpoint?.diagnostics?.pendingCompletionText ||
-            priorRecoveryCheckpoint?.pendingCompletionText ||
-            priorRecoveryCheckpoint?.text ||
-            ""
-          ).trim();
-          return json({
-            text: [
-              priorText,
-              `Validation passed on ${projectMetadata.workBranch}.`,
-            ].filter(Boolean).join("\n\n"),
-            model,
-            responseId: priorRecoveryCheckpoint?.responseId || null,
-            toolsAvailable: tools.map((tool) => tool.name),
-            usage: chatUsage,
-            usageRecorded,
-            actionReceipts,
-            runtimeClock,
-            diagnostics: { validation, workBranch: projectMetadata.workBranch },
-          });
+        if (validation.status === "success") {
+          runtimeInstructions += "\nRuntime validation update: the durable task branch has passed validation. Do not redo completed implementation work. Return a concise result so the runtime can perform its deterministic promotion/deployment gate.";
         }
 
         if (validation.status !== "success") {
@@ -5689,8 +5671,6 @@ const worker = {
 
         if (validation.status === "failed") {
           runtimeInstructions += `\nRuntime validation update: the durable task branch currently fails validation. Repair the reported check failure before doing anything else. Validation details: ${JSON.stringify(validation)}`;
-        } else if (validation.status === "success" && deploymentRequested) {
-          runtimeInstructions += "\nRuntime validation update: the durable task branch has passed validation. The original request also explicitly asked for deployment/release, so continue with only the authorized promotion/deployment and verification work.";
         }
       } catch (error) {
         runtimeInstructions += `\nRuntime validation preflight could not complete: ${error instanceof Error ? error.message : "unknown validation error"}. Re-check validation before claiming completion.`;
@@ -6062,8 +6042,9 @@ const worker = {
         const commitSha = String(promotionReceipt.commitSha || "");
         const branchName = String(projectMetadata.defaultBranch || "main");
         const build =
-          builds.find((item) => commitSha && item.commitHash === commitSha) ||
-          builds.find((item) => item.branch === branchName) ||
+          (commitSha
+            ? builds.find((item) => item.commitHash === commitSha)
+            : builds.find((item) => item.branch === branchName)) ||
           null;
         const outcome = String(build?.outcome || "").toLowerCase();
         const deployment = {
