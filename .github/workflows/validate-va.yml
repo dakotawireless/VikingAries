@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - "aries/**"
   pull_request:
   workflow_dispatch:
 
