@@ -5775,6 +5775,69 @@ const worker = {
     }
 
 
+    const allActionReceipts = mergeVerifiedActionReceipts(
+      verifiedActionHistory,
+      actionReceipts
+    );
+    const taskWriteRepositories = [
+      ...new Set(
+        allActionReceipts
+          .filter(
+            (receipt) =>
+              receipt?.provider === "GitHub" &&
+              receipt?.action === "repository_write" &&
+              projectMetadata.workBranch &&
+              receipt?.branch === projectMetadata.workBranch &&
+              receipt?.repository
+          )
+          .map((receipt) => receipt.repository)
+      ),
+    ];
+
+    if (githubToken && projectMetadata.workBranch && taskWriteRepositories.length) {
+      for (const repository of taskWriteRepositories) {
+        let validation;
+        try {
+          validation = await githubBranchValidation(
+            githubToken,
+            repository,
+            projectMetadata.workBranch
+          );
+        } catch (error) {
+          validation = {
+            repository,
+            branch: projectMetadata.workBranch,
+            status: "unavailable",
+            checks: [],
+            error: error instanceof Error ? error.message : "Validation lookup failed",
+          };
+        }
+
+        updateRunRecoveryState({
+          validation,
+          finalOperation: `Task branch validation: ${validation.status}`,
+        });
+
+        const strictValidation =
+          repository === "dakotawireless/VikingAries" ||
+          validation.status !== "unavailable";
+
+        if (validation.status !== "success" && strictValidation) {
+          const label =
+            validation.status === "failed"
+              ? "Task branch validation failed"
+              : validation.status === "pending"
+                ? "Task branch validation pending"
+                : "Task branch validation unavailable";
+          return json(await buildRecoveryResult(
+            new Error(label),
+            { code: "paused", label },
+            branchValidationRecoveryText(validation, projectMetadata.workBranch)
+          ));
+        }
+      }
+    }
+
     return json({
       text: text + usageWarning(),
       model,
