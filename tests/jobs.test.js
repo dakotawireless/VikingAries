@@ -50,6 +50,12 @@ test('duplicate submission by job or message ID schedules only once',async()=>{
  assert.equal((await call('createJob',ctx,args)).duplicate,true);
  assert.equal((await call('createJob',ctx,{...args,jobId:'b'})).duplicate,true);
  assert.equal(rows.length,1);assert.equal(scheduled.length,1);
+ assert.equal(rows[0].lifecycleVersion,3);
+ assert.equal(rows[0].continuationCount,0);
+ assert.equal(rows[0].cumulativeCostUsd,0);
+ assert.match(rows[0].workBranch,/^aries\/task\//);
+ assert.equal(rows[0].maxContinuations,6);
+ assert.equal(rows[0].maxJobCostUsd,3);
 });
 test('successful completion schedules next job atomically and cannot later fail',async()=>{
  const {ctx,rows,scheduled}=database([{...queued(),status:'running'}]);
@@ -69,7 +75,7 @@ test('interrupted finalization preserves the recovery response and diagnostics',
  const result=await call('finalizeInterruptedJob',ctx,{
    jobId:'a',
    status:'paused',
-   resultText:'## Stop reason\nExecution/tool budget reached.\n\n## Next best action\nSend **continue**.',
+   resultText:'## Stop reason\nJob-level guardrail reached.\n\n## Next best action\nReview is required before further work.',
    stopReason:'Execution/tool budget reached',
    diagnosticsJson:JSON.stringify({toolRounds:8,toolExecutions:20,writesOccurred:true}),
    completedAt:now+100,
@@ -80,4 +86,105 @@ test('interrupted finalization preserves the recovery response and diagnostics',
  assert.equal(rows[0].stopReason,'Execution/tool budget reached');
  assert.match(rows[0].diagnosticsJson,/"toolExecutions":20/);
  assert.equal(scheduled.length,1);
+});
+
+
+test('paused execution slice automatically requeues the same durable job', async () => {
+  const now=Date.now();
+  const row={
+    ...queued(),
+    status:'running',
+    lifecycleVersion:3,
+    jobStartedAt:now-1000,
+    continuationCount:0,
+    cumulativeCostUsd:0,
+    maxContinuations:6,
+    maxJobCostUsd:3,
+    maxJobElapsedMs:30*60*1000,
+    workBranch:'aries/task/a',
+    startedAt:now,
+    deadlineAt:now+60000,
+    runnerClaimed:true,
+  };
+  const {ctx,rows,scheduled}=database([row]);
+  const result=await call('continueJobSlice',ctx,{
+    jobId:'a',
+    resultText:'checkpoint',
+    stopReason:'Execution/tool budget reached',
+    diagnosticsJson:'{}',
+    checkpointJson:'{"step":1}',
+    sliceCostUsd:0.31,
+    completedAt:now+100,
+  });
+  assert.equal(result.continued,true);
+  assert.equal(rows[0].status,'queued');
+  assert.equal(rows[0].continuationCount,1);
+  assert.equal(rows[0].cumulativeCostUsd,0.31);
+  assert.equal(rows[0].checkpointJson,'{"step":1}');
+  assert.equal(rows[0].runnerClaimed,false);
+  assert.equal(rows[0].completedAt,undefined);
+  assert.equal(scheduled.length,1);
+  assert.equal(scheduled[0][0],150);
+});
+
+test('validation polling requeues without consuming substantive continuation quota', async () => {
+  const now=Date.now();
+  const {ctx,rows,scheduled}=database([{
+    ...queued(),
+    status:'running',
+    lifecycleVersion:3,
+    jobStartedAt:now-1000,
+    continuationCount:2,
+    cumulativeCostUsd:0.5,
+    maxContinuations:6,
+    maxJobCostUsd:3,
+    maxJobElapsedMs:30*60*1000,
+    workBranch:'aries/task/a',
+    startedAt:now,
+    deadlineAt:now+60000,
+  }]);
+  const result=await call('continueJobSlice',ctx,{
+    jobId:'a',
+    resultText:'waiting for CI',
+    stopReason:'Task branch validation pending',
+    diagnosticsJson:'{}',
+    checkpointJson:'{"validation":"pending"}',
+    sliceCostUsd:0,
+    completedAt:now+100,
+  });
+  assert.equal(result.continued,true);
+  assert.equal(rows[0].status,'queued');
+  assert.equal(rows[0].continuationCount,2);
+  assert.equal(rows[0].cumulativeCostUsd,0.5);
+  assert.equal(scheduled[0][0],10000);
+});
+
+test('job-level guardrail turns automatic continuation into a reviewable pause', async () => {
+  const now=Date.now();
+  const {ctx,rows,scheduled}=database([{
+    ...queued(),
+    status:'running',
+    lifecycleVersion:3,
+    jobStartedAt:now-1000,
+    continuationCount:6,
+    cumulativeCostUsd:1,
+    maxContinuations:6,
+    maxJobCostUsd:3,
+    maxJobElapsedMs:30*60*1000,
+    startedAt:now,
+    deadlineAt:now+60000,
+  }]);
+  const result=await call('continueJobSlice',ctx,{
+    jobId:'a',
+    resultText:'slice checkpoint',
+    stopReason:'Execution/tool budget reached',
+    sliceCostUsd:0.1,
+    completedAt:now+100,
+  });
+  assert.equal(result.continued,false);
+  assert.equal(rows[0].status,'paused');
+  assert.equal(rows[0].continuationCount,7);
+  assert.match(rows[0].error,/continuation limit/i);
+  assert.match(rows[0].resultText,/guardrail/i);
+  assert.equal(scheduled.length,1);
 });
