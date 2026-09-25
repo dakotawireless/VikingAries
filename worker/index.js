@@ -3358,6 +3358,31 @@ function classifyRunStop(error, budgetPaused = false) {
   return { code: "failed", label: "Other known failure" };
 }
 
+function branchValidationRecoveryText(validation, workBranch) {
+  const status = String(validation?.status || "unavailable");
+  const details = Array.isArray(validation?.checks) && validation.checks.length
+    ? validation.checks
+        .map((check) => `- ${check.name}: ${check.status || "unknown"}${check.conclusion ? ` / ${check.conclusion}` : ""}`)
+        .join("\n")
+    : "- GitHub has not reported a completed validation check yet.";
+  const label =
+    status === "failed"
+      ? "Task branch validation failed"
+      : status === "pending"
+        ? "Task branch validation pending"
+        : "Task branch validation unavailable";
+  return [
+    `## Stop reason\n${label}.`,
+    `## What was completed\nImplementation work is preserved on ${workBranch || "the durable task branch"}.`,
+    `## Where it stopped\n${details}`,
+    status === "failed"
+      ? "## What remains\nInspect the failed validation, repair only the failing issue, and validate again."
+      : "## What remains\nWait for the existing validation run to finish, then re-check it.",
+    "## Change safety\nThe production/default branch has not been promoted by this validation gate. Completed task-branch commits remain preserved.",
+    "## Next best action\nThe durable job will continue automatically. No manual continue message is required.",
+  ].join("\n\n");
+}
+
 function recoveryFallbackText(state, stop) {
   const completed = Array.isArray(state?.completedOperations) ? state.completedOperations : [];
   const writes = Array.isArray(state?.writes) ? state.writes : [];
@@ -5280,7 +5305,7 @@ const worker = {
       runtimeCapabilityNotes.push("Convex deployment-status tools are available for the selected project's server-registered deployment. Use GitHub tools to inspect or edit convex/schema.ts and convex function source, and use the project's existing deployment pipeline for backend deploys unless a direct Convex deployment action is explicitly available.");
     }
 
-    const runtimeInstructions = runtimeCapabilityNotes.length
+    let runtimeInstructions = runtimeCapabilityNotes.length
       ? `${instructions}\n${runtimeCapabilityNotes.join("\n")}`
       : instructions;
 
@@ -5441,6 +5466,84 @@ const worker = {
         },
       };
     };
+
+    // Validation-only continuation slices are deliberately model-free. Polling
+    // CI should not consume another AI slice or spend merely because a build is
+    // still running.
+    const checkpointValidation =
+      priorRecoveryCheckpoint?.diagnostics?.validation ||
+      priorRecoveryCheckpoint?.validation ||
+      null;
+    const deploymentRequested = /\b(deploy|publish|go live|push live|release to production|rebuild(?:\s+the)?\s+(?:app|site|worker|production))\b/i.test(
+      latestUserText(body?.messages)
+    );
+
+    if (
+      body?.autoContinuation === true &&
+      checkpointValidation &&
+      ["pending", "unavailable"].includes(String(checkpointValidation.status || "")) &&
+      githubToken &&
+      projectMetadata.repository &&
+      projectMetadata.workBranch
+    ) {
+      try {
+        const validation = await githubBranchValidation(
+          githubToken,
+          projectMetadata.repository,
+          projectMetadata.workBranch
+        );
+        updateRunRecoveryState({
+          validation,
+          finalOperation: `Checking task branch validation: ${validation.status}`,
+        });
+
+        if (validation.status === "success" && !deploymentRequested) {
+          const priorText = String(priorRecoveryCheckpoint?.text || "").trim();
+          return json({
+            text: [
+              priorText,
+              `Validation passed on ${projectMetadata.workBranch}.`,
+            ].filter(Boolean).join("\n\n"),
+            model,
+            responseId: priorRecoveryCheckpoint?.responseId || null,
+            toolsAvailable: tools.map((tool) => tool.name),
+            usage: chatUsage,
+            usageRecorded,
+            actionReceipts,
+            runtimeClock,
+            diagnostics: { validation, workBranch: projectMetadata.workBranch },
+          });
+        }
+
+        if (validation.status !== "success") {
+          const strictValidation =
+            projectId === "viking-aries" || validation.status !== "unavailable";
+          if (strictValidation) {
+            return json(await buildRecoveryResult(
+              new Error(`Task branch validation ${validation.status}`),
+              {
+                code: "paused",
+                label:
+                  validation.status === "failed"
+                    ? "Task branch validation failed"
+                    : validation.status === "pending"
+                      ? "Task branch validation pending"
+                      : "Task branch validation unavailable",
+              },
+              branchValidationRecoveryText(validation, projectMetadata.workBranch)
+            ));
+          }
+        }
+
+        if (validation.status === "failed") {
+          runtimeInstructions += `\nRuntime validation update: the durable task branch currently fails validation. Repair the reported check failure before doing anything else. Validation details: ${JSON.stringify(validation)}`;
+        } else if (validation.status === "success" && deploymentRequested) {
+          runtimeInstructions += "\nRuntime validation update: the durable task branch has passed validation. The original request also explicitly asked for deployment/release, so continue with only the authorized promotion/deployment and verification work.";
+        }
+      } catch (error) {
+        runtimeInstructions += `\nRuntime validation preflight could not complete: ${error instanceof Error ? error.message : "unknown validation error"}. Re-check validation before claiming completion.`;
+      }
+    }
 
     try {
       const analysisProgressId = await beginProgress("Analyzing request");
