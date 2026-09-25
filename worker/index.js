@@ -3456,13 +3456,19 @@ function recoveryFallbackText(state, stop) {
   const safety = writes.length
     ? `${writes.length} write action${writes.length === 1 ? " was" : "s were"} completed before the stop:\n${writes.map((item) => `- ${item.path || item.tool}${item.commitSha ? ` — ${item.commitSha}` : ""}`).join("\n")}\nNo completed write should be replayed automatically.`
     : "No files or settings were changed. No deployment was started by this run.";
+  const nextAction =
+    stop?.code === "canceled"
+      ? "Stopped by the owner. This job is terminal and will not continue or replay completed writes. A new message starts a new durable job."
+      : stop?.code === "paused"
+        ? "The durable job may continue only through the recorded continuation path. Viking Aries will use the saved progress and will not replay verified writes or destructive actions."
+        : "This job is terminal. Completed writes and checkpoints remain preserved; a future request can continue from them without replaying verified writes.";
   return [
     `## Stop reason\n${stop.label}.`,
     `## What was completed\n${completedText}`,
     `## Where it stopped\n${state?.finalOperation || "The active model/provider step ended before normal completion."}`,
     `## What remains\n${remains}`,
     `## Change safety\n${safety}`,
-    `## Next best action\nThe durable job will continue automatically from this checkpoint. Viking Aries will use the saved progress and will not replay verified writes or destructive actions.`,
+    `## Next best action\n${nextAction}`,
   ].join("\n\n");
 }
 
