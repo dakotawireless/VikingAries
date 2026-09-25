@@ -2061,7 +2061,7 @@ body.resizing-preview * {
 }
 .owner-login-brand {
   display: grid;
-  grid-template-columns: 35px minmax(0, 1fr) 116px;
+  grid-template-columns: 35px minmax(0, 1fr) 144px;
   align-items: center;
   gap: 11px;
   padding-bottom: 20px;
