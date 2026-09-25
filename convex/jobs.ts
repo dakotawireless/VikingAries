@@ -495,7 +495,19 @@ export const processThread = internalAction({
           "Content-Type": "application/json",
           "X-VA-Internal-Job-Secret": secret,
         },
-        body: JSON.stringify({ ...requestBody, jobId: job.jobId }),
+        body: JSON.stringify({
+          ...requestBody,
+          jobId: job.jobId,
+          autoContinuation: Number(job.continuationCount || 0) > 0,
+          continuationCount: Number(job.continuationCount || 0),
+          durableCheckpoint: job.checkpointJson || null,
+          workBranch: job.workBranch || null,
+          jobPolicy: {
+            maxContinuations: job.maxContinuations ?? DEFAULT_JOB_MAX_CONTINUATIONS,
+            maxJobCostUsd: job.maxJobCostUsd ?? DEFAULT_JOB_MAX_COST_USD,
+            maxJobElapsedMs: job.maxJobElapsedMs ?? DEFAULT_JOB_MAX_ELAPSED_MS,
+          },
+        }),
         signal: AbortSignal.timeout(RUN_LIMIT_MS + 10000),
       });
 
@@ -505,29 +517,60 @@ export const processThread = internalAction({
       }
 
       const interruptedStatus = String(payload?.executionStatus || "");
-      if (["paused", "timed_out", "canceled", "failed"].includes(interruptedStatus)) {
-        const diagnostics =
-          payload?.diagnostics && typeof payload.diagnostics === "object"
-            ? payload.diagnostics
-            : {};
+      const diagnostics =
+        payload?.diagnostics && typeof payload.diagnostics === "object"
+          ? payload.diagnostics
+          : {};
+      const sliceCostUsd = Math.max(0, Number(payload?.usage?.estimatedCostUsd || 0));
+      const checkpointJson = JSON.stringify({
+        text: String(payload?.text || ""),
+        diagnostics,
+        actionReceipts: Array.isArray(payload?.actionReceipts)
+          ? payload.actionReceipts.slice(-30)
+          : [],
+        responseId: typeof payload?.responseId === "string" ? payload.responseId : null,
+        workBranch: job.workBranch || null,
+        continuationCount: Number(job.continuationCount || 0),
+        recordedAt: Date.now(),
+      });
+
+      if (interruptedStatus === "paused" && payload?.continuationRequired !== false) {
+        const continuation = await ctx.runMutation(internal.jobs.continueJobSlice, {
+          jobId: job.jobId,
+          resultText: String(
+            payload?.text ||
+              "The current execution slice reached its safety budget. Viking Aries is continuing automatically from the saved checkpoint."
+          ),
+          stopReason: String(diagnostics.stopReason || "Execution slice checkpoint"),
+          diagnosticsJson: JSON.stringify(diagnostics),
+          checkpointJson,
+          responseId: typeof payload?.responseId === "string" ? payload.responseId : undefined,
+          sliceCostUsd,
+          completedAt: Date.now(),
+        });
+        if (continuation?.continued) return;
+        return;
+      }
+
+      if (["timed_out", "canceled", "failed"].includes(interruptedStatus)) {
         await ctx.runMutation(internal.jobs.finalizeInterruptedJob, {
           jobId: job.jobId,
           status: interruptedStatus,
           resultText: String(
             payload?.text ||
-              "The AI run stopped before normal completion. Send continue to resume from saved progress."
+              "The durable job stopped before normal completion. Completed writes and checkpoints remain preserved."
           ),
           stopReason: String(
             diagnostics.stopReason ||
-              (interruptedStatus === "paused"
-                ? "Execution/tool budget reached"
-                : interruptedStatus === "timed_out"
-                  ? "Execution timeout"
-                  : interruptedStatus === "canceled"
-                    ? "User cancellation"
-                    : "AI runner failure")
+              (interruptedStatus === "timed_out"
+                ? "Execution timeout"
+                : interruptedStatus === "canceled"
+                  ? "User cancellation"
+                  : "AI runner failure")
           ),
           diagnosticsJson: JSON.stringify(diagnostics),
+          checkpointJson,
+          sliceCostUsd,
           completedAt: Date.now(),
         });
         return;
@@ -538,6 +581,8 @@ export const processThread = internalAction({
         resultText: String(payload?.text || "The AI job completed without response text."),
         model: typeof payload?.model === "string" ? payload.model : undefined,
         responseId: typeof payload?.responseId === "string" ? payload.responseId : undefined,
+        sliceCostUsd,
+        checkpointJson,
         completedAt: Date.now(),
       });
     } catch (error) {
@@ -550,7 +595,7 @@ export const processThread = internalAction({
         `## Where it stopped\n${message}`,
         "## What remains\nResume from the saved run checkpoint and perform only the unfinished work.",
         "## Change safety\nThe final runner response was not returned, so this finalizer will not guess about unverified writes. Completed writes are preserved in action receipts/checkpoints and must not be replayed automatically.",
-        "## Next best action\nSend **continue**. Viking Aries will use saved progress and verified receipts instead of restarting the investigation from scratch.",
+        "## Next best action\nThis stop requires attention before another automatic slice can safely run. Completed writes and checkpoints are preserved.",
       ].join("\n\n");
 
       await ctx.runMutation(internal.jobs.finalizeInterruptedJob, {
