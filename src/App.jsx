@@ -768,24 +768,50 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
   return parts;
 }
 
+function isVideoAttachment(item) {
+  const type = String(item?.type || "").toLowerCase();
+  return item?.kind === "video" || type.startsWith("video/") ||
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(String(item?.name || ""));
+}
+
+function compactPersistedThreads(value) {
+  return (Array.isArray(value) ? value : []).map((thread) => ({
+    ...thread,
+    messages: (Array.isArray(thread?.messages) ? thread.messages : []).map((message) => ({
+      ...message,
+      content:
+        typeof message?.content === "string"
+          ? sanitizeLegacyAttachmentContent(message.content)
+          : message?.content,
+      attachments: Array.isArray(message?.attachments)
+        ? message.attachments.map((item) =>
+            isVideoAttachment(item)
+              ? {
+                  kind: "video",
+                  name: item?.name || "Video",
+                  type: item?.type || "video/*",
+                }
+              : item
+          )
+        : message?.attachments,
+      attachmentMeta: Array.isArray(message?.attachmentMeta)
+        ? message.attachmentMeta.map((item) => ({
+            kind: item?.kind || (isVideoAttachment(item) ? "video" : "file"),
+            name: item?.name || "Attachment",
+            type: item?.type || "application/octet-stream",
+          }))
+        : message?.attachmentMeta,
+    })),
+  }));
+}
+
 function loadProjectThreads(projectId) {
   try {
     const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length) {
-        return parsed.map((thread) => ({
-          ...thread,
-          messages: Array.isArray(thread.messages)
-            ? thread.messages.map((message) => ({
-                ...message,
-                content:
-                  typeof message?.content === "string"
-                    ? sanitizeLegacyAttachmentContent(message.content)
-                    : message?.content,
-              }))
-            : [],
-        }));
+        return compactPersistedThreads(parsed);
       }
       if (Array.isArray(parsed) && parsed.length === 0) {
         return [{ id: `chat-${Date.now()}`, title: "New Chat", messages: [] }];
