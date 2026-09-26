@@ -1720,9 +1720,13 @@ function ChatWorkspace({ project, active = true }) {
               kind: item.kind || "file",
               name: item.name || "Attachment",
               type: item.type || "application/octet-stream",
-              dataUrl: item.dataUrl,
-              thumbnailDataUrl: item.thumbnailDataUrl || "",
-              fullDataUrl: item.fullDataUrl || "",
+              ...(item.kind === "video"
+                ? { mediaFileId: item.mediaFileId || "", size: item.size || 0 }
+                : {
+                    dataUrl: item.dataUrl,
+                    thumbnailDataUrl: item.thumbnailDataUrl || "",
+                    fullDataUrl: item.fullDataUrl || "",
+                  }),
             })),
           }
         : {}),
