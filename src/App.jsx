@@ -1177,10 +1177,35 @@ function readFileAsDataUrl(file) {
 async function uploadChatFileToMedia(file) {
   const form = new FormData();
   form.append("projectId", "viking-aries");
-  form.append("file", file, file.name);
-  const response = await fetch("/api/files/upload", { method: "POST", body: form });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload?.file) {
+  form.append("file", file, file.name || "video");
+
+  // Mobile browsers can leave a multipart upload pending while the composer
+  // remains mounted. Abort it cleanly instead of letting a stalled request leave
+  // the page in a broken/blank state when Send is pressed afterward.
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30000);
+  let response;
+  try {
+    response = await fetch("/api/files/upload", {
+      method: "POST",
+      body: form,
+      credentials: "same-origin",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Uploading ${file.name || "that video"} timed out. Try a smaller video or upload it from Files & Media.`);
+    }
+    throw new Error(`Could not upload ${file.name || "that video"}. Check the connection and try again.`);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => ({}))
+    : {};
+  if (!response.ok || !payload?.file?.id) {
     throw new Error(payload.error || `Could not store ${file.name || "that video"} in Files & Media.`);
   }
   return payload.file;
