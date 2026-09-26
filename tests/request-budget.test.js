@@ -23,7 +23,7 @@ test('production safety ceilings stay intentionally small', () => {
   assert.equal(MAX_AGENT_COST_USD, 0.50);
   assert.equal(requestLimit, 44);
   assert.equal(AUTO_CONTINUE_ROUNDS, 7);
-  assert.equal(AUTO_CONTINUE_TOOLS, 16);
+  assert.equal(AUTO_CONTINUE_TOOLS, 18);
   assert.equal(AUTO_CONTINUE_COST_USD, 0.42);
   assert.equal(AUTO_CONTINUE_REQUEST_RESERVE, 12);
   assert.ok(AUTO_CONTINUE_ROUNDS < MAX_AGENT_ROUNDS);
