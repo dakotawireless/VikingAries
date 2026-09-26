@@ -1752,14 +1752,19 @@ function ChatWorkspace({ project, active = true }) {
       }));
 
     if (attachments.length && requestMessages.length) {
-      requestMessages[requestMessages.length - 1].attachments = attachments.map((item) => ({
-        kind: item.kind || "file",
-        name: item.name || "Attachment",
-        type: item.type || "application/octet-stream",
-        ...(item.kind === "video"
-          ? { mediaFileId: item.mediaFileId || "", size: item.size || 0 }
-          : { dataUrl: item.dataUrl }),
-      }));
+      // Video files are already stored privately in Files & Media. Do not put
+      // their Convex record IDs or binary-like attachment objects into the AI
+      // job payload: the Responses API cannot consume a video attachment here,
+      // and older runners treated the unexpected object as an input file.
+      const aiAttachments = attachments.filter((item) => item.kind !== "video");
+      if (aiAttachments.length) {
+        requestMessages[requestMessages.length - 1].attachments = aiAttachments.map((item) => ({
+          kind: item.kind || "file",
+          name: item.name || "Attachment",
+          type: item.type || "application/octet-stream",
+          dataUrl: item.dataUrl,
+        }));
+      }
     }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
