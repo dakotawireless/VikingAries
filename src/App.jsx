@@ -2122,7 +2122,7 @@ function ChatWorkspace({ project, active = true }) {
   const handleSelectedAttachments = async (fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    const maxAttachmentBytes = 8 * 1024 * 1024;
+    const maxAttachmentBytes = 10 * 1024 * 1024;
     const oversized = files.find((file) => file.size > maxAttachmentBytes);
     if (oversized) {
       setStatusText(`${oversized.name} is over the 8 MB attachment limit`);
