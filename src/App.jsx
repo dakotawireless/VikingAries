@@ -53,6 +53,7 @@ import {
   TerminalSquare,
   UserRound,
   Users,
+  Video,
   WandSparkles,
   Workflow,
   X,
