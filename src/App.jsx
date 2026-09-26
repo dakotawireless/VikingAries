@@ -2128,6 +2128,18 @@ function ChatWorkspace({ project, active = true }) {
             name: file.name || "Photo",
             type: file.type || "image/jpeg",
           });
+        } else if (file.type.startsWith("video/")) {
+          // Videos are private Files & Media assets, not inline chat payloads.
+          // Keeping only the returned metadata prevents data URLs from entering
+          // localStorage or the Responses API request body.
+          const stored = await uploadChatFileToMedia(file);
+          prepared.push({
+            kind: "video",
+            name: file.name || "Video",
+            type: file.type || "video/*",
+            mediaFileId: stored.id || stored.fileId || stored._id || "",
+            size: file.size || 0,
+          });
         } else if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
           prepared.push({
             kind: "pdf",
