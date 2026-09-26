@@ -1748,6 +1748,22 @@ function ChatWorkspace({ project, active = true }) {
     // selected a recommendation or manually chose a higher-cost model.
     setSelectedModel(VA_AUTO_MODEL);
 
+    const attachmentMetadata = attachments.map((item) => ({
+      kind: item.kind || "file",
+      name: item.name || "Attachment",
+      type: item.type || "application/octet-stream",
+    }));
+    const persistedAttachments = attachments
+      .filter((item) => !isVideoAttachment(item))
+      .map((item) => ({
+        kind: item.kind || "file",
+        name: item.name || "Attachment",
+        type: item.type || "application/octet-stream",
+        ...(typeof item.dataUrl === "string" && item.dataUrl ? { dataUrl: item.dataUrl } : {}),
+        ...(item.thumbnailDataUrl ? { thumbnailDataUrl: item.thumbnailDataUrl } : {}),
+        ...(item.fullDataUrl ? { fullDataUrl: item.fullDataUrl } : {}),
+      }));
+
     const userMessage = {
       id: `user-${jobId}`,
       jobId,
@@ -1756,19 +1772,8 @@ function ChatWorkspace({ project, active = true }) {
       content,
       ...(attachments.length
         ? {
-            attachmentMeta: attachments.map((item) => ({
-              kind: item.kind || "file",
-              name: item.name || "Attachment",
-              type: item.type || "application/octet-stream",
-            })),
-            attachments: attachments.map((item) => ({
-              kind: item.kind || "file",
-              name: item.name || "Attachment",
-              type: item.type || "application/octet-stream",
-              dataUrl: item.dataUrl,
-              thumbnailDataUrl: item.thumbnailDataUrl || "",
-              fullDataUrl: item.fullDataUrl || "",
-            })),
+            attachmentMeta: attachmentMetadata,
+            ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
           }
         : {}),
       timestamp: formatChatTime(),
