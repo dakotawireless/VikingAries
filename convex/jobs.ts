@@ -23,6 +23,68 @@ function workBranchForJob(jobId: string) {
   return `aries/task/${safe || "job"}`;
 }
 
+function clipSummaryText(value: unknown, max: number) {
+  if (typeof value !== "string") return undefined;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function jobSummary(job: any) {
+  const summary = {
+    jobId: job.jobId,
+    projectId: job.projectId,
+    projectName: job.projectName,
+    threadId: job.threadId,
+    threadTitle: clipSummaryText(job.threadTitle, 240) || "Untitled chat",
+    userMessageId: clipSummaryText(job.userMessageId, 180),
+    userMessageContent: clipSummaryText(job.userMessageContent, 24000),
+    status: job.status,
+    resultText: clipSummaryText(job.resultText, 120000),
+    error: clipSummaryText(job.error, 24000),
+    model: clipSummaryText(job.model, 160),
+    responseId: clipSummaryText(job.responseId, 240),
+    stopReason: clipSummaryText(job.stopReason, 24000),
+    createdAt: Number(job.createdAt || Date.now()),
+    updatedAt: Number(job.updatedAt || job.createdAt || Date.now()),
+    startedAt: job.startedAt,
+    cancelRequestedAt: job.cancelRequestedAt,
+    deadlineAt: job.deadlineAt,
+    lifecycleVersion: job.lifecycleVersion,
+    continuationCount: job.continuationCount,
+    cumulativeCostUsd: job.cumulativeCostUsd,
+    jobStartedAt: job.jobStartedAt,
+    maxContinuations: job.maxContinuations,
+    maxJobCostUsd: job.maxJobCostUsd,
+    maxJobElapsedMs: job.maxJobElapsedMs,
+    workBranch: clipSummaryText(job.workBranch, 240),
+    completedAt: job.completedAt,
+  };
+  return Object.fromEntries(
+    Object.entries(summary).filter(([, value]) => value !== undefined)
+  );
+}
+
+async function syncJobSummary(ctx: any, job: any) {
+  const summary = jobSummary(job);
+  const existing = await ctx.db
+    .query("aiJobSummaries")
+    .withIndex("by_jobId", (q: any) => q.eq("jobId", summary.jobId))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, summary);
+  } else {
+    await ctx.db.insert("aiJobSummaries", summary);
+  }
+}
+
+async function getFullJobById(ctx: any, jobId: string) {
+  return ctx.db.query("aiJobs").withIndex("by_jobId", (q: any) => q.eq("jobId", jobId)).unique();
+}
+
+async function patchFullJob(ctx: any, row: any, patch: Record<string, unknown>) {
+  await ctx.db.patch(row._id, patch);
+  await syncJobSummary(ctx, { ...row, ...patch });
+}
+
 export const createJob = internalMutation({
   args: {
     jobId: v.string(),
@@ -56,23 +118,34 @@ export const createJob = internalMutation({
 
     const now = Date.now();
     const activeRows = (await Promise.all(["queued", "running"].map(status =>
-      ctx.db.query("aiJobs")
+      ctx.db.query("aiJobSummaries")
         .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
         .collect()
     ))).flat();
-    for (const row of activeRows) {
-      const reason = expiryReason(row, now);
+    for (const summary of activeRows) {
+      const reason = expiryReason(summary, now);
       if (!reason) continue;
-      await ctx.db.patch(row._id, {
-        status: "timed_out",
-        error: reason,
-        stopReason: reason,
-        completedAt: now,
-        updatedAt: now,
-      });
+      const full = await getFullJobById(ctx, summary.jobId);
+      if (full) {
+        await patchFullJob(ctx, full, {
+          status: "timed_out",
+          error: reason,
+          stopReason: reason,
+          completedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.patch(summary._id, {
+          status: "timed_out",
+          error: reason,
+          stopReason: reason,
+          completedAt: now,
+          updatedAt: now,
+        });
+      }
     }
 
-    await ctx.db.insert("aiJobs", {
+    const newJob = {
       ...args,
       status: "queued",
       lifecycleVersion: CURRENT_JOB_LIFECYCLE_VERSION,
@@ -84,7 +157,9 @@ export const createJob = internalMutation({
       maxJobElapsedMs: args.maxJobElapsedMs ?? DEFAULT_JOB_MAX_ELAPSED_MS,
       workBranch: workBranchForJob(args.jobId),
       updatedAt: args.createdAt,
-    });
+    };
+    await ctx.db.insert("aiJobs", newJob);
+    await syncJobSummary(ctx, newJob);
 
     await ctx.scheduler.runAfter(0, internal.jobs.processThread, {
       projectId: args.projectId,
@@ -103,13 +178,15 @@ export const listProjectJobs = internalQuery({
   handler: async (ctx, { projectId, limit }) => {
     const take = Math.min(100, Math.max(1, Math.floor(limit || 50)));
     const recent = await ctx.db
-      .query("aiJobs")
+      .query("aiJobSummaries")
       .withIndex("by_project_updatedAt", (q) => q.eq("projectId", projectId))
       .order("desc")
       .take(take);
     const active = (await Promise.all(["queued", "running"].map(status =>
-      ctx.db.query("aiJobs").withIndex("by_project_status", q => q.eq("projectId", projectId).eq("status", status)).take(100)
-    ))).flat().filter(row => row.projectId === projectId);
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_status", q => q.eq("projectId", projectId).eq("status", status))
+        .take(100)
+    ))).flat();
     return [...new Map([...recent, ...active].map(row => [row.jobId, row])).values()];
   },
 });
@@ -122,7 +199,7 @@ export const listPriorThreadJobs = internalQuery({
   },
   handler: async (ctx, args) => {
     const rows = await ctx.db
-      .query("aiJobs")
+      .query("aiJobSummaries")
       .withIndex("by_project_thread_updatedAt", (q) =>
         q.eq("projectId", args.projectId).eq("threadId", args.threadId)
       )
@@ -140,35 +217,61 @@ export const claimNextThreadJob = internalMutation({
     threadId: v.string(),
   },
   handler: async (ctx, args) => {
-    const rows = (await Promise.all(["queued", "running"].map(status => ctx.db.query("aiJobs")
-      .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status)).collect()))).flat();
+    const summaries = (await Promise.all(["queued", "running"].map(status =>
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
+        .collect()
+    ))).flat();
 
     const now = Date.now();
-
-
-    for (const row of rows) {
-      if (expiryReason(row, now)) {
-        await ctx.db.patch(row._id, {
+    for (const summary of summaries) {
+      const reason = expiryReason(summary, now);
+      if (!reason) continue;
+      const full = await getFullJobById(ctx, summary.jobId);
+      if (full) {
+        await patchFullJob(ctx, full, {
           status: "timed_out",
-          error: expiryReason(row, now) || "Execution expired.",
+          error: reason,
+          stopReason: reason,
+          completedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.patch(summary._id, {
+          status: "timed_out",
+          error: reason,
+          stopReason: reason,
           completedAt: now,
           updatedAt: now,
         });
       }
     }
 
-    const refreshed = (await Promise.all(["queued", "running"].map(status => ctx.db.query("aiJobs")
-      .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status)).collect()))).flat();
+    const refreshed = (await Promise.all(["queued", "running"].map(status =>
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
+        .collect()
+    ))).flat();
 
     if (refreshed.some((row) => row.status === "running")) return null;
 
     const next = refreshed
       .filter((row) => isRunnableQueuedJob(row, now))
       .sort((a, b) => a.createdAt - b.createdAt)[0];
-
     if (!next) return null;
 
-    await ctx.db.patch(next._id, {
+    const full = await getFullJobById(ctx, next.jobId);
+    if (!full) {
+      await ctx.db.patch(next._id, {
+        status: "failed",
+        error: "Execution payload is missing.",
+        completedAt: now,
+        updatedAt: now,
+      });
+      return null;
+    }
+
+    const patch = {
       status: "running",
       startedAt: now,
       deadlineAt: now + RUN_LIMIT_MS,
@@ -176,9 +279,9 @@ export const claimNextThreadJob = internalMutation({
       lastSliceStartedAt: now,
       updatedAt: now,
       error: undefined,
-    });
-
-    return { ...next, status: "running", startedAt: now, updatedAt: now, deadlineAt: now + RUN_LIMIT_MS };
+    };
+    await patchFullJob(ctx, full, patch);
+    return { ...full, ...patch };
   },
 });
 
@@ -189,15 +292,18 @@ export const cancelThreadJobs = internalMutation({
     jobIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const rows = (await Promise.all(["queued", "running"].map(status => ctx.db.query("aiJobs")
-      .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status)).collect()))).flat();
+    const rows = (await Promise.all(["queued", "running"].map(status =>
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
+        .collect()
+    ))).flat();
     const now = Date.now();
     const requestedIds = new Set((args.jobIds || []).map((id) => String(id || "").trim()).filter(Boolean));
-    const canceledIds = new Set();
+    const canceledIds = new Set<string>();
 
-    for (const row of rows) {
-      if (row.status !== "queued" && row.status !== "running") continue;
-      await ctx.db.patch(row._id, {
+    const cancelById = async (jobId: string) => {
+      const full = await getFullJobById(ctx, jobId);
+      const patch = {
         status: "canceled",
         error: "Stopped by the owner.",
         stopReason: "User cancellation",
@@ -206,38 +312,36 @@ export const cancelThreadJobs = internalMutation({
         runnerClaimed: false,
         completedAt: now,
         updatedAt: now,
-      });
-      canceledIds.add(row.jobId);
-    }
-
-    // A Stop click can race the browser's POST /api/jobs. Fence any known job
-    // IDs that are not in the database yet so a late-arriving create request
-    // becomes a harmless duplicate instead of resurrecting work after Stop.
-    for (const jobId of requestedIds) {
-      if (canceledIds.has(jobId)) continue;
-      const existing = await ctx.db
-        .query("aiJobs")
+      };
+      if (full && full.projectId === args.projectId && full.threadId === args.threadId) {
+        await patchFullJob(ctx, full, patch);
+        canceledIds.add(jobId);
+        return true;
+      }
+      const summary = await ctx.db
+        .query("aiJobSummaries")
         .withIndex("by_jobId", q => q.eq("jobId", jobId))
         .unique();
-      if (existing) {
-        if (existing.projectId === args.projectId && existing.threadId === args.threadId &&
-            (existing.status === "queued" || existing.status === "running")) {
-          await ctx.db.patch(existing._id, {
-            status: "canceled",
-            error: "Stopped by the owner.",
-            stopReason: "User cancellation",
-            resultText: "Stopped by the owner.",
-            cancelRequestedAt: now,
-            runnerClaimed: false,
-            completedAt: now,
-            updatedAt: now,
-          });
-          canceledIds.add(jobId);
-        }
-        continue;
+      if (summary && summary.projectId === args.projectId && summary.threadId === args.threadId) {
+        await ctx.db.patch(summary._id, patch);
+        canceledIds.add(jobId);
+        return true;
       }
+      return false;
+    };
 
-      await ctx.db.insert("aiJobs", {
+    for (const row of rows) {
+      if (row.status !== "queued" && row.status !== "running") continue;
+      await cancelById(row.jobId);
+    }
+
+    // Fence Stop against a job creation race. Requested IDs that are not yet
+    // persisted get a tiny canceled payload + summary so a late create is a duplicate.
+    for (const jobId of requestedIds) {
+      if (canceledIds.has(jobId)) continue;
+      if (await cancelById(jobId)) continue;
+
+      const canceledJob = {
         jobId,
         projectId: args.projectId,
         projectName: args.projectId,
@@ -257,7 +361,9 @@ export const cancelThreadJobs = internalMutation({
         cumulativeCostUsd: 0,
         jobStartedAt: now,
         completedAt: now,
-      });
+      };
+      await ctx.db.insert("aiJobs", canceledJob);
+      await syncJobSummary(ctx, canceledJob);
       canceledIds.add(jobId);
     }
 
@@ -283,7 +389,7 @@ export const completeJob = internalMutation({
     if (!row || row.status !== "running") return false;
     const expired = expiryReason(row, Date.now());
     if (expired) {
-      await ctx.db.patch(row._id, { status: "timed_out", error: expired, completedAt: Date.now(), updatedAt: Date.now() });
+      await patchFullJob(ctx, row, { status: "timed_out", error: expired, completedAt: Date.now(), updatedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.jobs.processThread, { projectId: row.projectId, threadId: row.threadId });
       return false;
     }
@@ -291,7 +397,7 @@ export const completeJob = internalMutation({
     const cumulativeCostUsd =
       Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: "completed",
       resultText: args.resultText,
       model: args.model || row.model,
@@ -321,7 +427,7 @@ export const failJob = internalMutation({
       .unique();
     if (!row || row.status !== "running") return false;
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: expiryReason(row, Date.now()) ? "timed_out" : "failed",
       error: args.error,
       completedAt: args.completedAt,
@@ -372,7 +478,7 @@ export const continueJobSlice = internalMutation({
         "Completed writes and checkpoints are preserved. Review the job before starting another continuation.",
       ].filter(Boolean).join("\n");
 
-      await ctx.db.patch(row._id, {
+      await patchFullJob(ctx, row, {
         status: "paused",
         resultText: finalText,
         error: limitReason,
@@ -393,7 +499,7 @@ export const continueJobSlice = internalMutation({
       return { continued: false, status: "paused", reason: limitReason, continuationCount: nextContinuationCount };
     }
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: "queued",
       resultText: args.resultText,
       error: undefined,
@@ -455,7 +561,7 @@ export const finalizeInterruptedJob = internalMutation({
     const cumulativeCostUsd =
       Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: row.status === "canceled" ? "canceled" : row.status === "timed_out" ? "timed_out" : status,
       resultText: args.resultText,
       error: args.stopReason,
@@ -711,14 +817,14 @@ export const controlJob = internalMutation({
     if (!row) return { status: "missing" };
     const reason = expiryReason(row, Date.now());
     if (reason) {
-      await ctx.db.patch(row._id, { status: "timed_out", error: reason, updatedAt: Date.now(), completedAt: Date.now() });
+      await patchFullJob(ctx, row, { status: "timed_out", error: reason, updatedAt: Date.now(), completedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.jobs.processThread, { projectId: row.projectId, threadId: row.threadId });
       return { status: "timed_out" };
     }
     if (row.status !== "running") return { status: row.status };
     if (claim && row.runnerClaimed) return { status: "duplicate" };
     if (!claim && !row.runnerClaimed) return { status: "unclaimed" };
-    await ctx.db.patch(row._id, { runnerClaimed: true, updatedAt: Date.now() });
+    await patchFullJob(ctx, row, { runnerClaimed: true, updatedAt: Date.now() });
     return { status: "running", deadlineAt: row.deadlineAt || (row.startedAt || row.updatedAt) + RUN_LIMIT_MS };
   },
 });
@@ -726,24 +832,32 @@ export const controlJob = internalMutation({
 export const reconcileJobs = internalMutation({
   args: {},
   handler: async (ctx) => {
-    // Bounded batches; subsequent watchdog ticks drain a large legacy backlog.
-    // Any stale queue/run we terminalize can have newer explicit work behind it,
-    // so wake each affected thread after removing the barrier.
-    const wake = new Map();
+    // Watchdog scans only small summary rows. Heavy requestJson/checkpoint payloads
+    // are loaded individually by jobId only when a stale row actually needs patching.
+    const wake = new Map<string, { projectId: string; threadId: string }>();
     const now = Date.now();
     for (const status of ["queued", "running"]) {
-      const rows = await ctx.db.query("aiJobs").withIndex("by_status", q => q.eq("status", status)).take(50);
-      for (const row of rows) {
-        const reason = expiryReason(row, now);
+      const rows = await ctx.db
+        .query("aiJobSummaries")
+        .withIndex("by_status", q => q.eq("status", status))
+        .take(100);
+      for (const summary of rows) {
+        const reason = expiryReason(summary, now);
         if (!reason) continue;
-        await ctx.db.patch(row._id, {
+        const patch = {
           status: "timed_out",
           error: reason,
           stopReason: reason,
           completedAt: now,
           updatedAt: now,
+        };
+        const full = await getFullJobById(ctx, summary.jobId);
+        if (full) await patchFullJob(ctx, full, patch);
+        else await ctx.db.patch(summary._id, patch);
+        wake.set(`${summary.projectId}\n${summary.threadId}`, {
+          projectId: summary.projectId,
+          threadId: summary.threadId,
         });
-        wake.set(`${row.projectId}\n${row.threadId}`, { projectId: row.projectId, threadId: row.threadId });
       }
     }
     for (const thread of wake.values()) {
