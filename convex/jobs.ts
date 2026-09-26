@@ -289,15 +289,18 @@ export const cancelThreadJobs = internalMutation({
     jobIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const rows = (await Promise.all(["queued", "running"].map(status => ctx.db.query("aiJobs")
-      .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status)).collect()))).flat();
+    const rows = (await Promise.all(["queued", "running"].map(status =>
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
+        .collect()
+    ))).flat();
     const now = Date.now();
     const requestedIds = new Set((args.jobIds || []).map((id) => String(id || "").trim()).filter(Boolean));
-    const canceledIds = new Set();
+    const canceledIds = new Set<string>();
 
-    for (const row of rows) {
-      if (row.status !== "queued" && row.status !== "running") continue;
-      await ctx.db.patch(row._id, {
+    const cancelById = async (jobId: string) => {
+      const full = await getFullJobById(ctx, jobId);
+      const patch = {
         status: "canceled",
         error: "Stopped by the owner.",
         stopReason: "User cancellation",
@@ -306,38 +309,36 @@ export const cancelThreadJobs = internalMutation({
         runnerClaimed: false,
         completedAt: now,
         updatedAt: now,
-      });
-      canceledIds.add(row.jobId);
-    }
-
-    // A Stop click can race the browser's POST /api/jobs. Fence any known job
-    // IDs that are not in the database yet so a late-arriving create request
-    // becomes a harmless duplicate instead of resurrecting work after Stop.
-    for (const jobId of requestedIds) {
-      if (canceledIds.has(jobId)) continue;
-      const existing = await ctx.db
-        .query("aiJobs")
+      };
+      if (full && full.projectId === args.projectId && full.threadId === args.threadId) {
+        await patchFullJob(ctx, full, patch);
+        canceledIds.add(jobId);
+        return true;
+      }
+      const summary = await ctx.db
+        .query("aiJobSummaries")
         .withIndex("by_jobId", q => q.eq("jobId", jobId))
         .unique();
-      if (existing) {
-        if (existing.projectId === args.projectId && existing.threadId === args.threadId &&
-            (existing.status === "queued" || existing.status === "running")) {
-          await ctx.db.patch(existing._id, {
-            status: "canceled",
-            error: "Stopped by the owner.",
-            stopReason: "User cancellation",
-            resultText: "Stopped by the owner.",
-            cancelRequestedAt: now,
-            runnerClaimed: false,
-            completedAt: now,
-            updatedAt: now,
-          });
-          canceledIds.add(jobId);
-        }
-        continue;
+      if (summary && summary.projectId === args.projectId && summary.threadId === args.threadId) {
+        await ctx.db.patch(summary._id, patch);
+        canceledIds.add(jobId);
+        return true;
       }
+      return false;
+    };
 
-      await ctx.db.insert("aiJobs", {
+    for (const row of rows) {
+      if (row.status !== "queued" && row.status !== "running") continue;
+      await cancelById(row.jobId);
+    }
+
+    // Fence Stop against a job creation race. Requested IDs that are not yet
+    // persisted get a tiny canceled payload + summary so a late create is a duplicate.
+    for (const jobId of requestedIds) {
+      if (canceledIds.has(jobId)) continue;
+      if (await cancelById(jobId)) continue;
+
+      const canceledJob = {
         jobId,
         projectId: args.projectId,
         projectName: args.projectId,
@@ -357,7 +358,9 @@ export const cancelThreadJobs = internalMutation({
         cumulativeCostUsd: 0,
         jobStartedAt: now,
         completedAt: now,
-      });
+      };
+      await ctx.db.insert("aiJobs", canceledJob);
+      await syncJobSummary(ctx, canceledJob);
       canceledIds.add(jobId);
     }
 
