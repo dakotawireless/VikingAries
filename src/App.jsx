@@ -1793,12 +1793,17 @@ function ChatWorkspace({ project, active = true }) {
       }));
 
     if (attachments.length && requestMessages.length) {
-      requestMessages[requestMessages.length - 1].attachments = attachments.map((item) => ({
-        kind: item.kind || "file",
-        name: item.name || "Attachment",
-        type: item.type || "application/octet-stream",
-        dataUrl: item.dataUrl,
-      }));
+      const binaryAttachments = attachments
+        .filter((item) => !isVideoAttachment(item) && typeof item?.dataUrl === "string" && item.dataUrl)
+        .map((item) => ({
+          kind: item.kind || "file",
+          name: item.name || "Attachment",
+          type: item.type || "application/octet-stream",
+          dataUrl: item.dataUrl,
+        }));
+      if (binaryAttachments.length) {
+        requestMessages[requestMessages.length - 1].attachments = binaryAttachments;
+      }
     }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
