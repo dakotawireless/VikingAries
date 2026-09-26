@@ -54,6 +54,41 @@ export default defineSchema({
     .index("by_project_thread_updatedAt", ["projectId", "threadId", "updatedAt"])
     .index("by_thread_updatedAt", ["threadId", "updatedAt"]),
 
+  aiJobSummaries: defineTable({
+    jobId: v.string(),
+    projectId: v.string(),
+    projectName: v.string(),
+    threadId: v.string(),
+    threadTitle: v.string(),
+    userMessageId: v.optional(v.string()),
+    userMessageContent: v.optional(v.string()),
+    status: v.string(),
+    resultText: v.optional(v.string()),
+    error: v.optional(v.string()),
+    model: v.optional(v.string()),
+    responseId: v.optional(v.string()),
+    stopReason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    cancelRequestedAt: v.optional(v.number()),
+    deadlineAt: v.optional(v.number()),
+    lifecycleVersion: v.optional(v.number()),
+    continuationCount: v.optional(v.number()),
+    cumulativeCostUsd: v.optional(v.number()),
+    jobStartedAt: v.optional(v.number()),
+    maxContinuations: v.optional(v.number()),
+    maxJobCostUsd: v.optional(v.number()),
+    maxJobElapsedMs: v.optional(v.number()),
+    workBranch: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_project_thread_status", ["projectId", "threadId", "status"])
+    .index("by_project_updatedAt", ["projectId", "updatedAt"])
+    .index("by_project_thread_updatedAt", ["projectId", "threadId", "updatedAt"]),
+
   projectFiles: defineTable({
     projectId: v.string(),
     name: v.string(),
