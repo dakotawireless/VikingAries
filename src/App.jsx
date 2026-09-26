@@ -1284,7 +1284,30 @@ function ChatWorkspace({ project, active = true }) {
     "";
 
   useEffect(() => {
-    window.localStorage.setItem(`viking-aries-chats:${project.id}`, JSON.stringify(threads));
+    const storageKey = `viking-aries-chats:${project.id}`;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(threads));
+    } catch {
+      // A previous image-heavy conversation can fill mobile localStorage. Do
+      // not let persistence failure blank the entire app when a video is sent;
+      // retain the conversation text and lightweight attachment metadata while
+      // dropping only inline binary previews from the browser cache.
+      try {
+        const compactThreads = threads.map((thread) => ({
+          ...thread,
+          messages: (thread.messages || []).map((message) => ({
+            ...message,
+            attachments: Array.isArray(message.attachments)
+              ? message.attachments.map(({ dataUrl, thumbnailDataUrl, fullDataUrl, ...item }) => item)
+              : message.attachments,
+            fullSizeImage: "",
+          })),
+        }));
+        window.localStorage.setItem(storageKey, JSON.stringify(compactThreads));
+      } catch {
+        // Browser storage is optional; keep the live in-memory conversation usable.
+      }
+    }
   }, [project.id, threads]);
 
   useEffect(() => {
