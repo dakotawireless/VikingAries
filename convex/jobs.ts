@@ -23,6 +23,65 @@ function workBranchForJob(jobId: string) {
   return `aries/task/${safe || "job"}`;
 }
 
+function clipSummaryText(value: unknown, max: number) {
+  if (typeof value !== "string") return undefined;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function jobSummary(job: any) {
+  return {
+    jobId: job.jobId,
+    projectId: job.projectId,
+    projectName: job.projectName,
+    threadId: job.threadId,
+    threadTitle: clipSummaryText(job.threadTitle, 240) || "Untitled chat",
+    userMessageId: clipSummaryText(job.userMessageId, 180),
+    userMessageContent: clipSummaryText(job.userMessageContent, 24000),
+    status: job.status,
+    resultText: clipSummaryText(job.resultText, 120000),
+    error: clipSummaryText(job.error, 24000),
+    model: clipSummaryText(job.model, 160),
+    responseId: clipSummaryText(job.responseId, 240),
+    stopReason: clipSummaryText(job.stopReason, 24000),
+    createdAt: Number(job.createdAt || Date.now()),
+    updatedAt: Number(job.updatedAt || job.createdAt || Date.now()),
+    startedAt: job.startedAt,
+    cancelRequestedAt: job.cancelRequestedAt,
+    deadlineAt: job.deadlineAt,
+    lifecycleVersion: job.lifecycleVersion,
+    continuationCount: job.continuationCount,
+    cumulativeCostUsd: job.cumulativeCostUsd,
+    jobStartedAt: job.jobStartedAt,
+    maxContinuations: job.maxContinuations,
+    maxJobCostUsd: job.maxJobCostUsd,
+    maxJobElapsedMs: job.maxJobElapsedMs,
+    workBranch: clipSummaryText(job.workBranch, 240),
+    completedAt: job.completedAt,
+  };
+}
+
+async function syncJobSummary(ctx: any, job: any) {
+  const summary = jobSummary(job);
+  const existing = await ctx.db
+    .query("aiJobSummaries")
+    .withIndex("by_jobId", (q: any) => q.eq("jobId", summary.jobId))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, summary);
+  } else {
+    await ctx.db.insert("aiJobSummaries", summary);
+  }
+}
+
+async function getFullJobById(ctx: any, jobId: string) {
+  return ctx.db.query("aiJobs").withIndex("by_jobId", (q: any) => q.eq("jobId", jobId)).unique();
+}
+
+async function patchFullJob(ctx: any, row: any, patch: Record<string, unknown>) {
+  await ctx.db.patch(row._id, patch);
+  await syncJobSummary(ctx, { ...row, ...patch });
+}
+
 export const createJob = internalMutation({
   args: {
     jobId: v.string(),
