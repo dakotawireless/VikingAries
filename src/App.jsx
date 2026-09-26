@@ -2167,10 +2167,7 @@ function ChatWorkspace({ project, active = true }) {
             name: file.name || "Photo",
             type: file.type || "image/jpeg",
           });
-        } else if (
-          file.type.startsWith("video/") ||
-          /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(file.name || "")
-        ) {
+        } else if (isVideoFile(file)) {
           // Videos are metadata-only chat attachments. Never read video bytes
           // into a data URL: a phone recording can exhaust memory/localStorage
           // and crash the page when the request is serialized on Send.
