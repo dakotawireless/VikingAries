@@ -719,7 +719,7 @@ function ChatAttachmentCard({ message, onImageOpen }) {
             )}
             <span className="chat-file-copy">
               <strong>{item.name || "Attachment"}</strong>
-              <small>{isPdf ? "PDF document" : isImage ? "Image" : item.type || "File"} · available to Viking Aries</small>
+              <small>{isPdf ? "PDF document" : isVideo ? "Video file" : isImage ? "Image" : item.type || "File"} · {isVideo ? "stored in Files & Media" : "available to Viking Aries"}</small>
             </span>
           </div>
         );
