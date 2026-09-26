@@ -2450,7 +2450,7 @@ function ChatWorkspace({ project, active = true }) {
             handleSelectedAttachments(event.target.files);
             event.target.value = "";
           }} />
-          <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
+          <input ref={fileInputRef} type="file" multiple accept="video/*,.txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
             handleSelectedAttachments(event.target.files);
             event.target.value = "";
           }} />
