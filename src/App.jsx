@@ -699,6 +699,7 @@ function ChatAttachmentCard({ message, onImageOpen }) {
       {items.map((item, index) => {
         const isImage = item.kind === "image" || String(item.type || "").startsWith("image/");
         const isPdf = item.kind === "pdf" || item.type === "application/pdf";
+        const isVideo = item.kind === "video" || String(item.type || "").startsWith("video/");
         const preview = item.fullDataUrl || item.dataUrl || "";
         return (
           <div className="chat-file-attachment" key={`${item.name || "attachment"}-${index}`}>
