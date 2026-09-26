@@ -53,6 +53,7 @@ import {
   TerminalSquare,
   UserRound,
   Users,
+  Video,
   WandSparkles,
   Workflow,
   X,
@@ -656,7 +657,7 @@ function attachmentMetaFromContent(content) {
   return {
     name,
     type,
-    kind: type === "application/pdf" ? "pdf" : type.startsWith("image/") ? "image" : "file",
+    kind: type === "application/pdf" ? "pdf" : type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video" : "file",
   };
 }
 
@@ -681,7 +682,7 @@ function ChatAttachmentCard({ message, onImageOpen }) {
         : [];
   const contentMeta = attachmentMetaFromContent(message.content);
 
-  const items = storedItems.length
+  const items = (storedItems.length
     ? storedItems
     : metadataItems.length
       ? metadataItems.map((item) => ({
@@ -690,18 +691,26 @@ function ChatAttachmentCard({ message, onImageOpen }) {
         }))
       : contentMeta
         ? [{ ...contentMeta, fullDataUrl: message.fullSizeImage || "" }]
-        : [];
+        : [])
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      kind: item.kind || (isVideoAttachment(item) ? "video" : "file"),
+      name: String(item.name || "Attachment"),
+      type: String(item.type || "application/octet-stream"),
+      fullDataUrl: typeof item.fullDataUrl === "string" ? item.fullDataUrl : "",
+      dataUrl: typeof item.dataUrl === "string" ? item.dataUrl : "",
+    }));
 
   if (!items.length) return null;
 
   return (
     <div className="chat-file-attachments" aria-label={`${items.length} attached file${items.length === 1 ? "" : "s"}`}>
       {items.map((item, index) => {
-        const isImage = item.kind === "image" || String(item.type || "").startsWith("image/");
+        const isImage = item.kind === "image" || item.type.startsWith("image/");
         const isPdf = item.kind === "pdf" || item.type === "application/pdf";
         const preview = item.fullDataUrl || item.dataUrl || "";
         return (
-          <div className="chat-file-attachment" key={`${item.name || "attachment"}-${index}`}>
+          <div className="chat-file-attachment" key={`${item.name}-${index}`}>
             {isImage && preview ? (
               <button
                 className="chat-file-image-preview"
@@ -717,7 +726,7 @@ function ChatAttachmentCard({ message, onImageOpen }) {
               </span>
             )}
             <span className="chat-file-copy">
-              <strong>{item.name || "Attachment"}</strong>
+              <strong>{item.name}</strong>
               <small>{isPdf ? "PDF document" : isImage ? "Image" : item.type || "File"} · available to Viking Aries</small>
             </span>
           </div>
@@ -766,24 +775,57 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
   return parts;
 }
 
+function isVideoAttachment(item) {
+  const type = String(item?.type || "").toLowerCase();
+  return item?.kind === "video" || type.startsWith("video/") ||
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(String(item?.name || ""));
+}
+
+function isVideoFile(file) {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "");
+  return type.startsWith("video/") ||
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(name);
+}
+
+function compactPersistedThreads(value) {
+  return (Array.isArray(value) ? value : []).map((thread) => ({
+    ...thread,
+    messages: (Array.isArray(thread?.messages) ? thread.messages : []).map((message) => ({
+      ...message,
+      content:
+        typeof message?.content === "string"
+          ? sanitizeLegacyAttachmentContent(message.content)
+          : message?.content,
+      attachments: Array.isArray(message?.attachments)
+        ? message.attachments.map((item) =>
+            isVideoAttachment(item)
+              ? {
+                  kind: "video",
+                  name: item?.name || "Video",
+                  type: item?.type || "video/*",
+                }
+              : item
+          )
+        : message?.attachments,
+      attachmentMeta: Array.isArray(message?.attachmentMeta)
+        ? message.attachmentMeta.map((item) => ({
+            kind: item?.kind || (isVideoAttachment(item) ? "video" : "file"),
+            name: item?.name || "Attachment",
+            type: item?.type || "application/octet-stream",
+          }))
+        : message?.attachmentMeta,
+    })),
+  }));
+}
+
 function loadProjectThreads(projectId) {
   try {
     const saved = window.localStorage.getItem(`viking-aries-chats:${projectId}`);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length) {
-        return parsed.map((thread) => ({
-          ...thread,
-          messages: Array.isArray(thread.messages)
-            ? thread.messages.map((message) => ({
-                ...message,
-                content:
-                  typeof message?.content === "string"
-                    ? sanitizeLegacyAttachmentContent(message.content)
-                    : message?.content,
-              }))
-            : [],
-        }));
+        return compactPersistedThreads(parsed);
       }
       if (Array.isArray(parsed) && parsed.length === 0) {
         return [{ id: `chat-${Date.now()}`, title: "New Chat", messages: [] }];
@@ -1236,7 +1278,30 @@ function ChatWorkspace({ project, active = true }) {
     "";
 
   useEffect(() => {
-    window.localStorage.setItem(`viking-aries-chats:${project.id}`, JSON.stringify(threads));
+    try {
+      window.localStorage.setItem(
+        `viking-aries-chats:${project.id}`,
+        JSON.stringify(compactPersistedThreads(threads))
+      );
+    } catch {
+      // A large legacy attachment must never take down the chat surface.
+      try {
+        const textOnly = compactPersistedThreads(threads).map((thread) => ({
+          ...thread,
+          messages: thread.messages.map((message) => ({
+            ...message,
+            attachments: undefined,
+            attachmentMeta: undefined,
+          })),
+        }));
+        window.localStorage.setItem(
+          `viking-aries-chats:${project.id}`,
+          JSON.stringify(textOnly)
+        );
+      } catch {
+        // Keep the current conversation usable even when browser storage is full.
+      }
+    }
   }, [project.id, threads]);
 
   useEffect(() => {
@@ -1690,6 +1755,22 @@ function ChatWorkspace({ project, active = true }) {
     // selected a recommendation or manually chose a higher-cost model.
     setSelectedModel(VA_AUTO_MODEL);
 
+    const attachmentMetadata = attachments.map((item) => ({
+      kind: item.kind || "file",
+      name: item.name || "Attachment",
+      type: item.type || "application/octet-stream",
+    }));
+    const persistedAttachments = attachments
+      .filter((item) => !isVideoAttachment(item))
+      .map((item) => ({
+        kind: item.kind || "file",
+        name: item.name || "Attachment",
+        type: item.type || "application/octet-stream",
+        ...(typeof item.dataUrl === "string" && item.dataUrl ? { dataUrl: item.dataUrl } : {}),
+        ...(item.thumbnailDataUrl ? { thumbnailDataUrl: item.thumbnailDataUrl } : {}),
+        ...(item.fullDataUrl ? { fullDataUrl: item.fullDataUrl } : {}),
+      }));
+
     const userMessage = {
       id: `user-${jobId}`,
       jobId,
@@ -1698,19 +1779,8 @@ function ChatWorkspace({ project, active = true }) {
       content,
       ...(attachments.length
         ? {
-            attachmentMeta: attachments.map((item) => ({
-              kind: item.kind || "file",
-              name: item.name || "Attachment",
-              type: item.type || "application/octet-stream",
-            })),
-            attachments: attachments.map((item) => ({
-              kind: item.kind || "file",
-              name: item.name || "Attachment",
-              type: item.type || "application/octet-stream",
-              dataUrl: item.dataUrl,
-              thumbnailDataUrl: item.thumbnailDataUrl || "",
-              fullDataUrl: item.fullDataUrl || "",
-            })),
+            attachmentMeta: attachmentMetadata,
+            ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
           }
         : {}),
       timestamp: formatChatTime(),
@@ -1735,12 +1805,17 @@ function ChatWorkspace({ project, active = true }) {
       }));
 
     if (attachments.length && requestMessages.length) {
-      requestMessages[requestMessages.length - 1].attachments = attachments.map((item) => ({
-        kind: item.kind || "file",
-        name: item.name || "Attachment",
-        type: item.type || "application/octet-stream",
-        dataUrl: item.dataUrl,
-      }));
+      const binaryAttachments = attachments
+        .filter((item) => !isVideoAttachment(item) && typeof item?.dataUrl === "string" && item.dataUrl)
+        .map((item) => ({
+          kind: item.kind || "file",
+          name: item.name || "Attachment",
+          type: item.type || "application/octet-stream",
+          dataUrl: item.dataUrl,
+        }));
+      if (binaryAttachments.length) {
+        requestMessages[requestMessages.length - 1].attachments = binaryAttachments;
+      }
     }
 
     const integrationMappings = loadProjectIntegrationMappings(project);
@@ -2109,6 +2184,15 @@ function ChatWorkspace({ project, active = true }) {
             name: file.name || "Photo",
             type: file.type || "image/jpeg",
           });
+        } else if (isVideoFile(file)) {
+          // Videos are metadata-only chat attachments. Never read video bytes
+          // into a data URL: a phone recording can exhaust memory/localStorage
+          // and crash the page when the request is serialized on Send.
+          prepared.push({
+            kind: "video",
+            name: file.name || "Video",
+            type: file.type || "video/*",
+          });
         } else if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
           prepared.push({
             kind: "pdf",
@@ -2439,7 +2523,7 @@ function ChatWorkspace({ project, active = true }) {
             handleSelectedAttachments(event.target.files);
             event.target.value = "";
           }} />
-          <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
+          <input ref={fileInputRef} type="file" multiple accept="video/*,.txt,.md,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.log,.pdf,.doc,.docx,application/pdf,text/*" hidden onChange={(event) => {
             handleSelectedAttachments(event.target.files);
             event.target.value = "";
           }} />

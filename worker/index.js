@@ -2736,10 +2736,19 @@ function expandAttachmentMarkers(messages) {
           : [];
 
       for (const item of structuredAttachments) {
-        if (!item?.dataUrl) continue;
+        // Video attachments are metadata-only in chat. A legacy browser build
+        // may still have a video data URL in localStorage; never forward those
+        // bytes to OpenAI because input_file does not represent playable video
+        // chat input and the oversized payload can terminate the mobile page.
+        const itemType = String(item?.type || "").toLowerCase();
+        const itemName = String(item?.name || "");
+        const isVideo = item?.kind === "video" ||
+          itemType.startsWith("video/") ||
+          /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(itemName);
+        if (isVideo || !item?.dataUrl) continue;
         attachments.push({
-          filename: String(item.name || "attached").slice(0, 180),
-          type: String(item.type || "application/octet-stream").slice(0, 180),
+          filename: itemName.slice(0, 180) || "attached",
+          type: itemType.slice(0, 180) || "application/octet-stream",
           dataUrl: String(item.dataUrl),
         });
       }
@@ -2752,6 +2761,19 @@ function expandAttachmentMarkers(messages) {
       (_match, encodedName, type, dataUrl) => {
         let filename = "attached";
         try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
+
+        // Legacy mobile builds could persist video bytes inside the text marker.
+        // Never turn those bytes back into an input_file on a later send. Keep a
+        // small filename reference instead so a stale chat cannot recreate the
+        // crash this metadata-only flow is designed to prevent.
+        const normalizedType = String(type || "").toLowerCase();
+        const videoMarker = normalizedType.startsWith("video/") ||
+          /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(filename);
+        if (videoMarker) {
+          return isCurrentUserMessage
+            ? `[Attached video: ${filename}]`
+            : `[Previously attached video: ${filename}]`;
+        }
 
         if (isCurrentUserMessage) {
           attachments.push({ filename, type, dataUrl });
@@ -2793,7 +2815,13 @@ function expandAttachmentMarkers(messages) {
       (_match, encodedName) => {
         let filename = "attachment";
         try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
-        return isCurrentUserMessage ? "" : `[Previously attached file: ${filename}]`;
+        // Metadata-only files, especially videos from phones, must remain a
+        // valid text-only user message. Removing the marker entirely can leave
+        // a video-only submission with an empty request and trigger a failed
+        // queue/run path.
+        return isCurrentUserMessage
+          ? `[Attached file: ${filename}]`
+          : `[Previously attached file: ${filename}]`;
       }
     ).trim();
 
