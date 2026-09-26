@@ -2143,10 +2143,11 @@ function ChatWorkspace({ project, active = true }) {
             name: file.name || "Photo",
             type: file.type || "image/jpeg",
           });
-        } else if (file.type.startsWith("video/")) {
+        } else if (isVideoAttachment(file)) {
           // Videos are private Files & Media assets, not inline chat payloads.
           // Keeping only the returned metadata prevents data URLs from entering
-          // localStorage or the Responses API request body.
+          // localStorage or the Responses API request body. This branch also
+          // catches mobile camera-roll files whose MIME type is blank/generic.
           const stored = await uploadChatFileToMedia(file);
           prepared.push({
             kind: "video",
