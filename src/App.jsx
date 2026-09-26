@@ -2782,10 +2782,16 @@ function VikingAriesApp({ onLogout, authConfigured }) {
         !embeddedPreview &&
         (widthQuery.matches || narrowVisualViewport || touchQuery.matches || mobileUserAgent);
 
+      const enteredMobileUi = nextMobileUi && !previousMobileUiRef.current;
+      previousMobileUiRef.current = nextMobileUi;
       setMobileUi(nextMobileUi);
       document.documentElement.classList.toggle("va-mobile-device", nextMobileUi);
 
-      if (nextMobileUi) {
+      // Only collapse an expanded preview when the device actually transitions
+      // into mobile mode. The visual viewport also resizes when a phone opens
+      // its keyboard; collapsing here would send the owner back to chat exactly
+      // when they tap a field inside the preview.
+      if (enteredMobileUi) {
         setPreviewExpanded(false);
         setMobileSidebarOpen(false);
       }
