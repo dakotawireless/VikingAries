@@ -2736,10 +2736,19 @@ function expandAttachmentMarkers(messages) {
           : [];
 
       for (const item of structuredAttachments) {
-        if (!item?.dataUrl) continue;
+        // Video attachments are metadata-only in chat. A legacy browser build
+        // may still have a video data URL in localStorage; never forward those
+        // bytes to OpenAI because input_file does not represent playable video
+        // chat input and the oversized payload can terminate the mobile page.
+        const itemType = String(item?.type || "").toLowerCase();
+        const itemName = String(item?.name || "");
+        const isVideo = item?.kind === "video" ||
+          itemType.startsWith("video/") ||
+          /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(itemName);
+        if (isVideo || !item?.dataUrl) continue;
         attachments.push({
-          filename: String(item.name || "attached").slice(0, 180),
-          type: String(item.type || "application/octet-stream").slice(0, 180),
+          filename: itemName.slice(0, 180) || "attached",
+          type: itemType.slice(0, 180) || "application/octet-stream",
           dataUrl: String(item.dataUrl),
         });
       }
