@@ -1072,6 +1072,16 @@ function formatAttachmentSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isVideoAttachment(file) {
+  const type = String(file?.type || "").toLowerCase();
+  if (type.startsWith("video/")) return true;
+
+  // Some mobile browsers leave File.type empty or report a generic type for
+  // camera-roll videos. Never fall through to read those bytes as a data URL.
+  const name = String(file?.name || "").toLowerCase();
+  return /\.(mp4|mov|m4v|webm|avi|mkv|3gp|3g2|mpeg|mpg|ogv|wmv)$/i.test(name);
+}
+
 function imageCanvasDataUrl(image, maxDimension, quality) {
   const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
   const canvas = document.createElement("canvas");
