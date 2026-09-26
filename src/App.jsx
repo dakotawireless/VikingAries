@@ -1264,7 +1264,30 @@ function ChatWorkspace({ project, active = true }) {
     "";
 
   useEffect(() => {
-    window.localStorage.setItem(`viking-aries-chats:${project.id}`, JSON.stringify(threads));
+    try {
+      window.localStorage.setItem(
+        `viking-aries-chats:${project.id}`,
+        JSON.stringify(compactPersistedThreads(threads))
+      );
+    } catch {
+      // A large legacy attachment must never take down the chat surface.
+      try {
+        const textOnly = compactPersistedThreads(threads).map((thread) => ({
+          ...thread,
+          messages: thread.messages.map((message) => ({
+            ...message,
+            attachments: undefined,
+            attachmentMeta: undefined,
+          })),
+        }));
+        window.localStorage.setItem(
+          `viking-aries-chats:${project.id}`,
+          JSON.stringify(textOnly)
+        );
+      } catch {
+        // Keep the current conversation usable even when browser storage is full.
+      }
+    }
   }, [project.id, threads]);
 
   useEffect(() => {
