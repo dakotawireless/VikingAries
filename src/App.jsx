@@ -1751,18 +1751,25 @@ function ChatWorkspace({ project, active = true }) {
               name: item.name || "Attachment",
               type: item.type || "application/octet-stream",
             })),
-            attachments: attachments.map((item) => ({
-              kind: item.kind || "file",
-              name: item.name || "Attachment",
-              type: item.type || "application/octet-stream",
-              ...(item.kind === "video"
-                ? { mediaFileId: item.mediaFileId || "", size: item.size || 0 }
-                : {
-                    dataUrl: item.dataUrl,
-                    thumbnailDataUrl: item.thumbnailDataUrl || "",
-                    fullDataUrl: item.fullDataUrl || "",
-                  }),
-            })),
+            // Keep video uploads out of the persisted message attachment array.
+            // They are already stored privately in Files & Media, and retaining
+            // a second video-shaped object here made some mobile browsers fail
+            // while reconciling/localizing the chat state after Send. The
+            // attachmentMeta entry is enough to render the filename/type.
+            ...(attachments.some((item) => item.kind !== "video")
+              ? {
+                  attachments: attachments
+                    .filter((item) => item.kind !== "video")
+                    .map((item) => ({
+                      kind: item.kind || "file",
+                      name: item.name || "Attachment",
+                      type: item.type || "application/octet-stream",
+                      dataUrl: item.dataUrl,
+                      thumbnailDataUrl: item.thumbnailDataUrl || "",
+                      fullDataUrl: item.fullDataUrl || "",
+                    })),
+                }
+              : {}),
           }
         : {}),
       timestamp: formatChatTime(),
