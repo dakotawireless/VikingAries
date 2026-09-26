@@ -657,7 +657,7 @@ function attachmentMetaFromContent(content) {
   return {
     name,
     type,
-    kind: type === "application/pdf" ? "pdf" : type.startsWith("image/") ? "image" : "file",
+    kind: type === "application/pdf" ? "pdf" : type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video" : "file",
   };
 }
 
