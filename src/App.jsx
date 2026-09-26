@@ -2764,6 +2764,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     const coarsePointer = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
     return !embeddedPreview && (narrowVisualViewport || coarsePointer || mobileUserAgent);
   });
+  const previousMobileUiRef = useRef(mobileUi);
 
   useEffect(() => {
     const widthQuery = window.matchMedia("(max-width: 900px)");
