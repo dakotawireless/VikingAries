@@ -1164,6 +1164,18 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function uploadChatFileToMedia(file) {
+  const form = new FormData();
+  form.append("projectId", "viking-aries");
+  form.append("file", file, file.name);
+  const response = await fetch("/api/files/upload", { method: "POST", body: form });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.file) {
+    throw new Error(payload.error || `Could not store ${file.name || "that video"} in Files & Media.`);
+  }
+  return payload.file;
+}
+
 function ChatWorkspace({ project, active = true }) {
   const [threads, setThreads] = useState(() => loadProjectThreads(project.id));
   const [activeThreadId, setActiveThreadId] = useState(() => {
