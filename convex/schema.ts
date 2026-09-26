@@ -84,6 +84,7 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_jobId", ["jobId"])
+    .index("by_status", ["status"])
     .index("by_project_status", ["projectId", "status"])
     .index("by_project_thread_status", ["projectId", "threadId", "status"])
     .index("by_project_updatedAt", ["projectId", "updatedAt"])
