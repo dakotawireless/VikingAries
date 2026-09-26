@@ -109,7 +109,7 @@ test('durable job continuation guardrails are separate from per-run expiry', () 
     continuationCount: 0,
     cumulativeCostUsd: 0,
   };
-  assert.equal(DEFAULT_JOB_MAX_CONTINUATIONS, 6);
+  assert.equal(DEFAULT_JOB_MAX_CONTINUATIONS, 12);
   assert.equal(DEFAULT_JOB_MAX_COST_USD, 3);
   assert.equal(DEFAULT_JOB_MAX_ELAPSED_MS, 30 * 60 * 1000);
   assert.equal(jobContinuationLimitReason(job, {

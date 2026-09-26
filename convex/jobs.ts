@@ -717,6 +717,12 @@ export const processThread = internalAction({
       const checkpointJson = JSON.stringify({
         text: String(payload?.text || ""),
         diagnostics,
+        completedOperations: Array.isArray(diagnostics?.completedOperations)
+          ? diagnostics.completedOperations.slice(-40)
+          : [],
+        writes: Array.isArray(diagnostics?.writes)
+          ? diagnostics.writes.slice(-20)
+          : [],
         actionReceipts: Array.isArray(payload?.actionReceipts)
           ? payload.actionReceipts.slice(-30)
           : [],

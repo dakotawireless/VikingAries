@@ -110,7 +110,7 @@ test('duplicate submission by job or message ID schedules only once',async()=>{
  assert.equal(rows[0].continuationCount,0);
  assert.equal(rows[0].cumulativeCostUsd,0);
  assert.match(rows[0].workBranch,/^aries\/task\//);
- assert.equal(rows[0].maxContinuations,6);
+ assert.equal(rows[0].maxContinuations,12);
  assert.equal(rows[0].maxJobCostUsd,3);
 });
 test('successful completion schedules next job atomically and cannot later fail',async()=>{

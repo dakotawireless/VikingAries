@@ -5169,8 +5169,46 @@ const worker = {
     } else if (body?.durableCheckpoint && typeof body.durableCheckpoint === "object") {
       suppliedCheckpoint = body.durableCheckpoint;
     }
-    const priorRecoveryCheckpoint = continuationRequested
-      ? suppliedCheckpoint || await readRecoveryCheckpoint(env, projectId, threadId)
+    const storedCheckpoint = continuationRequested
+      ? await readRecoveryCheckpoint(env, projectId, threadId)
+      : null;
+    const checkpointOperations = [
+      ...(Array.isArray(storedCheckpoint?.completedOperations)
+        ? storedCheckpoint.completedOperations
+        : Array.isArray(storedCheckpoint?.diagnostics?.completedOperations)
+          ? storedCheckpoint.diagnostics.completedOperations
+          : []),
+      ...(Array.isArray(suppliedCheckpoint?.completedOperations)
+        ? suppliedCheckpoint.completedOperations
+        : Array.isArray(suppliedCheckpoint?.diagnostics?.completedOperations)
+          ? suppliedCheckpoint.diagnostics.completedOperations
+          : []),
+    ].slice(-40);
+    const checkpointWrites = [
+      ...(Array.isArray(storedCheckpoint?.writes)
+        ? storedCheckpoint.writes
+        : Array.isArray(storedCheckpoint?.diagnostics?.writes)
+          ? storedCheckpoint.diagnostics.writes
+          : []),
+      ...(Array.isArray(suppliedCheckpoint?.writes)
+        ? suppliedCheckpoint.writes
+        : Array.isArray(suppliedCheckpoint?.diagnostics?.writes)
+          ? suppliedCheckpoint.diagnostics.writes
+          : []),
+    ].slice(-20);
+    const priorRecoveryCheckpoint = continuationRequested && (suppliedCheckpoint || storedCheckpoint)
+      ? {
+          ...(storedCheckpoint || {}),
+          ...(suppliedCheckpoint || {}),
+          completedOperations: checkpointOperations,
+          writes: checkpointWrites,
+          diagnostics: {
+            ...(storedCheckpoint?.diagnostics || {}),
+            ...(suppliedCheckpoint?.diagnostics || {}),
+            completedOperations: checkpointOperations,
+            writes: checkpointWrites,
+          },
+        }
       : null;
 
     // Generate one authoritative clock snapshot at the start of every run.
@@ -5533,6 +5571,9 @@ const worker = {
           provider: "OpenAI",
           model,
           writesOccurred: (state.writes || []).length > 0,
+          completedOperations: (state.completedOperations || []).slice(-40),
+          writes: (state.writes || []).slice(-20),
+          request: state.request || null,
           validation: state.validation || null,
           pendingCompletionText: state.pendingCompletionText || null,
           deployment: state.deployment || null,

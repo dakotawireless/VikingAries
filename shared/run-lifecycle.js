@@ -12,7 +12,7 @@ export const LEGACY_QUEUE_GRACE_MS = 5 * 60 * 1000;
 
 // A durable job may span several bounded Worker invocations. These are job-level
 // guardrails, separate from the per-invocation request/tool/cost ceilings.
-export const DEFAULT_JOB_MAX_CONTINUATIONS = 6;
+export const DEFAULT_JOB_MAX_CONTINUATIONS = 12;
 export const DEFAULT_JOB_MAX_COST_USD = 3.00;
 export const DEFAULT_JOB_MAX_ELAPSED_MS = 30 * 60 * 1000;
 
