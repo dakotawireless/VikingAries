@@ -771,7 +771,14 @@ function renderChatContent(content, onImageOpen, fullSizeImage = "") {
 function isVideoAttachment(item) {
   const type = String(item?.type || "").toLowerCase();
   return item?.kind === "video" || type.startsWith("video/") ||
-    /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(String(item?.name || ""));
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(String(item?.name || ""));
+}
+
+function isVideoFile(file) {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "");
+  return type.startsWith("video/") ||
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(name);
 }
 
 function compactPersistedThreads(value) {
