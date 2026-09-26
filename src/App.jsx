@@ -2111,6 +2111,15 @@ function ChatWorkspace({ project, active = true }) {
             name: file.name || "Photo",
             type: file.type || "image/jpeg",
           });
+        } else if (file.type.startsWith("video/")) {
+          // Videos are metadata-only chat attachments. Never read video bytes
+          // into a data URL: a phone recording can exhaust memory/localStorage
+          // and crash the page when the request is serialized on Send.
+          prepared.push({
+            kind: "video",
+            name: file.name || "Video",
+            type: file.type || "video/*",
+          });
         } else if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
           prepared.push({
             kind: "pdf",
