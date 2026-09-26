@@ -2782,19 +2782,14 @@ function VikingAriesApp({ onLogout, authConfigured }) {
         !embeddedPreview &&
         (widthQuery.matches || narrowVisualViewport || touchQuery.matches || mobileUserAgent);
 
-      const enteredMobileUi = nextMobileUi && !previousMobileUiRef.current;
+      // This handler also runs for visualViewport changes caused by the on-screen
+      // keyboard. Do not change the active surface here: when a Timekeeper field
+      // receives focus inside the preview iframe, a keyboard resize must not
+      // collapse the preview and return Erik to chat. Mobile layout is handled by
+      // the CSS class; preview/chat navigation remains an explicit user action.
       previousMobileUiRef.current = nextMobileUi;
       setMobileUi(nextMobileUi);
       document.documentElement.classList.toggle("va-mobile-device", nextMobileUi);
-
-      // Only collapse an expanded preview when the device actually transitions
-      // into mobile mode. The visual viewport also resizes when a phone opens
-      // its keyboard; collapsing here would send the owner back to chat exactly
-      // when they tap a field inside the preview.
-      if (enteredMobileUi) {
-        setPreviewExpanded(false);
-        setMobileSidebarOpen(false);
-      }
     };
 
     updateMobileUi();
