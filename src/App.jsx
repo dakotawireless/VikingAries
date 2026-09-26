@@ -2764,6 +2764,7 @@ function VikingAriesApp({ onLogout, authConfigured }) {
     const coarsePointer = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
     return !embeddedPreview && (narrowVisualViewport || coarsePointer || mobileUserAgent);
   });
+  const previousMobileUiRef = useRef(mobileUi);
 
   useEffect(() => {
     const widthQuery = window.matchMedia("(max-width: 900px)");
@@ -2781,13 +2782,14 @@ function VikingAriesApp({ onLogout, authConfigured }) {
         !embeddedPreview &&
         (widthQuery.matches || narrowVisualViewport || touchQuery.matches || mobileUserAgent);
 
+      // This handler also runs for visualViewport changes caused by the on-screen
+      // keyboard. Do not change the active surface here: when a Timekeeper field
+      // receives focus inside the preview iframe, a keyboard resize must not
+      // collapse the preview and return Erik to chat. Mobile layout is handled by
+      // the CSS class; preview/chat navigation remains an explicit user action.
+      previousMobileUiRef.current = nextMobileUi;
       setMobileUi(nextMobileUi);
       document.documentElement.classList.toggle("va-mobile-device", nextMobileUi);
-
-      if (nextMobileUi) {
-        setPreviewExpanded(false);
-        setMobileSidebarOpen(false);
-      }
     };
 
     updateMobileUi();
