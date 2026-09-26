@@ -29,7 +29,7 @@ function clipSummaryText(value: unknown, max: number) {
 }
 
 function jobSummary(job: any) {
-  return {
+  const summary = {
     jobId: job.jobId,
     projectId: job.projectId,
     projectName: job.projectName,
@@ -58,6 +58,9 @@ function jobSummary(job: any) {
     workBranch: clipSummaryText(job.workBranch, 240),
     completedAt: job.completedAt,
   };
+  return Object.fromEntries(
+    Object.entries(summary).filter(([, value]) => value !== undefined)
+  );
 }
 
 async function syncJobSummary(ctx: any, job: any) {
