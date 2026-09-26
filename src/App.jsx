@@ -682,7 +682,7 @@ function ChatAttachmentCard({ message, onImageOpen }) {
         : [];
   const contentMeta = attachmentMetaFromContent(message.content);
 
-  const items = storedItems.length
+  const items = (storedItems.length
     ? storedItems
     : metadataItems.length
       ? metadataItems.map((item) => ({
@@ -691,19 +691,26 @@ function ChatAttachmentCard({ message, onImageOpen }) {
         }))
       : contentMeta
         ? [{ ...contentMeta, fullDataUrl: message.fullSizeImage || "" }]
-        : [];
+        : [])
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      kind: item.kind || (isVideoAttachment(item) ? "video" : "file"),
+      name: String(item.name || "Attachment"),
+      type: String(item.type || "application/octet-stream"),
+      fullDataUrl: typeof item.fullDataUrl === "string" ? item.fullDataUrl : "",
+      dataUrl: typeof item.dataUrl === "string" ? item.dataUrl : "",
+    }));
 
   if (!items.length) return null;
 
   return (
     <div className="chat-file-attachments" aria-label={`${items.length} attached file${items.length === 1 ? "" : "s"}`}>
       {items.map((item, index) => {
-        const isImage = item.kind === "image" || String(item.type || "").startsWith("image/");
+        const isImage = item.kind === "image" || item.type.startsWith("image/");
         const isPdf = item.kind === "pdf" || item.type === "application/pdf";
-        const isVideo = item.kind === "video" || String(item.type || "").startsWith("video/");
         const preview = item.fullDataUrl || item.dataUrl || "";
         return (
-          <div className="chat-file-attachment" key={`${item.name || "attachment"}-${index}`}>
+          <div className="chat-file-attachment" key={`${item.name}-${index}`}>
             {isImage && preview ? (
               <button
                 className="chat-file-image-preview"
@@ -719,7 +726,7 @@ function ChatAttachmentCard({ message, onImageOpen }) {
               </span>
             )}
             <span className="chat-file-copy">
-              <strong>{item.name || "Attachment"}</strong>
+              <strong>{item.name}</strong>
               <small>{isPdf ? "PDF document" : isImage ? "Image" : item.type || "File"} · available to Viking Aries</small>
             </span>
           </div>
