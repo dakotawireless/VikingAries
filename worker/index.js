@@ -2762,6 +2762,19 @@ function expandAttachmentMarkers(messages) {
         let filename = "attached";
         try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
 
+        // Legacy mobile builds could persist video bytes inside the text marker.
+        // Never turn those bytes back into an input_file on a later send. Keep a
+        // small filename reference instead so a stale chat cannot recreate the
+        // crash this metadata-only flow is designed to prevent.
+        const normalizedType = String(type || "").toLowerCase();
+        const videoMarker = normalizedType.startsWith("video/") ||
+          /\.(mp4|mov|m4v|webm|avi|mkv|3gp|mpeg|mpg|3g2|ogv)$/i.test(filename);
+        if (videoMarker) {
+          return isCurrentUserMessage
+            ? `[Attached video: ${filename}]`
+            : `[Previously attached video: ${filename}]`;
+        }
+
         if (isCurrentUserMessage) {
           attachments.push({ filename, type, dataUrl });
           return "";
