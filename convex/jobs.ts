@@ -386,7 +386,7 @@ export const completeJob = internalMutation({
     if (!row || row.status !== "running") return false;
     const expired = expiryReason(row, Date.now());
     if (expired) {
-      await ctx.db.patch(row._id, { status: "timed_out", error: expired, completedAt: Date.now(), updatedAt: Date.now() });
+      await patchFullJob(ctx, row, { status: "timed_out", error: expired, completedAt: Date.now(), updatedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.jobs.processThread, { projectId: row.projectId, threadId: row.threadId });
       return false;
     }
@@ -394,7 +394,7 @@ export const completeJob = internalMutation({
     const cumulativeCostUsd =
       Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: "completed",
       resultText: args.resultText,
       model: args.model || row.model,
@@ -424,7 +424,7 @@ export const failJob = internalMutation({
       .unique();
     if (!row || row.status !== "running") return false;
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: expiryReason(row, Date.now()) ? "timed_out" : "failed",
       error: args.error,
       completedAt: args.completedAt,
@@ -475,7 +475,7 @@ export const continueJobSlice = internalMutation({
         "Completed writes and checkpoints are preserved. Review the job before starting another continuation.",
       ].filter(Boolean).join("\n");
 
-      await ctx.db.patch(row._id, {
+      await patchFullJob(ctx, row, {
         status: "paused",
         resultText: finalText,
         error: limitReason,
@@ -496,7 +496,7 @@ export const continueJobSlice = internalMutation({
       return { continued: false, status: "paused", reason: limitReason, continuationCount: nextContinuationCount };
     }
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: "queued",
       resultText: args.resultText,
       error: undefined,
@@ -558,7 +558,7 @@ export const finalizeInterruptedJob = internalMutation({
     const cumulativeCostUsd =
       Number(row.cumulativeCostUsd || 0) + Math.max(0, Number(args.sliceCostUsd || 0));
 
-    await ctx.db.patch(row._id, {
+    await patchFullJob(ctx, row, {
       status: row.status === "canceled" ? "canceled" : row.status === "timed_out" ? "timed_out" : status,
       resultText: args.resultText,
       error: args.stopReason,
@@ -814,14 +814,14 @@ export const controlJob = internalMutation({
     if (!row) return { status: "missing" };
     const reason = expiryReason(row, Date.now());
     if (reason) {
-      await ctx.db.patch(row._id, { status: "timed_out", error: reason, updatedAt: Date.now(), completedAt: Date.now() });
+      await patchFullJob(ctx, row, { status: "timed_out", error: reason, updatedAt: Date.now(), completedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.jobs.processThread, { projectId: row.projectId, threadId: row.threadId });
       return { status: "timed_out" };
     }
     if (row.status !== "running") return { status: row.status };
     if (claim && row.runnerClaimed) return { status: "duplicate" };
     if (!claim && !row.runnerClaimed) return { status: "unclaimed" };
-    await ctx.db.patch(row._id, { runnerClaimed: true, updatedAt: Date.now() });
+    await patchFullJob(ctx, row, { runnerClaimed: true, updatedAt: Date.now() });
     return { status: "running", deadlineAt: row.deadlineAt || (row.startedAt || row.updatedAt) + RUN_LIMIT_MS };
   },
 });
@@ -829,24 +829,33 @@ export const controlJob = internalMutation({
 export const reconcileJobs = internalMutation({
   args: {},
   handler: async (ctx) => {
-    // Bounded batches; subsequent watchdog ticks drain a large legacy backlog.
-    // Any stale queue/run we terminalize can have newer explicit work behind it,
-    // so wake each affected thread after removing the barrier.
-    const wake = new Map();
+    // Watchdog scans only small summary rows. Heavy requestJson/checkpoint payloads
+    // are loaded individually by jobId only when a stale row actually needs patching.
+    const wake = new Map<string, { projectId: string; threadId: string }>();
     const now = Date.now();
     for (const status of ["queued", "running"]) {
-      const rows = await ctx.db.query("aiJobs").withIndex("by_status", q => q.eq("status", status)).take(50);
-      for (const row of rows) {
-        const reason = expiryReason(row, now);
+      const rows = await ctx.db
+        .query("aiJobSummaries")
+        .withIndex("by_project_status", q => q)
+        .filter(q => q.eq(q.field("status"), status))
+        .take(100);
+      for (const summary of rows) {
+        const reason = expiryReason(summary, now);
         if (!reason) continue;
-        await ctx.db.patch(row._id, {
+        const patch = {
           status: "timed_out",
           error: reason,
           stopReason: reason,
           completedAt: now,
           updatedAt: now,
+        };
+        const full = await getFullJobById(ctx, summary.jobId);
+        if (full) await patchFullJob(ctx, full, patch);
+        else await ctx.db.patch(summary._id, patch);
+        wake.set(`${summary.projectId}\n${summary.threadId}`, {
+          projectId: summary.projectId,
+          threadId: summary.threadId,
         });
-        wake.set(`${row.projectId}\n${row.threadId}`, { projectId: row.projectId, threadId: row.threadId });
       }
     }
     for (const thread of wake.values()) {
