@@ -115,23 +115,34 @@ export const createJob = internalMutation({
 
     const now = Date.now();
     const activeRows = (await Promise.all(["queued", "running"].map(status =>
-      ctx.db.query("aiJobs")
+      ctx.db.query("aiJobSummaries")
         .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
         .collect()
     ))).flat();
-    for (const row of activeRows) {
-      const reason = expiryReason(row, now);
+    for (const summary of activeRows) {
+      const reason = expiryReason(summary, now);
       if (!reason) continue;
-      await ctx.db.patch(row._id, {
-        status: "timed_out",
-        error: reason,
-        stopReason: reason,
-        completedAt: now,
-        updatedAt: now,
-      });
+      const full = await getFullJobById(ctx, summary.jobId);
+      if (full) {
+        await patchFullJob(ctx, full, {
+          status: "timed_out",
+          error: reason,
+          stopReason: reason,
+          completedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.patch(summary._id, {
+          status: "timed_out",
+          error: reason,
+          stopReason: reason,
+          completedAt: now,
+          updatedAt: now,
+        });
+      }
     }
 
-    await ctx.db.insert("aiJobs", {
+    const newJob = {
       ...args,
       status: "queued",
       lifecycleVersion: CURRENT_JOB_LIFECYCLE_VERSION,
@@ -143,7 +154,9 @@ export const createJob = internalMutation({
       maxJobElapsedMs: args.maxJobElapsedMs ?? DEFAULT_JOB_MAX_ELAPSED_MS,
       workBranch: workBranchForJob(args.jobId),
       updatedAt: args.createdAt,
-    });
+    };
+    await ctx.db.insert("aiJobs", newJob);
+    await syncJobSummary(ctx, newJob);
 
     await ctx.scheduler.runAfter(0, internal.jobs.processThread, {
       projectId: args.projectId,
@@ -162,13 +175,15 @@ export const listProjectJobs = internalQuery({
   handler: async (ctx, { projectId, limit }) => {
     const take = Math.min(100, Math.max(1, Math.floor(limit || 50)));
     const recent = await ctx.db
-      .query("aiJobs")
+      .query("aiJobSummaries")
       .withIndex("by_project_updatedAt", (q) => q.eq("projectId", projectId))
       .order("desc")
       .take(take);
     const active = (await Promise.all(["queued", "running"].map(status =>
-      ctx.db.query("aiJobs").withIndex("by_project_status", q => q.eq("projectId", projectId).eq("status", status)).take(100)
-    ))).flat().filter(row => row.projectId === projectId);
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_status", q => q.eq("projectId", projectId).eq("status", status))
+        .take(100)
+    ))).flat();
     return [...new Map([...recent, ...active].map(row => [row.jobId, row])).values()];
   },
 });
@@ -181,7 +196,7 @@ export const listPriorThreadJobs = internalQuery({
   },
   handler: async (ctx, args) => {
     const rows = await ctx.db
-      .query("aiJobs")
+      .query("aiJobSummaries")
       .withIndex("by_project_thread_updatedAt", (q) =>
         q.eq("projectId", args.projectId).eq("threadId", args.threadId)
       )
@@ -199,35 +214,61 @@ export const claimNextThreadJob = internalMutation({
     threadId: v.string(),
   },
   handler: async (ctx, args) => {
-    const rows = (await Promise.all(["queued", "running"].map(status => ctx.db.query("aiJobs")
-      .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status)).collect()))).flat();
+    const summaries = (await Promise.all(["queued", "running"].map(status =>
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
+        .collect()
+    ))).flat();
 
     const now = Date.now();
-
-
-    for (const row of rows) {
-      if (expiryReason(row, now)) {
-        await ctx.db.patch(row._id, {
+    for (const summary of summaries) {
+      const reason = expiryReason(summary, now);
+      if (!reason) continue;
+      const full = await getFullJobById(ctx, summary.jobId);
+      if (full) {
+        await patchFullJob(ctx, full, {
           status: "timed_out",
-          error: expiryReason(row, now) || "Execution expired.",
+          error: reason,
+          stopReason: reason,
+          completedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.patch(summary._id, {
+          status: "timed_out",
+          error: reason,
+          stopReason: reason,
           completedAt: now,
           updatedAt: now,
         });
       }
     }
 
-    const refreshed = (await Promise.all(["queued", "running"].map(status => ctx.db.query("aiJobs")
-      .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status)).collect()))).flat();
+    const refreshed = (await Promise.all(["queued", "running"].map(status =>
+      ctx.db.query("aiJobSummaries")
+        .withIndex("by_project_thread_status", q => q.eq("projectId", args.projectId).eq("threadId", args.threadId).eq("status", status))
+        .collect()
+    ))).flat();
 
     if (refreshed.some((row) => row.status === "running")) return null;
 
     const next = refreshed
       .filter((row) => isRunnableQueuedJob(row, now))
       .sort((a, b) => a.createdAt - b.createdAt)[0];
-
     if (!next) return null;
 
-    await ctx.db.patch(next._id, {
+    const full = await getFullJobById(ctx, next.jobId);
+    if (!full) {
+      await ctx.db.patch(next._id, {
+        status: "failed",
+        error: "Execution payload is missing.",
+        completedAt: now,
+        updatedAt: now,
+      });
+      return null;
+    }
+
+    const patch = {
       status: "running",
       startedAt: now,
       deadlineAt: now + RUN_LIMIT_MS,
@@ -235,9 +276,9 @@ export const claimNextThreadJob = internalMutation({
       lastSliceStartedAt: now,
       updatedAt: now,
       error: undefined,
-    });
-
-    return { ...next, status: "running", startedAt: now, updatedAt: now, deadlineAt: now + RUN_LIMIT_MS };
+    };
+    await patchFullJob(ctx, full, patch);
+    return { ...full, ...patch };
   },
 });
 
