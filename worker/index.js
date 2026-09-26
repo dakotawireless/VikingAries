@@ -2793,7 +2793,13 @@ function expandAttachmentMarkers(messages) {
       (_match, encodedName) => {
         let filename = "attachment";
         try { filename = decodeURIComponent(encodedName) || filename; } catch { /* Keep fallback. */ }
-        return isCurrentUserMessage ? "" : `[Previously attached file: ${filename}]`;
+        // Metadata-only files, especially videos from phones, must remain a
+        // valid text-only user message. Removing the marker entirely can leave
+        // a video-only submission with an empty request and trigger a failed
+        // queue/run path.
+        return isCurrentUserMessage
+          ? `[Attached file: ${filename}]`
+          : `[Previously attached file: ${filename}]`;
       }
     ).trim();
 
