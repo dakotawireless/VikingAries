@@ -836,8 +836,7 @@ export const reconcileJobs = internalMutation({
     for (const status of ["queued", "running"]) {
       const rows = await ctx.db
         .query("aiJobSummaries")
-        .withIndex("by_project_status", q => q)
-        .filter(q => q.eq(q.field("status"), status))
+        .withIndex("by_status", q => q.eq("status", status))
         .take(100);
       for (const summary of rows) {
         const reason = expiryReason(summary, now);
